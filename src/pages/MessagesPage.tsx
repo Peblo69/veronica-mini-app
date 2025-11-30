@@ -292,13 +292,13 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                   {/* Gift message */}
                   {msg.message_type === 'gift' && msg.gift && (
                     <div className="text-center py-2">
-                      <div className="w-16 h-16 mx-auto bg-white/20 rounded-full flex items-center justify-center mb-2 backdrop-blur-sm">
-                        <span className="text-4xl drop-shadow-md">🎁</span>
+                      <div className="w-16 h-16 mx-auto bg-gradient-to-tr from-pink-400 to-rose-500 rounded-2xl flex items-center justify-center mb-2 shadow-lg shadow-pink-500/30 rotate-3">
+                        <Gift className="w-8 h-8 text-white" />
                       </div>
                       <p className={`font-bold text-lg ${isOwn ? 'text-white' : 'text-gray-800'}`}>
                         {msg.gift.name}
                       </p>
-                      <div className={`inline-block px-3 py-1 rounded-full text-xs font-bold mt-1 ${isOwn ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                      <div className={`inline-block px-3 py-1 rounded-full text-xs font-bold mt-1 ${isOwn ? 'bg-white/20 text-white' : 'bg-pink-50 text-pink-600 border border-pink-100'}`}>
                         {msg.gift.price} tokens
                       </div>
                     </div>
@@ -307,13 +307,13 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                   {/* Tip message */}
                   {msg.message_type === 'tip' && (
                     <div className="text-center py-2">
-                      <div className="w-16 h-16 mx-auto bg-green-500/20 rounded-full flex items-center justify-center mb-2 backdrop-blur-sm">
-                        <span className="text-4xl drop-shadow-md">💰</span>
+                      <div className="w-16 h-16 mx-auto bg-gradient-to-tr from-green-400 to-emerald-500 rounded-full flex items-center justify-center mb-2 shadow-lg shadow-green-500/30">
+                        <DollarSign className="w-8 h-8 text-white" />
                       </div>
                       <p className={`font-bold text-lg ${isOwn ? 'text-white' : 'text-gray-800'}`}>
                         Sent a Tip
                       </p>
-                      <div className={`inline-block px-4 py-1.5 rounded-full text-lg font-bold mt-1 ${isOwn ? 'bg-white/20 text-white' : 'bg-green-100 text-green-600'}`}>
+                      <div className={`inline-block px-4 py-1.5 rounded-full text-lg font-bold mt-1 ${isOwn ? 'bg-white/20 text-white' : 'bg-green-50 text-green-600 border border-green-100'}`}>
                         ${msg.tip_amount}
                       </div>
                     </div>
@@ -409,11 +409,13 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                     <button
                       key={gift.id}
                       onClick={() => handleSendGift(gift)}
-                      className="flex flex-col items-center p-4 rounded-2xl bg-gray-50 border border-gray-100 hover:border-of-blue hover:bg-blue-50 hover:shadow-md transition-all group"
+                      className="flex flex-col items-center p-4 rounded-2xl bg-gray-50 border border-gray-100 hover:border-pink-300 hover:bg-pink-50 hover:shadow-md transition-all group relative overflow-hidden"
                     >
-                      <div className="text-4xl mb-3 transform group-hover:scale-110 transition-transform">🎁</div>
+                      <div className="w-12 h-12 bg-gradient-to-br from-pink-100 to-rose-100 rounded-xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-inner">
+                         <Gift className="w-6 h-6 text-pink-500" />
+                      </div>
                       <span className="text-sm font-bold text-gray-800 mb-1">{gift.name}</span>
-                      <span className="text-xs font-medium text-of-blue bg-white px-2 py-0.5 rounded-full shadow-sm border border-blue-100">
+                      <span className="text-xs font-medium text-pink-600 bg-white px-2 py-0.5 rounded-full shadow-sm border border-pink-100">
                         {gift.price} tokens
                       </span>
                     </button>
