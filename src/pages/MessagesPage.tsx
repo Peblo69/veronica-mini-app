@@ -395,7 +395,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: '100%' }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl rounded-t-[2rem] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] border-t border-white/50 z-50 max-h-[60vh] overflow-hidden flex flex-col"
+              className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl rounded-t-[2rem] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] border-t border-white/50 z-[100] max-h-[60vh] overflow-hidden flex flex-col"
             >
               <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-white/50">
                 <h3 className="font-bold text-gray-800 text-lg">Send a Gift</h3>
@@ -434,7 +434,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: '100%' }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl rounded-t-[2rem] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] border-t border-white/50 z-50 p-6"
+              className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl rounded-t-[2rem] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] border-t border-white/50 z-[100] p-6"
             >
               <div className="flex justify-between items-center mb-6">
                 <h3 className="font-bold text-gray-800 text-lg">Send a Tip</h3>
