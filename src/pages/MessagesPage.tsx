@@ -1,13 +1,17 @@
 import { motion } from 'framer-motion'
 import { CheckCircle, Search } from 'lucide-react'
+import { type User } from '../lib/api'
 
+interface MessagesPageProps {
+  user: User
+}
+
+// For now, mock data - we can connect to real messages later
 const conversations = [
-  { id: 1, name: 'Elena Rose', avatar: 'https://i.pravatar.cc/150?img=1', lastMessage: 'Thanks for subscribing!', time: '2m', unread: 2, verified: true, online: true },
-  { id: 2, name: 'Sophie Chen', avatar: 'https://i.pravatar.cc/150?img=5', lastMessage: 'Check out my new post', time: '1h', unread: 0, verified: true, online: false },
-  { id: 3, name: 'Mia Williams', avatar: 'https://i.pravatar.cc/150?img=9', lastMessage: 'Hey there!', time: '3h', unread: 1, verified: false, online: true },
+  { id: 1, name: 'Creator Support', avatar: 'https://i.pravatar.cc/150?img=1', lastMessage: 'How can we help?', time: '2m', unread: 1, verified: true, online: true },
 ]
 
-export default function MessagesPage() {
+export default function MessagesPage({ user: _user }: MessagesPageProps) {
   return (
     <div className="p-4">
       <h2 className="text-lg font-bold mb-4">Messages</h2>
