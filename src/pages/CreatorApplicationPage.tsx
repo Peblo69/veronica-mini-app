@@ -46,6 +46,7 @@ export default function CreatorApplicationPage({ user, onBack, onSuccess }: Crea
     email: '',
     phone: '',
     contentType: 'sfw' as 'sfw' | 'nsfw',
+    isAiGenerated: false,
     categories: [] as string[],
     contentDescription: '',
     instagram: '',
@@ -164,6 +165,7 @@ export default function CreatorApplicationPage({ user, onBack, onSuccess }: Crea
           email: formData.email,
           phone: formData.phone || null,
           content_type: formData.contentType,
+          is_ai_generated: formData.isAiGenerated,
           content_categories: formData.categories,
           content_description: formData.contentDescription || null,
           instagram_url: formData.instagram || null,
@@ -346,6 +348,13 @@ export default function CreatorApplicationPage({ user, onBack, onSuccess }: Crea
                 <h2 className="text-lg font-bold">Content Type</h2>
                 <p className="text-sm text-gray-500">Tell us what kind of content you plan to create.</p>
 
+                {/* Privacy Notice */}
+                <div className="p-3 bg-gray-100 rounded-xl">
+                  <p className="text-xs text-gray-500 text-center">
+                    These selections are for internal review only and will not be displayed on your public profile.
+                  </p>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium mb-2">Content Rating *</label>
                   <div className="grid grid-cols-2 gap-3">
@@ -380,6 +389,46 @@ export default function CreatorApplicationPage({ user, onBack, onSuccess }: Crea
                       Adult content requires strict age verification and compliance with all applicable laws.
                     </div>
                   )}
+                </div>
+
+                {/* AI Generated Content */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">Content Source *</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => updateForm('isAiGenerated', false)}
+                      className={`p-4 rounded-xl border-2 text-center transition-all ${
+                        !formData.isAiGenerated
+                          ? 'border-of-blue bg-blue-50'
+                          : 'border-gray-200'
+                      }`}
+                    >
+                      <div className="text-2xl mb-1">📸</div>
+                      <div className="font-semibold">Real Content</div>
+                      <div className="text-xs text-gray-500">Photos, videos of yourself</div>
+                    </button>
+                    <button
+                      onClick={() => updateForm('isAiGenerated', true)}
+                      className={`p-4 rounded-xl border-2 text-center transition-all ${
+                        formData.isAiGenerated
+                          ? 'border-of-blue bg-blue-50'
+                          : 'border-gray-200'
+                      }`}
+                    >
+                      <div className="text-2xl mb-1">🤖</div>
+                      <div className="font-semibold">AI Generated</div>
+                      <div className="text-xs text-gray-500">AI-created images/content</div>
+                    </button>
+                  </div>
+                  {formData.isAiGenerated && (
+                    <div className="mt-2 p-3 bg-purple-50 rounded-xl text-sm text-purple-800">
+                      <AlertCircle className="w-4 h-4 inline mr-1" />
+                      AI-generated content must be clearly labeled. You must own or have rights to the AI models/tools used.
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-400 mt-2 text-center">
+                    This information is private and helps us categorize content appropriately.
+                  </p>
                 </div>
 
                 <div>

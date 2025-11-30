@@ -13,6 +13,8 @@
     "@supabase/supabase-js": "^2.86.0",
     "@tma.js/sdk": "^3.1.2",
     "@tma.js/sdk-react": "^3.0.11",
+    "agora-rtc-react": "^2.5.0",
+    "agora-rtc-sdk-ng": "^4.24.1",
     "framer-motion": "^12.23.24",
     "lucide-react": "^0.555.0",
     "react": "^19.2.0",

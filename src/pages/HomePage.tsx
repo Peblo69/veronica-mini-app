@@ -1,33 +1,44 @@
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Heart, MessageCircle, Bookmark, Share2, MoreHorizontal, CheckCircle } from 'lucide-react'
-import { getFeed, getSuggestedCreators, likePost, unlikePost, type User, type Post } from '../lib/api'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Heart, MessageCircle, Bookmark, Share2, MoreHorizontal, CheckCircle, Lock, Eye, DollarSign, AlertTriangle, X, Radio, Users } from 'lucide-react'
+import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, purchaseContent, type User, type Post } from '../lib/api'
+import { getLivestreams, type Livestream } from '../lib/livestreamApi'
+import PostDetail from '../components/PostDetail'
 
 interface HomePageProps {
   user: User
   onCreatorClick: (creator: any) => void
+  onLivestreamClick?: (livestreamId: string) => void
+  onGoLive?: () => void
 }
 
-export default function HomePage({ user, onCreatorClick }: HomePageProps) {
+export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGoLive }: HomePageProps) {
   const [posts, setPosts] = useState<Post[]>([])
   const [suggestions, setSuggestions] = useState<User[]>([])
+  const [livestreams, setLivestreams] = useState<Livestream[]>([])
   const [loading, setLoading] = useState(true)
+  const [purchaseModal, setPurchaseModal] = useState<Post | null>(null)
+  const [purchasing, setPurchasing] = useState(false)
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null)
 
   useEffect(() => {
     loadData()
   }, [])
 
   const loadData = async () => {
-    const [feedPosts, suggestedCreators] = await Promise.all([
+    const [feedPosts, suggestedCreators, liveStreams] = await Promise.all([
       getFeed(user.telegram_id),
-      getSuggestedCreators(6)
+      getSuggestedCreators(6),
+      getLivestreams()
     ])
     setPosts(feedPosts)
     setSuggestions(suggestedCreators)
+    setLivestreams(liveStreams)
     setLoading(false)
   }
 
   const handleLike = async (post: Post) => {
+    if (!post.can_view) return
     if (post.liked) {
       await unlikePost(user.telegram_id, post.id)
       setPosts(posts.map(p => p.id === post.id ? { ...p, liked: false, likes_count: p.likes_count - 1 } : p))
@@ -37,12 +48,96 @@ export default function HomePage({ user, onCreatorClick }: HomePageProps) {
     }
   }
 
+  const handleSave = async (post: Post) => {
+    if (post.saved) {
+      await unsavePost(user.telegram_id, post.id)
+      setPosts(posts.map(p => p.id === post.id ? { ...p, saved: false } : p))
+    } else {
+      await savePost(user.telegram_id, post.id)
+      setPosts(posts.map(p => p.id === post.id ? { ...p, saved: true } : p))
+    }
+  }
+
+  const handlePurchase = async (post: Post) => {
+    setPurchasing(true)
+    const result = await purchaseContent(user.telegram_id, post.id, post.unlock_price)
+    setPurchasing(false)
+
+    if (result.success) {
+      setPosts(posts.map(p => p.id === post.id ? { ...p, can_view: true, is_purchased: true } : p))
+      setPurchaseModal(null)
+    } else {
+      alert(result.error || 'Purchase failed')
+    }
+  }
+
+  const handlePostDeleted = () => {
+    if (selectedPost) {
+      setPosts(posts.filter(p => p.id !== selectedPost.id))
+      setSelectedPost(null)
+    }
+  }
+
+  const handlePostUpdated = (updatedPost: Post) => {
+    setPosts(posts.map(p => p.id === updatedPost.id ? updatedPost : p))
+  }
+
+  const openPostDetail = (post: Post) => {
+    if (post.can_view) {
+      setSelectedPost(post)
+    }
+  }
+
   const formatTime = (date: string) => {
     const diff = Date.now() - new Date(date).getTime()
     const hours = Math.floor(diff / 3600000)
     if (hours < 1) return 'Just now'
     if (hours < 24) return hours + 'h'
     return Math.floor(hours / 24) + 'd'
+  }
+
+  const getVisibilityBadge = (post: Post) => {
+    if (post.is_nsfw) {
+      return (
+        <span className="px-2 py-0.5 bg-orange-100 text-orange-600 text-xs rounded-full flex items-center gap-1">
+          <AlertTriangle className="w-3 h-3" />
+          NSFW
+        </span>
+      )
+    }
+    if (post.visibility === 'subscribers') {
+      return (
+        <span className="px-2 py-0.5 bg-purple-100 text-purple-600 text-xs rounded-full flex items-center gap-1">
+          <Lock className="w-3 h-3" />
+          Exclusive
+        </span>
+      )
+    }
+    if (post.visibility === 'followers') {
+      return (
+        <span className="px-2 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full flex items-center gap-1">
+          <Eye className="w-3 h-3" />
+          Followers
+        </span>
+      )
+    }
+    return null
+  }
+
+  const getLockReason = (post: Post) => {
+    if (post.unlock_price > 0 && !post.is_purchased) {
+      return `Pay $${post.unlock_price.toFixed(2)} to unlock`
+    }
+    if (post.is_nsfw && !post.is_subscribed) {
+      return 'Subscribe to see NSFW content'
+    }
+    if (post.visibility === 'subscribers' && !post.is_subscribed) {
+      return 'Subscribe to see exclusive content'
+    }
+    if (post.visibility === 'followers' && !post.is_following && !post.is_subscribed) {
+      return 'Follow to see this content'
+    }
+    return 'Content locked'
   }
 
   if (loading) {
@@ -65,34 +160,120 @@ export default function HomePage({ user, onCreatorClick }: HomePageProps) {
   }
 
   return (
-    <div className="space-y-3 p-3">
+    <div className="space-y-6 p-3 max-w-2xl mx-auto">
+      {/* Live Now Section */}
+      {(livestreams.length > 0 || user.is_creator) && (
+        <div className="glass-panel p-4 rounded-3xl relative overflow-hidden">
+          <div className="flex justify-between items-center mb-4 relative z-10">
+            <h3 className="text-xs font-bold text-gray-500 flex items-center gap-2 tracking-wider">
+              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.6)]" />
+              LIVE NOW
+            </h3>
+            {user.is_creator && onGoLive && (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={onGoLive}
+                className="px-4 py-1.5 bg-gradient-to-r from-red-500 to-pink-600 text-white text-xs font-bold rounded-full flex items-center gap-1.5 shadow-lg shadow-red-500/30"
+              >
+                <Radio className="w-3 h-3" />
+                Go Live
+              </motion.button>
+            )}
+          </div>
+          
+          {/* Decorative background blur */}
+          <div className="absolute -top-10 -right-10 w-32 h-32 bg-red-500/10 blur-3xl rounded-full" />
+          
+          {livestreams.length > 0 ? (
+            <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
+              {livestreams.map((stream) => (
+                <motion.button
+                  key={stream.id}
+                  className="relative min-w-[140px] rounded-2xl overflow-hidden group"
+                  whileHover={{ y: -5 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => onLivestreamClick?.(stream.id)}
+                >
+                  <div className="aspect-[9/16] bg-gray-900 relative">
+                    {stream.thumbnail_url ? (
+                      <img src={stream.thumbnail_url} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-800 to-gray-900">
+                        <img
+                          src={stream.creator?.avatar_url || `https://i.pravatar.cc/150?u=${stream.creator_id}`}
+                          alt=""
+                          className="w-12 h-12 rounded-full border-2 border-white/20"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent" />
+                  <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 bg-red-500/90 backdrop-blur-md rounded-full border border-white/20">
+                    <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                    <span className="text-white text-[10px] font-bold tracking-wide">LIVE</span>
+                  </div>
+                  <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 bg-black/40 backdrop-blur-md rounded-full border border-white/10">
+                    <Users className="w-3 h-3 text-white" />
+                    <span className="text-white text-[10px] font-medium">{stream.viewer_count}</span>
+                  </div>
+                  <div className="absolute bottom-3 left-3 right-3 text-left">
+                    <p className="text-white text-xs font-bold truncate mb-0.5 shadow-sm">{stream.title}</p>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-4 h-4 rounded-full bg-white/20 flex-shrink-0 overflow-hidden">
+                        <img src={stream.creator?.avatar_url || `https://i.pravatar.cc/150?u=${stream.creator_id}`} className="w-full h-full object-cover" />
+                      </div>
+                      <p className="text-gray-200 text-[10px] font-medium truncate">{stream.creator?.first_name}</p>
+                    </div>
+                  </div>
+                </motion.button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-400 text-sm text-center py-8 bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
+              No active streams right now
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Suggestions */}
       {suggestions.length > 0 && (
-        <div className="card p-4">
-          <h3 className="text-sm font-semibold text-gray-500 mb-3">SUGGESTIONS</h3>
-          <div className="flex gap-4 overflow-x-auto pb-2">
-            {suggestions.map((creator) => (
+        <div className="glass-panel p-5 rounded-3xl">
+          <h3 className="text-xs font-bold text-gray-400 mb-4 tracking-widest uppercase">Recommended For You</h3>
+          <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar snap-x">
+            {suggestions.map((creator, idx) => (
               <motion.button
                 key={creator.telegram_id}
-                className="flex flex-col items-center min-w-[70px]"
+                className="flex flex-col items-center min-w-[80px] snap-center group"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: idx * 0.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => onCreatorClick(creator)}
               >
-                <div className="relative">
-                  <div className="w-16 h-16 rounded-full p-0.5 bg-gradient-to-br from-of-blue to-blue-400">
-                    <img 
-                      src={creator.avatar_url || 'https://i.pravatar.cc/150?u=' + creator.telegram_id} 
-                      alt={creator.first_name} 
-                      className="w-full h-full rounded-full object-cover border-2 border-white" 
-                    />
+                <div className="relative mb-2">
+                  <div className="w-[70px] h-[70px] rounded-full p-[3px] bg-gradient-to-tr from-of-blue via-purple-400 to-pink-400 group-hover:shadow-lg group-hover:shadow-of-blue/30 transition-all duration-300 animate-liquid">
+                    <div className="w-full h-full rounded-full p-[2px] bg-white">
+                      <img
+                        src={creator.avatar_url || 'https://i.pravatar.cc/150?u=' + creator.telegram_id}
+                        alt={creator.first_name}
+                        className="w-full h-full rounded-full object-cover"
+                      />
+                    </div>
                   </div>
                   {creator.is_verified && (
-                    <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-of-blue rounded-full flex items-center justify-center border-2 border-white">
-                      <CheckCircle className="w-3 h-3 text-white fill-white" />
+                    <div className="absolute bottom-0 right-0 bg-white rounded-full p-0.5 shadow-sm">
+                      <CheckCircle className="w-5 h-5 text-of-blue fill-of-blue" />
                     </div>
                   )}
                 </div>
-                <span className="text-xs mt-1 truncate w-full text-center">{creator.first_name}</span>
+                <span className="text-xs font-semibold text-gray-800 truncate w-full text-center group-hover:text-of-blue transition-colors">
+                  {creator.first_name}
+                </span>
+                <span className="text-[10px] text-gray-400 truncate w-full text-center">
+                  @{creator.username}
+                </span>
               </motion.button>
             ))}
           </div>
@@ -100,60 +281,255 @@ export default function HomePage({ user, onCreatorClick }: HomePageProps) {
       )}
 
       {/* Posts Feed */}
-      {posts.length === 0 ? (
-        <div className="card p-8 text-center">
-          <p className="text-gray-500">No posts yet. Follow some creators!</p>
-        </div>
-      ) : (
-        posts.map((post, index) => (
-          <motion.div
-            key={post.id}
-            className="card overflow-hidden"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
-          >
-            <div className="flex items-center justify-between p-3">
-              <button className="flex items-center gap-3" onClick={() => post.creator && onCreatorClick(post.creator)}>
-                <img 
-                  src={post.creator?.avatar_url || 'https://i.pravatar.cc/150?u=' + post.creator_id} 
-                  alt="" 
-                  className="w-10 h-10 rounded-full object-cover" 
-                />
-                <div className="text-left">
-                  <div className="flex items-center gap-1">
-                    <span className="font-semibold text-sm">{post.creator?.first_name || 'Creator'}</span>
-                    {post.creator?.is_verified && <CheckCircle className="w-4 h-4 text-of-blue fill-of-blue" />}
+      <div className="space-y-6">
+        {posts.length === 0 ? (
+          <div className="glass-panel p-12 text-center rounded-3xl">
+            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Users className="w-10 h-10 text-gray-400" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-800 mb-2">Your feed is empty</h3>
+            <p className="text-gray-500 text-sm mb-6">Follow some creators to see their exclusive content here.</p>
+          </div>
+        ) : (
+          posts.map((post, index) => (
+            <motion.div
+              key={post.id}
+              className="glass-panel rounded-[2rem] overflow-hidden border-white/60 shadow-sm hover:shadow-md transition-shadow duration-300"
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1, type: "spring", damping: 20 }}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between p-4">
+                <button className="flex items-center gap-3 group" onClick={() => post.creator && onCreatorClick(post.creator)}>
+                  <div className="relative">
+                    <img
+                      src={post.creator?.avatar_url || 'https://i.pravatar.cc/150?u=' + post.creator_id}
+                      alt=""
+                      className="w-11 h-11 rounded-full object-cover border border-gray-100 group-hover:border-of-blue transition-colors"
+                    />
+                    {post.creator?.is_verified && (
+                      <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-[1px]">
+                        <CheckCircle className="w-3.5 h-3.5 text-of-blue fill-of-blue" />
+                      </div>
+                    )}
                   </div>
-                  <span className="text-xs text-gray-500">@{post.creator?.username || 'creator'} · {formatTime(post.created_at)}</span>
+                  <div className="text-left">
+                    <div className="flex items-center gap-1">
+                      <span className="font-bold text-[15px] text-gray-900 group-hover:text-of-blue transition-colors">{post.creator?.first_name || 'Creator'}</span>
+                    </div>
+                    <span className="text-xs text-gray-400 font-medium">@{post.creator?.username || 'creator'} · {formatTime(post.created_at)}</span>
+                  </div>
+                </button>
+                <div className="flex items-center gap-2">
+                  {getVisibilityBadge(post)}
+                  <button className="p-2 hover:bg-gray-50 rounded-full transition-colors text-gray-400 hover:text-gray-600">
+                    <MoreHorizontal className="w-5 h-5" />
+                  </button>
                 </div>
-              </button>
-              <button className="p-2 hover:bg-gray-100 rounded-full">
-                <MoreHorizontal className="w-5 h-5 text-gray-400" />
-              </button>
-            </div>
-
-            {post.content && <p className="px-3 pb-3 text-sm">{post.content}</p>}
-            
-            {post.media_url && <img src={post.media_url} alt="" className="w-full" />}
-
-            <div className="flex items-center justify-between p-3">
-              <div className="flex items-center gap-4">
-                <button className="flex items-center gap-1" onClick={() => handleLike(post)}>
-                  <Heart className={"w-6 h-6 " + (post.liked ? 'text-red-500 fill-red-500' : 'text-gray-600')} />
-                  <span className="text-sm text-gray-600">{post.likes_count}</span>
-                </button>
-                <button className="flex items-center gap-1">
-                  <MessageCircle className="w-6 h-6 text-gray-600" />
-                  <span className="text-sm text-gray-600">{post.comments_count}</span>
-                </button>
-                <button><Share2 className="w-6 h-6 text-gray-600" /></button>
               </div>
-              <button><Bookmark className="w-6 h-6 text-gray-600" /></button>
-            </div>
+
+              {/* Content */}
+              {post.can_view ? (
+                <div className="relative">
+                  {post.content && <p className="px-5 pb-4 text-[15px] leading-relaxed text-gray-800">{post.content}</p>}
+                  {post.media_url && (
+                    <div className="relative bg-gray-100">
+                      <img src={post.media_url} alt="" className="w-full h-auto max-h-[500px] object-contain" loading="lazy" />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="relative group">
+                  {/* Blurred Preview */}
+                  <div className="relative overflow-hidden bg-gray-900 aspect-[4/3]">
+                    {post.media_url ? (
+                      <img
+                        src={post.media_url}
+                        alt=""
+                        className="w-full h-full object-cover blur-2xl opacity-60 scale-110 transition-transform duration-700 group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-gray-800 via-gray-700 to-gray-800 blur-lg opacity-50"></div>
+                    )}
+
+                    {/* Lock Overlay */}
+                    <div className="absolute inset-0 bg-black/20 backdrop-blur-sm flex flex-col items-center justify-center text-white p-6 text-center">
+                      <div className="w-14 h-14 bg-white/10 backdrop-blur-xl rounded-full flex items-center justify-center mb-4 border border-white/20 shadow-lg">
+                        <Lock className="w-6 h-6 text-white" />
+                      </div>
+                      <h3 className="text-lg font-bold mb-2">Premium Content</h3>
+                      <p className="text-sm text-gray-200 font-medium mb-6 max-w-xs leading-relaxed">{getLockReason(post)}</p>
+
+                      {post.unlock_price > 0 && !post.is_purchased ? (
+                        <motion.button
+                          className="px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 rounded-full text-sm font-bold text-white shadow-lg shadow-green-500/30 flex items-center gap-2 border border-white/20"
+                          whileHover={{ scale: 1.02, y: -2 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => setPurchaseModal(post)}
+                        >
+                          <DollarSign className="w-4 h-4" />
+                          Unlock for ${post.unlock_price.toFixed(2)}
+                        </motion.button>
+                      ) : (
+                        <motion.button
+                          className="px-8 py-3 btn-subscribe text-sm font-bold shadow-lg flex items-center gap-2"
+                          whileHover={{ scale: 1.02, y: -2 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => post.creator && onCreatorClick(post.creator)}
+                        >
+                          {post.visibility === 'followers' ? (
+                            <><Eye className="w-4 h-4" /> Follow to View</>
+                          ) : (
+                            <><CheckCircle className="w-4 h-4" /> Subscribe to View</>
+                          )}
+                        </motion.button>
+                      )}
+                    </div>
+                  </div>
+
+                  {post.content && (
+                    <div className="px-5 py-4 bg-gray-50/50 border-t border-gray-100">
+                      <p className="text-sm text-gray-500 italic line-clamp-2">
+                        {post.content.substring(0, 100)}...
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center justify-between px-4 py-3 bg-white/40 backdrop-blur-sm">
+                <div className="flex items-center gap-6">
+                  <button
+                    className={"group flex items-center gap-1.5 transition-colors " + (!post.can_view ? 'opacity-50 cursor-not-allowed' : '')}
+                    onClick={() => handleLike(post)}
+                    disabled={!post.can_view}
+                  >
+                    <div className={`p-2 rounded-full transition-colors ${post.liked ? 'bg-red-50' : 'group-hover:bg-gray-100'}`}>
+                      <Heart className={"w-6 h-6 transition-all " + (post.liked ? 'text-red-500 fill-red-500 scale-110' : 'text-gray-600 group-hover:scale-110')} />
+                    </div>
+                    <span className={`text-sm font-medium ${post.liked ? 'text-red-500' : 'text-gray-500'}`}>{post.likes_count}</span>
+                  </button>
+                  
+                  <button
+                    className={"group flex items-center gap-1.5 transition-colors " + (!post.can_view ? 'opacity-50 cursor-not-allowed' : '')}
+                    disabled={!post.can_view}
+                    onClick={() => openPostDetail(post)}
+                  >
+                    <div className="p-2 rounded-full group-hover:bg-gray-100 transition-colors">
+                      <MessageCircle className="w-6 h-6 text-gray-600 group-hover:text-of-blue transition-colors" />
+                    </div>
+                    <span className="text-sm font-medium text-gray-500 group-hover:text-of-blue">{post.comments_count}</span>
+                  </button>
+                  
+                  <button className="p-2 rounded-full hover:bg-gray-100 transition-colors group">
+                    <Share2 className="w-6 h-6 text-gray-600 group-hover:text-gray-800" />
+                  </button>
+                </div>
+                
+                <button 
+                  onClick={() => handleSave(post)}
+                  className="p-2 rounded-full hover:bg-gray-100 transition-colors group"
+                >
+                  <Bookmark className={"w-6 h-6 transition-colors " + (post.saved ? 'text-of-blue fill-of-blue' : 'text-gray-600 group-hover:text-gray-800')} />
+                </button>
+              </div>
+            </motion.div>
+          ))
+        )}
+      </div>
+
+      {/* Purchase Modal */}
+      <AnimatePresence>
+        {purchaseModal && (
+          <motion.div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setPurchaseModal(null)}
+          >
+            <motion.div
+              className="bg-white/90 backdrop-blur-xl rounded-[2rem] p-6 max-w-sm w-full shadow-2xl border border-white/50"
+              initial={{ scale: 0.9, y: 30, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.9, y: 30, opacity: 0 }}
+              transition={{ type: "spring", duration: 0.5 }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold text-gray-900">Unlock Content</h3>
+                <button onClick={() => setPurchaseModal(null)} className="p-1 rounded-full hover:bg-gray-100 transition-colors">
+                  <X className="w-6 h-6 text-gray-500" />
+                </button>
+              </div>
+
+              <div className="text-center mb-8 relative">
+                <div className="absolute inset-0 bg-green-400/20 blur-3xl rounded-full" />
+                <div className="relative w-20 h-20 bg-gradient-to-br from-green-100 to-green-50 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner border border-white/50">
+                  <DollarSign className="w-10 h-10 text-green-600" />
+                </div>
+                <p className="text-gray-500 text-sm font-medium mb-1">One-time purchase</p>
+                <p className="text-4xl font-bold text-green-600 tracking-tight">${purchaseModal.unlock_price.toFixed(2)}</p>
+              </div>
+
+              <div className="bg-gray-50/80 rounded-2xl p-4 mb-6 border border-gray-100">
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-gray-500">Your balance</span>
+                  <span className="font-bold text-gray-800">{user.balance} tokens</span>
+                </div>
+                <div className="w-full h-[1px] bg-gray-200 my-2" />
+                <div className="flex justify-between text-sm items-center">
+                  <span className="text-gray-500">Remaining</span>
+                  <span className={`font-bold ${user.balance >= purchaseModal.unlock_price ? 'text-gray-800' : 'text-red-500'}`}>
+                    {(user.balance - purchaseModal.unlock_price).toFixed(2)} tokens
+                  </span>
+                </div>
+              </div>
+
+              <motion.button
+                className={`w-full py-3.5 rounded-xl font-bold text-[15px] flex items-center justify-center gap-2 shadow-lg transition-all
+                  ${user.balance >= purchaseModal.unlock_price 
+                    ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-green-500/25' 
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                whileHover={user.balance >= purchaseModal.unlock_price ? { scale: 1.02, y: -1 } : {}}
+                whileTap={user.balance >= purchaseModal.unlock_price ? { scale: 0.98 } : {}}
+                onClick={() => handlePurchase(purchaseModal)}
+                disabled={purchasing || user.balance < purchaseModal.unlock_price}
+              >
+                {purchasing ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <Lock className="w-4 h-4" />
+                    {user.balance >= purchaseModal.unlock_price ? 'Confirm Payment' : 'Insufficient Balance'}
+                  </>
+                )}
+              </motion.button>
+
+              {user.balance < purchaseModal.unlock_price && (
+                <button className="w-full mt-3 py-2 text-sm text-of-blue font-semibold hover:bg-blue-50 rounded-xl transition-colors">
+                  Top up wallet
+                </button>
+              )}
+            </motion.div>
           </motion.div>
-        ))
-      )}
+        )}
+      </AnimatePresence>
+      
+      {/* Post Detail Modal */}
+      <AnimatePresence>
+        {selectedPost && (
+          <PostDetail
+            post={selectedPost}
+            user={user}
+            onBack={() => setSelectedPost(null)}
+            onDeleted={handlePostDeleted}
+            onUpdated={handlePostUpdated}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

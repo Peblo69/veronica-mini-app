@@ -36,6 +36,11 @@ export interface Post {
   created_at: string
   creator?: User
   liked?: boolean
+  saved?: boolean
+  can_view?: boolean
+  is_purchased?: boolean
+  is_following?: boolean
+  is_subscribed?: boolean
 }
 
 // Get or create user from Telegram data
@@ -94,7 +99,7 @@ export async function updateProfile(telegramId: number, updates: Partial<User>) 
 // CREATORS / FEED API
 // ============================================
 
-// Get feed posts
+// Get feed posts with visibility checks
 export async function getFeed(userId: number, limit = 20): Promise<Post[]> {
   const { data } = await supabase
     .from('posts')
@@ -104,18 +109,44 @@ export async function getFeed(userId: number, limit = 20): Promise<Post[]> {
 
   if (!data) return []
 
-  // Check which posts user has liked
-  const { data: userLikes } = await supabase
-    .from('likes')
-    .select('post_id')
-    .eq('user_id', userId)
+  // Get user's likes, saves, and purchases in parallel
+  const [likesRes, savesRes, purchasesRes] = await Promise.all([
+    supabase.from('likes').select('post_id').eq('user_id', userId),
+    supabase.from('saved_posts').select('post_id').eq('user_id', userId),
+    supabase.from('content_purchases').select('post_id').eq('user_id', userId)
+  ])
 
-  const likedPostIds = new Set(userLikes?.map(l => l.post_id) || [])
+  const likedPostIds = new Set(likesRes.data?.map(l => l.post_id) || [])
+  const savedPostIds = new Set(savesRes.data?.map(s => s.post_id) || [])
+  const purchasedPostIds = new Set(purchasesRes.data?.map(p => p.post_id) || [])
 
-  return data.map(post => ({
-    ...post,
-    liked: likedPostIds.has(post.id)
-  })) as Post[]
+  // Get unique creator IDs
+  const creatorIds = [...new Set(data.map(p => p.creator_id))]
+
+  // Get user relationships with all creators
+  const [followsRes, subsRes] = await Promise.all([
+    supabase.from('follows').select('following_id').eq('follower_id', userId).in('following_id', creatorIds),
+    supabase.from('subscriptions').select('creator_id').eq('subscriber_id', userId).eq('is_active', true).in('creator_id', creatorIds)
+  ])
+
+  const followingIds = new Set(followsRes.data?.map(f => f.following_id) || [])
+  const subscribedIds = new Set(subsRes.data?.map(s => s.creator_id) || [])
+
+  return data.map(post => {
+    const isFollowing = followingIds.has(post.creator_id)
+    const isSubscribed = subscribedIds.has(post.creator_id)
+    const isPurchased = purchasedPostIds.has(post.id)
+
+    return {
+      ...post,
+      liked: likedPostIds.has(post.id),
+      saved: savedPostIds.has(post.id),
+      is_purchased: isPurchased,
+      is_following: isFollowing,
+      is_subscribed: isSubscribed,
+      can_view: canViewPost(post as Post, userId, isFollowing, isSubscribed, isPurchased)
+    }
+  }) as Post[]
 }
 
 // Get creator posts
@@ -157,18 +188,92 @@ export async function getSuggestedCreators(limit = 10): Promise<User[]> {
 // ============================================
 
 // Create post
-export async function createPost(creatorId: number, content: string, mediaUrl?: string, isPremium = false) {
+export interface CreatePostData {
+  content: string
+  media_url?: string
+  media_type?: 'image' | 'video' | 'text'
+  visibility?: 'public' | 'followers' | 'subscribers'
+  is_nsfw?: boolean
+  unlock_price?: number
+}
+
+export async function createPost(creatorId: number, postData: CreatePostData) {
+  // Determine media type from URL if not provided
+  let mediaType = postData.media_type || 'text'
+  if (postData.media_url && !postData.media_type) {
+    if (postData.media_url.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+      mediaType = 'image'
+    } else if (postData.media_url.match(/\.(mp4|webm|mov)$/i)) {
+      mediaType = 'video'
+    }
+  }
+
   const { data, error } = await supabase
     .from('posts')
     .insert({
       creator_id: creatorId,
-      content,
-      media_url: mediaUrl,
-      is_premium: isPremium,
+      content: postData.content,
+      media_url: postData.media_url,
+      media_type: mediaType,
+      visibility: postData.visibility || 'public',
+      is_nsfw: postData.is_nsfw || false,
+      unlock_price: postData.unlock_price || 0,
     })
     .select()
     .single()
+
+  // Update post count
+  if (!error) {
+    await supabase.rpc('increment_posts', { creator_id: creatorId })
+  }
+
   return { data, error }
+}
+
+// Edit post
+export async function editPost(postId: number, creatorId: number, updates: Partial<CreatePostData>) {
+  const { data, error } = await supabase
+    .from('posts')
+    .update({
+      content: updates.content,
+      visibility: updates.visibility,
+      is_nsfw: updates.is_nsfw,
+      unlock_price: updates.unlock_price,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', postId)
+    .eq('creator_id', creatorId)
+    .select()
+    .single()
+
+  return { data, error }
+}
+
+// Delete post
+export async function deletePost(postId: number, creatorId: number) {
+  const { error } = await supabase
+    .from('posts')
+    .delete()
+    .eq('id', postId)
+    .eq('creator_id', creatorId)
+
+  if (!error) {
+    // Decrement post count
+    await supabase.rpc('decrement_posts', { creator_id: creatorId })
+  }
+
+  return { success: !error, error }
+}
+
+// Get single post
+export async function getPost(postId: number): Promise<Post | null> {
+  const { data } = await supabase
+    .from('posts')
+    .select('*, creator:users!creator_id(*)')
+    .eq('id', postId)
+    .single()
+
+  return data as Post | null
 }
 
 // Like post
@@ -281,4 +386,174 @@ export async function markNotificationsRead(userId: number) {
     .from('notifications')
     .update({ is_read: true })
     .eq('user_id', userId)
+}
+
+// ============================================
+// CONTENT VISIBILITY API
+// ============================================
+
+// Get user relationship with creator (following/subscribed)
+export async function getUserRelationship(userId: number, creatorId: number) {
+  const [followData, subData] = await Promise.all([
+    supabase
+      .from('follows')
+      .select('id')
+      .eq('follower_id', userId)
+      .eq('following_id', creatorId)
+      .single(),
+    supabase
+      .from('subscriptions')
+      .select('id')
+      .eq('subscriber_id', userId)
+      .eq('creator_id', creatorId)
+      .eq('is_active', true)
+      .single()
+  ])
+
+  return {
+    is_following: !!followData.data,
+    is_subscribed: !!subData.data
+  }
+}
+
+// Check if user can view a post
+export function canViewPost(
+  post: Post,
+  userId: number,
+  isFollowing: boolean,
+  isSubscribed: boolean,
+  isPurchased: boolean
+): boolean {
+  // Own post
+  if (post.creator_id === userId) return true
+
+  // Public non-NSFW posts
+  if (post.visibility === 'public' && !post.is_nsfw && post.unlock_price === 0) {
+    return true
+  }
+
+  // Pay-to-unlock requires purchase
+  if (post.unlock_price > 0 && !isPurchased) {
+    return false
+  }
+
+  // NSFW requires subscription
+  if (post.is_nsfw && !isSubscribed) {
+    return false
+  }
+
+  // Subscribers-only
+  if (post.visibility === 'subscribers' && !isSubscribed) {
+    return false
+  }
+
+  // Followers-only (followers OR subscribers)
+  if (post.visibility === 'followers' && !isFollowing && !isSubscribed) {
+    return false
+  }
+
+  return true
+}
+
+// Save/bookmark post
+export async function savePost(userId: number, postId: number) {
+  const { error } = await supabase
+    .from('saved_posts')
+    .insert({ user_id: userId, post_id: postId })
+  return !error
+}
+
+// Unsave post
+export async function unsavePost(userId: number, postId: number) {
+  const { error } = await supabase
+    .from('saved_posts')
+    .delete()
+    .eq('user_id', userId)
+    .eq('post_id', postId)
+  return !error
+}
+
+// Get saved posts
+export async function getSavedPosts(userId: number): Promise<Post[]> {
+  const { data } = await supabase
+    .from('saved_posts')
+    .select(`
+      post_id,
+      posts!inner (
+        *,
+        creator:users!posts_creator_id_fkey (
+          telegram_id, first_name, last_name, username, avatar_url, is_verified, is_creator
+        )
+      )
+    `)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+
+  if (!data) return []
+
+  return data.map((item: any) => ({
+    ...item.posts,
+    saved: true,
+    can_view: true
+  }))
+}
+
+// Purchase content
+export async function purchaseContent(userId: number, postId: number, amount: number) {
+  // Deduct from balance
+  const { data: user } = await supabase
+    .from('users')
+    .select('balance')
+    .eq('telegram_id', userId)
+    .single()
+
+  if (!user || user.balance < amount) {
+    return { success: false, error: 'Insufficient balance' }
+  }
+
+  // Create purchase record
+  const { error: purchaseError } = await supabase
+    .from('content_purchases')
+    .insert({
+      user_id: userId,
+      post_id: postId,
+      amount: amount
+    })
+
+  if (purchaseError) {
+    return { success: false, error: purchaseError.message }
+  }
+
+  // Deduct balance
+  await supabase
+    .from('users')
+    .update({ balance: user.balance - amount })
+    .eq('telegram_id', userId)
+
+  // Add to creator balance (90% share)
+  const { data: post } = await supabase
+    .from('posts')
+    .select('creator_id')
+    .eq('id', postId)
+    .single()
+
+  if (post) {
+    await supabase.rpc('add_to_balance', {
+      user_telegram_id: post.creator_id,
+      amount_to_add: amount * 0.9
+    })
+  }
+
+  return { success: true }
+}
+
+// Check if user purchased content
+export async function hasPurchased(userId: number, postId: number): Promise<boolean> {
+  const { data } = await supabase
+    .from('content_purchases')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('post_id', postId)
+    .single()
+  return !!data
 }

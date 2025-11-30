@@ -12,6 +12,7 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 html, body, #root {
@@ -21,10 +22,11 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #F5F5F5;
+  font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #F2F2F7; /* iOS Light Gray Background */
   color: #000000;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 ::-webkit-scrollbar { width: 4px; }
@@ -33,41 +35,69 @@ body {
 
 @layer components {
   .btn-subscribe {
-    @apply px-6 py-2.5 rounded-full font-semibold text-white transition-all;
-    background: linear-gradient(90deg, #00AFF0 0%, #0095D0 100%);
+    @apply px-6 py-2.5 rounded-full font-semibold text-white transition-all duration-300 relative overflow-hidden shadow-lg shadow-of-blue/30;
+    background: linear-gradient(135deg, #00AFF0 0%, #0085C0 100%);
+  }
+  .btn-subscribe::before {
+    content: '';
+    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
+    background: linear-gradient(45deg, transparent 0%, rgba(255,255,255,0.2) 50%, transparent 100%);
   }
   .btn-subscribe:hover {
-    transform: scale(1.02);
-    box-shadow: 0 4px 15px rgba(0, 175, 240, 0.4);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(0, 175, 240, 0.4);
   }
+  .btn-subscribe:hover::before {
+    @apply opacity-100;
+  }
+  .btn-subscribe:active {
+    transform: translateY(1px);
+  }
+  
   .btn-outline {
-    @apply px-4 py-2 rounded-full font-medium border-2 border-of-blue text-of-blue bg-white transition-all;
+    @apply px-4 py-2 rounded-full font-medium border border-of-blue/30 text-of-blue bg-white/80 backdrop-blur-sm transition-all duration-300;
   }
   .btn-outline:hover {
-    @apply bg-of-blueLight;
+    @apply bg-of-blue text-white border-of-blue shadow-lg shadow-of-blue/20;
   }
+
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-gray-100;
+    @apply bg-white/90 backdrop-blur-md rounded-2xl shadow-sm border border-white/50 transition-all duration-300;
   }
+  .card:hover {
+    @apply shadow-md border-of-blue/10;
+  }
+
   .nav-item {
-    @apply flex flex-col items-center gap-0.5 p-2 transition-all;
+    @apply flex flex-col items-center gap-1 p-2 transition-all duration-300 relative;
   }
   .nav-item.active {
     @apply text-of-blue;
   }
   .nav-item:not(.active) {
-    @apply text-gray-400;
+    @apply text-gray-400 hover:text-gray-600;
   }
+  
   .avatar {
-    @apply rounded-full border-2 border-white shadow-lg object-cover;
+    @apply rounded-full border-2 border-white shadow-lg object-cover transition-transform duration-300;
   }
+  .avatar:hover {
+    transform: scale(1.05);
+  }
+
   .stats-item {
-    @apply flex items-center gap-1 text-sm text-gray-600;
+    @apply flex items-center gap-1 text-sm text-gray-600 font-medium;
   }
+  
   .tab-active {
-    @apply text-of-blue border-b-2 border-of-blue;
+    @apply text-of-blue border-b-2 border-of-blue font-semibold;
   }
+  
   .social-pill {
-    @apply flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 text-sm font-medium;
+    @apply flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 text-sm font-medium bg-white/50 backdrop-blur-sm hover:bg-white hover:border-of-blue/30 transition-colors;
+  }
+
+  .glass-panel {
+    @apply bg-white/70 backdrop-blur-xl border border-white/40 shadow-glass;
   }
 }

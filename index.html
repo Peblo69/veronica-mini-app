@@ -5,6 +5,50 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Veronica AI</title>
+
+    <!-- Storage Polyfill & Error Handler - MUST be before any other scripts -->
+    <script>
+      (function() {
+        // Suppress storage errors globally
+        window.addEventListener('error', function(e) {
+          if (e.message && e.message.includes('storage')) {
+            e.preventDefault();
+            return true;
+          }
+        });
+        window.addEventListener('unhandledrejection', function(e) {
+          if (e.reason && e.reason.message && e.reason.message.includes('storage')) {
+            e.preventDefault();
+            return true;
+          }
+        });
+
+        // Memory storage fallback
+        var memoryStorage = {};
+        var storagePolyfill = {
+          getItem: function(key) { return memoryStorage[key] || null; },
+          setItem: function(key, value) { memoryStorage[key] = String(value); },
+          removeItem: function(key) { delete memoryStorage[key]; },
+          clear: function() { memoryStorage = {}; },
+          get length() { return Object.keys(memoryStorage).length; },
+          key: function(i) { return Object.keys(memoryStorage)[i] || null; }
+        };
+
+        // Always provide a working storage (override native if needed)
+        try {
+          localStorage.getItem('__test__');
+        } catch (e) {
+          try {
+            Object.defineProperty(window, 'localStorage', { value: storagePolyfill, configurable: true, writable: true });
+            Object.defineProperty(window, 'sessionStorage', { value: storagePolyfill, configurable: true, writable: true });
+          } catch (e2) {
+            window.localStorage = storagePolyfill;
+            window.sessionStorage = storagePolyfill;
+          }
+        }
+      })();
+    </script>
+
     <!-- Telegram Web App Script -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <!-- Inter Font -->

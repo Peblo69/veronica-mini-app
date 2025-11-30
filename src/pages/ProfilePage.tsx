@@ -1,6 +1,8 @@
-import { motion } from 'framer-motion'
-import { Settings, Edit, Grid, Bookmark, Share2, Clock, CheckCircle } from 'lucide-react'
-import { type User } from '../lib/api'
+import { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Settings, Edit, Grid, Bookmark, Share2, Clock, CheckCircle, Lock } from 'lucide-react'
+import { type User, type Post, getCreatorPosts, getSavedPosts } from '../lib/api'
+import PostDetail from '../components/PostDetail'
 
 interface ProfilePageProps {
   user: User & { application_status?: string }
@@ -8,7 +10,44 @@ interface ProfilePageProps {
   onBecomeCreator: () => void
 }
 
-export default function ProfilePage({ user, setUser: _setUser, onBecomeCreator }: ProfilePageProps) {
+export default function ProfilePage({ user, setUser, onBecomeCreator }: ProfilePageProps) {
+  const [activeTab, setActiveTab] = useState<'posts' | 'saved'>('posts')
+  const [posts, setPosts] = useState<Post[]>([])
+  const [savedPosts, setSavedPosts] = useState<Post[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null)
+
+  useEffect(() => {
+    loadData()
+  }, [user.telegram_id])
+
+  const loadData = async () => {
+    setLoading(true)
+    const [userPosts, saved] = await Promise.all([
+      user.is_creator ? getCreatorPosts(user.telegram_id, user.telegram_id) : Promise.resolve([]),
+      getSavedPosts(user.telegram_id)
+    ])
+    setPosts(userPosts.map(p => ({ ...p, can_view: true })))
+    setSavedPosts(saved.map(p => ({ ...p, can_view: true })))
+    setLoading(false)
+  }
+
+  const handlePostDeleted = () => {
+    if (selectedPost) {
+      setPosts(posts.filter(p => p.id !== selectedPost.id))
+      setSavedPosts(savedPosts.filter(p => p.id !== selectedPost.id))
+      setSelectedPost(null)
+      // Update user posts count
+      if (user.is_creator) {
+        setUser({ ...user, posts_count: Math.max(0, (user.posts_count || 1) - 1) })
+      }
+    }
+  }
+
+  const handlePostUpdated = (updatedPost: Post) => {
+    setPosts(posts.map(p => p.id === updatedPost.id ? { ...updatedPost, can_view: true } : p))
+    setSavedPosts(savedPosts.map(p => p.id === updatedPost.id ? { ...updatedPost, can_view: true } : p))
+  }
   const getApplicationStatusUI = () => {
     if (user.is_creator) return null
 
@@ -131,17 +170,98 @@ export default function ProfilePage({ user, setUser: _setUser, onBecomeCreator }
       </div>
 
       <div className="flex border-b border-gray-200 mt-4">
-        <button className="flex-1 py-3 flex items-center justify-center gap-2 text-sm font-semibold tab-active">
+        <button
+          className={'flex-1 py-3 flex items-center justify-center gap-2 text-sm font-semibold ' + (activeTab === 'posts' ? 'tab-active' : 'text-gray-500')}
+          onClick={() => setActiveTab('posts')}
+        >
           <Grid className="w-4 h-4" /> Posts
         </button>
-        <button className="flex-1 py-3 flex items-center justify-center gap-2 text-sm font-semibold text-gray-500">
+        <button
+          className={'flex-1 py-3 flex items-center justify-center gap-2 text-sm font-semibold ' + (activeTab === 'saved' ? 'tab-active' : 'text-gray-500')}
+          onClick={() => setActiveTab('saved')}
+        >
           <Bookmark className="w-4 h-4" /> Saved
         </button>
       </div>
 
-      <div className="p-4 text-center text-gray-500">
-        {user.is_creator ? 'Your posts will appear here' : 'Become a creator to post content'}
-      </div>
+      {/* Content Grid */}
+      {loading ? (
+        <div className="grid grid-cols-3 gap-0.5 p-0.5">
+          {[1,2,3,4,5,6].map(i => (
+            <div key={i} className="aspect-square bg-gray-200 animate-pulse" />
+          ))}
+        </div>
+      ) : activeTab === 'posts' ? (
+        posts.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">
+            <Grid className="w-12 h-12 mx-auto mb-3 opacity-50" />
+            <p>{user.is_creator ? 'No posts yet' : 'Become a creator to post content'}</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-0.5 p-0.5">
+            {posts.map((post) => (
+              <motion.div
+                key={post.id}
+                className="relative aspect-square cursor-pointer"
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setSelectedPost(post)}
+              >
+                {post.media_url ? (
+                  <img src={post.media_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center p-2">
+                    <p className="text-xs text-gray-500 line-clamp-3">{post.content}</p>
+                  </div>
+                )}
+                {post.visibility !== 'public' && (
+                  <div className="absolute top-1 right-1">
+                    <Lock className="w-4 h-4 text-white drop-shadow" />
+                  </div>
+                )}
+              </motion.div>
+            ))}
+          </div>
+        )
+      ) : (
+        savedPosts.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">
+            <Bookmark className="w-12 h-12 mx-auto mb-3 opacity-50" />
+            <p>No saved posts yet</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-0.5 p-0.5">
+            {savedPosts.map((post) => (
+              <motion.div
+                key={post.id}
+                className="relative aspect-square cursor-pointer"
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setSelectedPost(post)}
+              >
+                {post.media_url ? (
+                  <img src={post.media_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center p-2">
+                    <p className="text-xs text-gray-500 line-clamp-3">{post.content}</p>
+                  </div>
+                )}
+              </motion.div>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* Post Detail Modal */}
+      <AnimatePresence>
+        {selectedPost && (
+          <PostDetail
+            post={selectedPost}
+            user={user}
+            onBack={() => setSelectedPost(null)}
+            onDeleted={handlePostDeleted}
+            onUpdated={handlePostUpdated}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

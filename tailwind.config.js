@@ -21,6 +21,28 @@ export default {
           error: '#FF3B30',
         }
       },
+      animation: {
+        'liquid': 'liquid 3s ease-in-out infinite',
+        'float': 'float 6s ease-in-out infinite',
+        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+      },
+      keyframes: {
+        liquid: {
+          '0%, 100%': { borderRadius: '60% 40% 30% 70% / 60% 30% 70% 40%' },
+          '50%': { borderRadius: '30% 60% 70% 40% / 50% 60% 30% 60%' },
+        },
+        float: {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-10px)' },
+        }
+      },
+      boxShadow: {
+        'premium': '0 10px 30px -10px rgba(0, 175, 240, 0.3)',
+        'glass': '0 8px 32px 0 rgba(31, 38, 135, 0.07)',
+      },
+      backdropBlur: {
+        'xs': '2px',
+      }
     },
   },
   plugins: [],
