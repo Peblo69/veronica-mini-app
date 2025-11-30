@@ -87,9 +87,21 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
     setSending(false)
   }
 
-  const handleDelete = async (comment: Comment) => {
+  const handleDelete = async (comment: Comment, parentId?: string) => {
     await deleteComment(comment.id, user.telegram_id, postId)
-    setComments(prev => prev.filter(c => c.id !== comment.id))
+
+    if (parentId) {
+      // Deleting a reply - remove from parent's replies array
+      setComments(prev => prev.map(c => {
+        if (c.id === parentId) {
+          return { ...c, replies: (c.replies || []).filter(r => r.id !== comment.id) }
+        }
+        return c
+      }))
+    } else {
+      // Deleting top-level comment
+      setComments(prev => prev.filter(c => c.id !== comment.id))
+    }
     setMenuOpen(null)
   }
 
@@ -127,7 +139,7 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
     return `${Math.floor(hours / 24)}d`
   }
 
-  const renderComment = (comment: Comment, isReply = false) => (
+  const renderComment = (comment: Comment, isReply = false, parentId?: string) => (
     <motion.div
       key={comment.id}
       initial={{ opacity: 0, y: 10 }}
@@ -186,7 +198,7 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
                     className="absolute right-0 top-6 bg-white shadow-lg rounded-lg py-1 z-10 min-w-[100px]"
                   >
                     <button
-                      onClick={() => handleDelete(comment)}
+                      onClick={() => handleDelete(comment, parentId)}
                       className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-gray-50 flex items-center gap-2"
                     >
                       <Trash2 className="w-4 h-4" /> Delete
@@ -201,7 +213,7 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
         {/* Replies */}
         {comment.replies && comment.replies.length > 0 && (
           <div className="mt-2">
-            {comment.replies.map(reply => renderComment(reply, true))}
+            {comment.replies.map(reply => renderComment(reply, true, comment.id))}
           </div>
         )}
       </div>
@@ -256,12 +268,12 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
       </AnimatePresence>
 
       {/* Input */}
-      <div className="p-3 border-t bg-white">
+      <div className="p-3 border-t bg-white/95 backdrop-blur-lg pb-8">
         <div className="flex items-center gap-2">
           <img
             src={user.avatar_url || `https://i.pravatar.cc/150?u=${user.telegram_id}`}
             alt=""
-            className="w-8 h-8 rounded-full object-cover"
+            className="w-8 h-8 rounded-full object-cover ring-2 ring-white shadow-sm"
           />
           <input
             ref={inputRef}
@@ -270,17 +282,17 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
             onChange={(e) => setNewComment(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSubmit()}
             placeholder={replyingTo ? `Reply to ${replyingTo.user?.first_name}...` : 'Add a comment...'}
-            className="flex-1 px-4 py-2 rounded-full bg-gray-100 text-sm focus:outline-none"
+            className="flex-1 px-4 py-2.5 rounded-full bg-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-of-blue/20 transition-all"
           />
           <button
             onClick={handleSubmit}
             disabled={!newComment.trim() || sending}
-            className="p-2 bg-of-blue rounded-full text-white disabled:opacity-50"
+            className="p-2.5 bg-of-blue rounded-full text-white disabled:opacity-50 shadow-md shadow-blue-500/30 hover:scale-105 transition-transform"
           >
             {sending ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Send className="w-4 h-4" />
+              <Send className="w-4 h-4 ml-0.5" />
             )}
           </button>
         </div>

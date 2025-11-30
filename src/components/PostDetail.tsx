@@ -296,11 +296,7 @@ export default function PostDetail({ post, user, onBack, onDeleted, onUpdated }:
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
             className="fixed inset-0 bg-white z-[110] flex flex-col h-[100dvh]"
           >
-             {/* Add a handle bar for visual cue */}
-             <div className="w-full h-6 flex items-center justify-center bg-white border-b border-gray-100 flex-shrink-0" onClick={() => setShowComments(false)}>
-               <div className="w-12 h-1.5 bg-gray-300 rounded-full opacity-50" />
-             </div>
-            <div className="flex-1 overflow-hidden relative">
+            <div className="flex-1 overflow-hidden relative flex flex-col">
               <Comments postId={currentPost.id} user={user} onClose={() => setShowComments(false)} />
             </div>
           </motion.div>
