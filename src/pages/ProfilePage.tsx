@@ -111,144 +111,186 @@ export default function ProfilePage({ user, setUser, onBecomeCreator }: ProfileP
   }
 
   return (
-    <div className="bg-white min-h-screen">
-      <div className="h-28 bg-gradient-to-r from-of-blue to-blue-400" />
-
-      <div className="px-4 -mt-12">
-        <div className="flex justify-between items-end">
-          <div className="relative">
-            <img src={user.avatar_url || 'https://i.pravatar.cc/150?u=' + user.telegram_id} alt={user.first_name} className="w-24 h-24 rounded-full border-4 border-white object-cover shadow-lg" />
-            <button className="absolute bottom-0 right-0 w-8 h-8 bg-of-blue rounded-full flex items-center justify-center border-2 border-white">
-              <Edit className="w-4 h-4 text-white" />
-            </button>
-          </div>
-          <div className="flex gap-2 mb-2">
-            <button className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center">
-              <Share2 className="w-5 h-5 text-gray-600" />
-            </button>
-            <button className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center">
-              <Settings className="w-5 h-5 text-gray-600" />
-            </button>
-          </div>
-        </div>
+    <div className="bg-gray-50 min-h-screen relative overflow-hidden">
+      {/* Animated Background Banner */}
+      <div className="relative h-48 overflow-hidden">
+         <div className="absolute inset-0 bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 animate-gradient bg-[length:200%_200%]" />
+         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-100 contrast-150"></div>
+         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-gray-50/90" />
       </div>
 
-      <div className="px-4 pt-3">
-        <h1 className="text-xl font-bold">{user.first_name} {user.last_name || ''}</h1>
-        <p className="text-gray-500 text-sm">@{user.username || 'user'}</p>
-
-        <div className="flex items-center gap-6 mt-3 text-sm">
-          <div className="text-center">
-            <div className="font-bold">{user.posts_count}</div>
-            <div className="text-gray-500">Posts</div>
-          </div>
-          <div className="text-center">
-            <div className="font-bold">{user.likes_received}</div>
-            <div className="text-gray-500">Likes</div>
-          </div>
-          <div className="text-center">
-            <div className="font-bold">{user.followers_count}</div>
-            <div className="text-gray-500">Fans</div>
-          </div>
-        </div>
-
-        <p className="mt-3 text-sm text-gray-700">{user.bio || 'No bio yet'}</p>
-
-        {getApplicationStatusUI()}
-
-        <div className="mt-4 p-4 bg-gray-50 rounded-xl">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-bold text-lg">{user.balance}</div>
-              <div className="text-sm text-gray-500">Token Balance</div>
+      <div className="px-5 -mt-20 relative z-10">
+        <div className="flex justify-between items-end mb-4">
+          <motion.div 
+            className="relative"
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", duration: 0.6 }}
+          >
+            <div className="w-28 h-28 rounded-full p-[4px] bg-white/80 backdrop-blur-sm shadow-xl">
+               <img src={user.avatar_url || 'https://i.pravatar.cc/150?u=' + user.telegram_id} alt={user.first_name} className="w-full h-full rounded-full object-cover border-2 border-white" />
             </div>
-            <motion.button className="btn-subscribe" whileTap={{ scale: 0.95 }}>
-              Buy Tokens
+            <motion.button 
+              className="absolute bottom-1 right-1 w-9 h-9 bg-of-blue rounded-full flex items-center justify-center border-[3px] border-white shadow-md"
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+            >
+              <Edit className="w-4 h-4 text-white" />
+            </motion.button>
+          </motion.div>
+          <div className="flex gap-3 mb-1">
+            <motion.button 
+              className="w-11 h-11 rounded-full bg-white/80 backdrop-blur-md border border-white shadow-sm flex items-center justify-center hover:bg-white transition-colors"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Share2 className="w-5 h-5 text-gray-700" />
+            </motion.button>
+            <motion.button 
+              className="w-11 h-11 rounded-full bg-white/80 backdrop-blur-md border border-white shadow-sm flex items-center justify-center hover:bg-white transition-colors"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Settings className="w-5 h-5 text-gray-700" />
             </motion.button>
           </div>
         </div>
-      </div>
 
-      <div className="flex border-b border-gray-200 mt-4">
-        <button
-          className={'flex-1 py-3 flex items-center justify-center gap-2 text-sm font-semibold ' + (activeTab === 'posts' ? 'tab-active' : 'text-gray-500')}
-          onClick={() => setActiveTab('posts')}
-        >
-          <Grid className="w-4 h-4" /> Posts
-        </button>
-        <button
-          className={'flex-1 py-3 flex items-center justify-center gap-2 text-sm font-semibold ' + (activeTab === 'saved' ? 'tab-active' : 'text-gray-500')}
-          onClick={() => setActiveTab('saved')}
-        >
-          <Bookmark className="w-4 h-4" /> Saved
-        </button>
-      </div>
+        <div className="glass-panel rounded-3xl p-6 mb-6 relative overflow-hidden">
+          <div className="relative z-10">
+            <h1 className="text-2xl font-bold text-gray-900">{user.first_name} {user.last_name || ''}</h1>
+            <p className="text-gray-500 text-sm font-medium mb-5">@{user.username || 'user'}</p>
 
-      {/* Content Grid */}
-      {loading ? (
-        <div className="grid grid-cols-3 gap-0.5 p-0.5">
-          {[1,2,3,4,5,6].map(i => (
-            <div key={i} className="aspect-square bg-gray-200 animate-pulse" />
-          ))}
+            <div className="flex items-center justify-between px-2 mb-6">
+              <div className="text-center">
+                <div className="font-bold text-xl text-gray-900">{user.posts_count}</div>
+                <div className="text-xs font-medium text-gray-400 uppercase tracking-wide">Posts</div>
+              </div>
+              <div className="w-px h-8 bg-gray-200/60" />
+              <div className="text-center">
+                <div className="font-bold text-xl text-gray-900">{user.likes_received}</div>
+                <div className="text-xs font-medium text-gray-400 uppercase tracking-wide">Likes</div>
+              </div>
+              <div className="w-px h-8 bg-gray-200/60" />
+              <div className="text-center">
+                <div className="font-bold text-xl text-gray-900">{user.followers_count}</div>
+                <div className="text-xs font-medium text-gray-400 uppercase tracking-wide">Fans</div>
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-600 leading-relaxed mb-6">{user.bio || 'No bio yet'}</p>
+
+            {getApplicationStatusUI()}
+          </div>
         </div>
-      ) : activeTab === 'posts' ? (
-        posts.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">
-            <Grid className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p>{user.is_creator ? 'No posts yet' : 'Become a creator to post content'}</p>
+
+        <div className="glass-panel rounded-2xl p-5 mb-6 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100">
+          <div>
+            <div className="text-2xl font-bold text-gray-900 tracking-tight">{user.balance} <span className="text-sm font-medium text-gray-500">TOKENS</span></div>
+            <div className="text-xs text-blue-600 font-semibold uppercase tracking-wide">Available Balance</div>
           </div>
-        ) : (
-          <div className="grid grid-cols-3 gap-0.5 p-0.5">
-            {posts.map((post) => (
-              <motion.div
-                key={post.id}
-                className="relative aspect-square cursor-pointer"
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setSelectedPost(post)}
-              >
-                {post.media_url ? (
-                  <img src={post.media_url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center p-2">
-                    <p className="text-xs text-gray-500 line-clamp-3">{post.content}</p>
-                  </div>
-                )}
-                {post.visibility !== 'public' && (
-                  <div className="absolute top-1 right-1">
-                    <Lock className="w-4 h-4 text-white drop-shadow" />
-                  </div>
-                )}
-              </motion.div>
-            ))}
-          </div>
-        )
-      ) : (
-        savedPosts.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">
-            <Bookmark className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p>No saved posts yet</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-3 gap-0.5 p-0.5">
-            {savedPosts.map((post) => (
-              <motion.div
-                key={post.id}
-                className="relative aspect-square cursor-pointer"
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setSelectedPost(post)}
-              >
-                {post.media_url ? (
-                  <img src={post.media_url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center p-2">
-                    <p className="text-xs text-gray-500 line-clamp-3">{post.content}</p>
-                  </div>
-                )}
-              </motion.div>
-            ))}
-          </div>
-        )
-      )}
+          <motion.button 
+            className="px-5 py-2.5 bg-white text-of-blue text-sm font-bold rounded-xl shadow-sm border border-blue-100"
+            whileTap={{ scale: 0.95 }}
+          >
+            + Top Up
+          </motion.button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-t-[2.5rem] shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.05)] min-h-[50vh] relative z-10">
+        <div className="flex justify-center pt-3 pb-1">
+            <div className="w-12 h-1.5 bg-gray-200 rounded-full" />
+        </div>
+        <div className="flex border-b border-gray-100 px-6">
+          <button
+            className={'flex-1 py-4 flex items-center justify-center gap-2 text-sm font-bold transition-colors relative ' + (activeTab === 'posts' ? 'text-of-blue' : 'text-gray-400')}
+            onClick={() => setActiveTab('posts')}
+          >
+            <Grid className="w-5 h-5" /> Posts
+            {activeTab === 'posts' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-of-blue rounded-t-full" />}
+          </button>
+          <button
+            className={'flex-1 py-4 flex items-center justify-center gap-2 text-sm font-bold transition-colors relative ' + (activeTab === 'saved' ? 'text-of-blue' : 'text-gray-400')}
+            onClick={() => setActiveTab('saved')}
+          >
+            <Bookmark className="w-5 h-5" /> Saved
+            {activeTab === 'saved' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-of-blue rounded-t-full" />}
+          </button>
+        </div>
+
+        {/* Content Grid */}
+        <div className="p-1 pb-24">
+          {loading ? (
+            <div className="grid grid-cols-3 gap-1">
+              {[1,2,3,4,5,6].map(i => (
+                <div key={i} className="aspect-square bg-gray-100 rounded-lg animate-pulse" />
+              ))}
+            </div>
+          ) : activeTab === 'posts' ? (
+            posts.length === 0 ? (
+              <div className="py-20 text-center">
+                <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                   <Grid className="w-8 h-8 text-gray-300" />
+                </div>
+                <p className="text-gray-500 font-medium">{user.is_creator ? 'No posts yet' : 'Become a creator to post'}</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-1">
+                {posts.map((post) => (
+                  <motion.div
+                    key={post.id}
+                    className="relative aspect-square cursor-pointer overflow-hidden rounded-lg bg-gray-100"
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => setSelectedPost(post)}
+                  >
+                    {post.media_url ? (
+                      <img src={post.media_url} alt="" className="w-full h-full object-cover transition-transform duration-500 hover:scale-110" />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-3">
+                        <p className="text-[10px] text-gray-400 text-center line-clamp-4 leading-tight">{post.content}</p>
+                      </div>
+                    )}
+                    {post.visibility !== 'public' && (
+                      <div className="absolute top-1.5 right-1.5 bg-black/30 backdrop-blur-md p-1 rounded-full">
+                        <Lock className="w-3 h-3 text-white" />
+                      </div>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+            )
+          ) : (
+            savedPosts.length === 0 ? (
+              <div className="py-20 text-center">
+                <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                   <Bookmark className="w-8 h-8 text-gray-300" />
+                </div>
+                <p className="text-gray-500 font-medium">No saved posts yet</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-1">
+                {savedPosts.map((post) => (
+                  <motion.div
+                    key={post.id}
+                    className="relative aspect-square cursor-pointer overflow-hidden rounded-lg bg-gray-100"
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => setSelectedPost(post)}
+                  >
+                    {post.media_url ? (
+                      <img src={post.media_url} alt="" className="w-full h-full object-cover transition-transform duration-500 hover:scale-110" />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-3">
+                         <p className="text-[10px] text-gray-400 text-center line-clamp-4 leading-tight">{post.content}</p>
+                      </div>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+            )
+          )}
+        </div>
+      </div>
 
       {/* Post Detail Modal */}
       <AnimatePresence>
