@@ -156,41 +156,41 @@ export default function ProfilePage({ user, setUser, onBecomeCreator }: ProfileP
           </div>
         </div>
 
-        <div className="glass-panel rounded-3xl p-6 mb-6 relative overflow-hidden">
+        <div className="glass-panel rounded-3xl p-4 mb-4 relative overflow-hidden">
           <div className="relative z-10">
             <h1 className="text-2xl font-bold text-gray-900">{user.first_name} {user.last_name || ''}</h1>
-            <p className="text-gray-500 text-sm font-medium mb-5">@{user.username || 'user'}</p>
+            <p className="text-gray-500 text-sm font-medium mb-3">@{user.username || 'user'}</p>
 
-            <div className="flex items-center justify-between px-2 mb-6">
+            <div className="flex items-center justify-between px-4 py-3 bg-white/50 rounded-2xl mb-4">
               <div className="text-center">
-                <div className="font-bold text-xl text-gray-900">{user.posts_count}</div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wide">Posts</div>
+                <div className="font-bold text-lg text-gray-900">{user.posts_count}</div>
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Posts</div>
               </div>
-              <div className="w-px h-8 bg-gray-200/60" />
+              <div className="w-px h-8 bg-gray-200" />
               <div className="text-center">
-                <div className="font-bold text-xl text-gray-900">{user.likes_received}</div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wide">Likes</div>
+                <div className="font-bold text-lg text-gray-900">{user.likes_received}</div>
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Likes</div>
               </div>
-              <div className="w-px h-8 bg-gray-200/60" />
+              <div className="w-px h-8 bg-gray-200" />
               <div className="text-center">
-                <div className="font-bold text-xl text-gray-900">{user.followers_count}</div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wide">Fans</div>
+                <div className="font-bold text-lg text-gray-900">{user.followers_count}</div>
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Fans</div>
               </div>
             </div>
 
-            <p className="text-sm text-gray-600 leading-relaxed mb-6">{user.bio || 'No bio yet'}</p>
+            <p className="text-sm text-gray-600 leading-relaxed mb-4 line-clamp-3">{user.bio || 'No bio yet'}</p>
 
             {getApplicationStatusUI()}
           </div>
         </div>
 
-        <div className="glass-panel rounded-2xl p-5 mb-6 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100">
+        <div className="glass-panel rounded-2xl p-4 mb-6 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100">
           <div>
-            <div className="text-2xl font-bold text-gray-900 tracking-tight">{user.balance} <span className="text-sm font-medium text-gray-500">TOKENS</span></div>
-            <div className="text-xs text-blue-600 font-semibold uppercase tracking-wide">Available Balance</div>
+            <div className="text-xl font-bold text-gray-900 tracking-tight">{user.balance} <span className="text-xs font-medium text-gray-500">TOKENS</span></div>
+            <div className="text-[10px] text-blue-600 font-bold uppercase tracking-wide">Available Balance</div>
           </div>
           <motion.button 
-            className="px-5 py-2.5 bg-white text-of-blue text-sm font-bold rounded-xl shadow-sm border border-blue-100"
+            className="px-4 py-2 bg-white text-of-blue text-xs font-bold rounded-xl shadow-sm border border-blue-100"
             whileTap={{ scale: 0.95 }}
           >
             + Top Up

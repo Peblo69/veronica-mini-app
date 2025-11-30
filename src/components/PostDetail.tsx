@@ -88,14 +88,14 @@ export default function PostDetail({ post, user, onBack, onDeleted, onUpdated }:
 
   return (
     <motion.div 
-      className="fixed inset-0 bg-white/95 backdrop-blur-3xl z-50 flex flex-col"
+      className="fixed inset-0 bg-white/95 backdrop-blur-3xl z-[100] flex flex-col h-[100dvh]"
       initial={{ opacity: 0, y: '100%' }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: '100%' }}
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white/80 backdrop-blur-md sticky top-0 z-10 border-b border-gray-100">
+      <div className="flex items-center justify-between px-4 py-3 bg-white/80 backdrop-blur-md sticky top-0 z-10 border-b border-gray-100 safe-area-top">
         <button 
           onClick={onBack}
           className="p-2 hover:bg-gray-100 rounded-full transition-colors"
@@ -294,11 +294,15 @@ export default function PostDetail({ post, user, onBack, onDeleted, onUpdated }:
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed inset-0 bg-white z-[60] flex flex-col"
+            className="fixed inset-0 bg-white z-[110] flex flex-col h-[100dvh]"
           >
              {/* Add a handle bar for visual cue */}
-             <div className="w-full h-1.5 absolute top-3 left-1/2 -translate-x-1/2 w-12 bg-gray-300 rounded-full z-50 opacity-50" />
-            <Comments postId={currentPost.id} user={user} onClose={() => setShowComments(false)} />
+             <div className="w-full h-6 flex items-center justify-center bg-white border-b border-gray-100 flex-shrink-0" onClick={() => setShowComments(false)}>
+               <div className="w-12 h-1.5 bg-gray-300 rounded-full opacity-50" />
+             </div>
+            <div className="flex-1 overflow-hidden relative">
+              <Comments postId={currentPost.id} user={user} onClose={() => setShowComments(false)} />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
