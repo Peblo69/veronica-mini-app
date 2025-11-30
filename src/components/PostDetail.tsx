@@ -26,15 +26,15 @@ export default function PostDetail({ post, user, onBack, onDeleted, onUpdated }:
   const [isSaving, setIsSaving] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
-  const isOwner = post.creator_id === user.telegram_id
+  const isOwner = Number(post.creator_id) === Number(user.telegram_id)
 
   const handleLike = async () => {
     if (currentPost.liked) {
       await unlikePost(user.telegram_id, currentPost.id)
-      setCurrentPost(p => ({ ...p, liked: false, likes_count: p.likes_count - 1 }))
+      setCurrentPost(p => ({ ...p, liked: false, likes_count: Math.max(0, (p.likes_count || 0) - 1) }))
     } else {
       await likePost(user.telegram_id, currentPost.id)
-      setCurrentPost(p => ({ ...p, liked: true, likes_count: p.likes_count + 1 }))
+      setCurrentPost(p => ({ ...p, liked: true, likes_count: (p.likes_count || 0) + 1 }))
     }
   }
 

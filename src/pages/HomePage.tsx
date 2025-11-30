@@ -41,10 +41,10 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
     if (!post.can_view) return
     if (post.liked) {
       await unlikePost(user.telegram_id, post.id)
-      setPosts(posts.map(p => p.id === post.id ? { ...p, liked: false, likes_count: p.likes_count - 1 } : p))
+      setPosts(posts.map(p => p.id === post.id ? { ...p, liked: false, likes_count: Math.max(0, (p.likes_count || 0) - 1) } : p))
     } else {
       await likePost(user.telegram_id, post.id)
-      setPosts(posts.map(p => p.id === post.id ? { ...p, liked: true, likes_count: p.likes_count + 1 } : p))
+      setPosts(posts.map(p => p.id === post.id ? { ...p, liked: true, likes_count: (p.likes_count || 0) + 1 } : p))
     }
   }
 

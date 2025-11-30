@@ -283,7 +283,7 @@ export async function likePost(userId: number, postId: number) {
     .insert({ user_id: userId, post_id: postId })
   
   if (!error) {
-    await supabase.rpc('increment_likes', { post_id: postId })
+    await supabase.rpc('increment_likes', { p_post_id: postId })
   }
   return !error
 }
@@ -295,6 +295,10 @@ export async function unlikePost(userId: number, postId: number) {
     .delete()
     .eq('user_id', userId)
     .eq('post_id', postId)
+
+  if (!error) {
+    await supabase.rpc('decrement_likes', { p_post_id: postId })
+  }
   return !error
 }
 
