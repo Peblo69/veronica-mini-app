@@ -28,7 +28,9 @@ export interface Post {
   content?: string
   media_url?: string
   media_type: string
-  is_premium: boolean
+  visibility: 'public' | 'followers' | 'subscribers'
+  is_nsfw: boolean
+  unlock_price: number
   likes_count: number
   comments_count: number
   created_at: string
