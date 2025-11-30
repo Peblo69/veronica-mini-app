@@ -135,6 +135,11 @@ function App() {
   }
 
   const openCreatorProfile = (creator: any) => {
+    // If clicking on own profile, go to profile tab instead
+    if (user && Number(creator.telegram_id) === Number(user.telegram_id)) {
+      setActivePage("profile")
+      return
+    }
     setViewingCreator(creator)
   }
 
