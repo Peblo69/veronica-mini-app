@@ -220,9 +220,9 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   )
 
   // Chat view
-  if (activeConversation) {
+    if (activeConversation) {
     return (
-      <div className="flex flex-col h-[calc(100vh-120px)]">
+      <div className="flex flex-col h-[100dvh] relative overflow-hidden bg-gradient-to-br from-blue-50/80 via-pink-50/30 to-white">
         {/* Hidden file input */}
         <input
           type="file"
@@ -233,30 +233,30 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         />
 
         {/* Header */}
-        <div className="flex items-center gap-3 p-4 border-b bg-white">
-          <button onClick={() => setActiveConversation(null)}>
-            <ArrowLeft className="w-6 h-6" />
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-white/50 bg-white/60 backdrop-blur-md sticky top-0 z-20 shrink-0 h-14">
+          <button onClick={() => setActiveConversation(null)} className="p-1 hover:bg-black/5 rounded-full transition-colors">
+            <ArrowLeft className="w-5 h-5 text-gray-700" />
           </button>
           <img
             src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
             alt=""
-            className="w-10 h-10 rounded-full object-cover"
+            className="w-8 h-8 rounded-full object-cover ring-2 ring-white shadow-sm"
           />
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1">
-              <span className="font-semibold">{activeConversation.other_user?.first_name || activeConversation.other_user?.username}</span>
+              <span className="font-semibold text-sm truncate">{activeConversation.other_user?.first_name || activeConversation.other_user?.username}</span>
               {activeConversation.other_user?.is_verified && (
-                <CheckCircle className="w-4 h-4 text-of-blue fill-of-blue" />
+                <CheckCircle className="w-3 h-3 text-of-blue fill-of-blue" />
               )}
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-[10px] text-gray-500">
               {activeConversation.other_user?.is_creator ? 'Creator' : 'User'}
             </p>
           </div>
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+        <div className="flex-1 overflow-y-auto p-3 space-y-2 scroll-smooth">
           {messages.map((msg, index) => {
             const isOwn = msg.sender_id === user.telegram_id
             const isPPVLocked = msg.is_ppv && !msg.ppv_unlocked_by?.includes(user.telegram_id) && !isOwn
@@ -267,38 +267,43 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 key={msg.id}
                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                transition={{ type: "spring", stiffness: 400, damping: 25 }}
                 className={`flex items-end gap-2 ${isOwn ? 'justify-end' : 'justify-start'}`}
               >
                 {!isOwn && (
-                  <div className="w-8 flex-shrink-0">
+                  <div className="w-6 flex-shrink-0">
                     {showAvatar && (
                       <img
                         src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
                         alt=""
-                        className="w-8 h-8 rounded-full object-cover border border-white shadow-sm"
+                        className="w-6 h-6 rounded-full object-cover border border-white shadow-sm"
                       />
                     )}
                   </div>
                 )}
 
                 <div
-                  className={`max-w-[75%] px-4 py-3 shadow-sm relative group ${
+                  className={`max-w-[75%] px-3 py-2 shadow-sm relative group backdrop-blur-sm ${
                     isOwn
-                      ? 'bg-gradient-to-br from-of-blue to-blue-500 text-white rounded-2xl rounded-br-none'
-                      : 'bg-white text-gray-800 rounded-2xl rounded-bl-none border border-gray-100'
+                      ? 'bg-gradient-to-br from-of-blue/90 to-blue-500/90 text-white rounded-2xl rounded-br-none shadow-blue-500/10'
+                      : 'bg-white/60 text-gray-800 rounded-2xl rounded-bl-none border border-white/60 shadow-glass'
                   }`}
                 >
                   {/* Gift message */}
                   {msg.message_type === 'gift' && msg.gift && (
-                    <div className="text-center py-2">
-                      <div className="w-16 h-16 mx-auto bg-gradient-to-tr from-pink-400 to-rose-500 rounded-2xl flex items-center justify-center mb-2 shadow-lg shadow-pink-500/30 rotate-3">
-                        <Gift className="w-8 h-8 text-white" />
-                      </div>
-                      <p className={`font-bold text-lg ${isOwn ? 'text-white' : 'text-gray-800'}`}>
+                    <div className="text-center py-1 px-1">
+                      <motion.div 
+                        initial={{ rotate: -10, scale: 0.5 }}
+                        animate={{ rotate: 0, scale: 1 }}
+                        transition={{ type: "spring", bounce: 0.6 }}
+                        className="w-10 h-10 mx-auto bg-gradient-to-tr from-pink-400 via-red-400 to-rose-500 rounded-xl flex items-center justify-center mb-1 shadow-lg shadow-pink-500/30 border border-pink-300/50"
+                      >
+                        <Gift className="w-5 h-5 text-white drop-shadow-sm" />
+                      </motion.div>
+                      <p className={`font-bold text-sm ${isOwn ? 'text-white' : 'text-gray-800'}`}>
                         {msg.gift.name}
                       </p>
-                      <div className={`inline-block px-3 py-1 rounded-full text-xs font-bold mt-1 ${isOwn ? 'bg-white/20 text-white' : 'bg-pink-50 text-pink-600 border border-pink-100'}`}>
+                      <div className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold mt-1 ${isOwn ? 'bg-white/20 text-white' : 'bg-pink-50/80 text-pink-600 border border-pink-100'}`}>
                         {msg.gift.price} tokens
                       </div>
                     </div>
@@ -306,14 +311,19 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
                   {/* Tip message */}
                   {msg.message_type === 'tip' && (
-                    <div className="text-center py-2">
-                      <div className="w-16 h-16 mx-auto bg-gradient-to-tr from-green-400 to-emerald-500 rounded-full flex items-center justify-center mb-2 shadow-lg shadow-green-500/30">
-                        <DollarSign className="w-8 h-8 text-white" />
-                      </div>
-                      <p className={`font-bold text-lg ${isOwn ? 'text-white' : 'text-gray-800'}`}>
+                    <div className="text-center py-1 px-1">
+                      <motion.div 
+                        initial={{ y: 10, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ type: "spring", bounce: 0.6 }}
+                        className="w-10 h-10 mx-auto bg-gradient-to-tr from-green-400 via-emerald-400 to-teal-500 rounded-full flex items-center justify-center mb-1 shadow-lg shadow-green-500/30 border border-green-300/50"
+                      >
+                        <DollarSign className="w-5 h-5 text-white drop-shadow-sm" />
+                      </motion.div>
+                      <p className={`font-bold text-sm ${isOwn ? 'text-white' : 'text-gray-800'}`}>
                         Sent a Tip
                       </p>
-                      <div className={`inline-block px-4 py-1.5 rounded-full text-lg font-bold mt-1 ${isOwn ? 'bg-white/20 text-white' : 'bg-green-50 text-green-600 border border-green-100'}`}>
+                      <div className={`inline-block px-3 py-0.5 rounded-full text-sm font-bold mt-1 ${isOwn ? 'bg-white/20 text-white' : 'bg-green-50/80 text-green-600 border border-green-100'}`}>
                         ${msg.tip_amount}
                       </div>
                     </div>
@@ -321,18 +331,18 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
                   {/* PPV message */}
                   {msg.message_type === 'ppv' && (
-                    <div className="min-w-[200px]">
+                    <div className="min-w-[160px]">
                       {isPPVLocked ? (
-                        <div className="text-center py-6 bg-black/5 rounded-xl">
-                          <div className="w-12 h-12 mx-auto bg-white/30 rounded-full flex items-center justify-center mb-3 backdrop-blur-md shadow-sm">
-                            <Lock className={`w-6 h-6 ${isOwn ? 'text-white' : 'text-gray-600'}`} />
+                        <div className="text-center py-4 bg-black/5 rounded-xl">
+                          <div className="w-8 h-8 mx-auto bg-white/30 rounded-full flex items-center justify-center mb-2 backdrop-blur-md shadow-sm">
+                            <Lock className={`w-4 h-4 ${isOwn ? 'text-white' : 'text-gray-600'}`} />
                           </div>
-                          <p className={`text-sm font-bold mb-3 ${isOwn ? 'text-white/90' : 'text-gray-600'}`}>Exclusive Content</p>
+                          <p className={`text-xs font-bold mb-2 ${isOwn ? 'text-white/90' : 'text-gray-600'}`}>Exclusive Content</p>
                           <button
                             onClick={() => handleUnlockPPV(msg.id)}
-                            className="bg-white text-of-blue px-6 py-2 rounded-full text-sm font-bold shadow-lg hover:scale-105 transition-transform flex items-center justify-center gap-2 mx-auto"
+                            className="bg-white text-of-blue px-4 py-1.5 rounded-full text-xs font-bold shadow-lg hover:scale-105 transition-transform flex items-center justify-center gap-1.5 mx-auto"
                           >
-                            <CheckCircle className="w-4 h-4" />
+                            <CheckCircle className="w-3 h-3" />
                             Unlock ${msg.ppv_price}
                           </button>
                         </div>
@@ -354,7 +364,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                   {msg.message_type === 'text' && (
                     <>
                       {msg.content?.match(/^https?:\/\/.*\.(jpg|jpeg|png|gif|webp|mp4|webm)$/i) ? (
-                        <div className="rounded-xl overflow-hidden my-1">
+                        <div className="rounded-xl overflow-hidden my-0.5">
                           {msg.content.match(/\.(mp4|webm)$/i) ? (
                             <video src={msg.content} controls className="w-full" />
                           ) : (
@@ -362,29 +372,29 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                           )}
                         </div>
                       ) : (
-                        <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                        <p className="text-[13px] leading-snug whitespace-pre-wrap">{msg.content}</p>
                       )}
                     </>
                   )}
 
                   {/* Voice message */}
                   {(msg.message_type === 'voice' || msg.media_url?.match(/\.(webm|ogg|mp3|wav)$/i)) && msg.media_url && (
-                    <div className={`flex items-center gap-3 min-w-[180px] p-1 ${isOwn ? 'text-white' : 'text-gray-800'}`}>
-                      <div className={`p-2 rounded-full ${isOwn ? 'bg-white/20' : 'bg-gray-100'}`}>
-                        <span className="text-lg">🎤</span>
+                    <div className={`flex items-center gap-2 min-w-[140px] p-0.5 ${isOwn ? 'text-white' : 'text-gray-800'}`}>
+                      <div className={`p-1.5 rounded-full ${isOwn ? 'bg-white/20' : 'bg-gray-100/50'}`}>
+                        <span className="text-sm">🎤</span>
                       </div>
-                      <audio src={msg.media_url} controls className="h-8 w-full accent-current opacity-90" />
+                      <audio src={msg.media_url} controls className="h-6 w-full accent-current opacity-90 scale-90 origin-left" />
                     </div>
                   )}
 
-                  <p className={`text-[10px] mt-1 text-right font-medium opacity-70`}>
+                  <p className={`text-[9px] mt-0.5 text-right font-medium opacity-60`}>
                     {formatTime(msg.created_at)}
                   </p>
                 </div>
               </motion.div>
             )
           })}
-          <div ref={messagesEndRef} />
+          <div ref={messagesEndRef} className="h-2" />
         </div>
 
         {/* Gift picker modal */}
@@ -481,30 +491,30 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         </AnimatePresence>
 
         {/* Input */}
-        <div className="p-3 bg-white/80 backdrop-blur-md border-t border-white/50 pb-6">
-          <div className="glass-panel rounded-[2rem] p-1.5 flex items-center gap-1 shadow-lg border-white/60">
-            <div className="flex items-center gap-1 pl-1">
+        <div className="p-2 bg-white/60 backdrop-blur-xl border-t border-white/40 pb-8 shrink-0">
+          <div className="glass-panel rounded-full p-1 flex items-center gap-1 shadow-lg border-white/60">
+            <div className="flex items-center gap-0.5 pl-0.5">
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="p-2.5 hover:bg-blue-50 rounded-full text-gray-500 hover:text-of-blue transition-colors"
+                className="p-2 hover:bg-blue-50 rounded-full text-gray-500 hover:text-of-blue transition-colors"
               >
-                <Image className="w-5 h-5" />
+                <Image className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setShowGifts(true)}
-                className="p-2.5 hover:bg-pink-50 rounded-full text-gray-500 hover:text-pink-500 transition-colors"
+                className="p-2 hover:bg-pink-50 rounded-full text-gray-500 hover:text-pink-500 transition-colors"
               >
-                <Gift className="w-5 h-5" />
+                <Gift className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setShowTip(true)}
-                className="p-2.5 hover:bg-green-50 rounded-full text-gray-500 hover:text-green-500 transition-colors"
+                className="p-2 hover:bg-green-50 rounded-full text-gray-500 hover:text-green-500 transition-colors"
               >
-                <DollarSign className="w-5 h-5" />
+                <DollarSign className="w-4 h-4" />
               </button>
             </div>
             
-            <div className="w-px h-6 bg-gray-200 mx-1"></div>
+            <div className="w-px h-5 bg-gray-200 mx-0.5"></div>
 
             <input
               type="text"
@@ -512,23 +522,23 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
               placeholder="Message..."
-              className="flex-1 px-3 py-2 bg-transparent text-sm focus:outline-none text-gray-800 font-medium placeholder:text-gray-400"
+              className="flex-1 px-2 py-1.5 bg-transparent text-[13px] focus:outline-none text-gray-800 font-medium placeholder:text-gray-400"
             />
             
             {newMessage.trim() ? (
               <button
                 onClick={handleSendMessage}
                 disabled={sending}
-                className="p-2.5 bg-gradient-to-r from-of-blue to-blue-500 rounded-full text-white shadow-md shadow-blue-500/30 hover:scale-105 transition-all disabled:opacity-50 disabled:scale-100 mr-1"
+                className="p-2 bg-gradient-to-r from-of-blue to-blue-500 rounded-full text-white shadow-md shadow-blue-500/30 hover:scale-105 transition-all disabled:opacity-50 disabled:scale-100 mr-0.5"
               >
                 {sending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="w-3 h-3 animate-spin" />
                 ) : (
-                  <Send className="w-4 h-4 ml-0.5" />
+                  <Send className="w-3 h-3 ml-0.5" />
                 )}
               </button>
             ) : (
-              <div className="mr-1">
+              <div className="mr-0.5">
                 <VoiceRecorder onSend={handleSendVoice} disabled={sending} />
               </div>
             )}
