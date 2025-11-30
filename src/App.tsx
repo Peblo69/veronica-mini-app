@@ -256,7 +256,7 @@ function App() {
         </header>
       )}
 
-      <main className={showApplication || showAdmin ? '' : 'pt-16 pb-24'}>
+      <main className={showApplication || showAdmin ? '' : 'pt-16 pb-32'}>
         <AnimatePresence mode="wait">
           <motion.div
             key={showAdmin ? 'admin' : showApplication ? 'application' : viewingCreator ? 'creator' : activePage}
