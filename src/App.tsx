@@ -3,13 +3,14 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Home, Bell, PlusSquare, MessageCircle, User } from 'lucide-react'
 import './index.css'
 
-import { getOrCreateUser, type User as UserType } from './lib/api'
+import { getOrCreateUser, getUser, type User as UserType } from './lib/api'
 import HomePage from './pages/HomePage'
 import NotificationsPage from './pages/NotificationsPage'
 import CreatePage from './pages/CreatePage'
 import MessagesPage from './pages/MessagesPage'
 import ProfilePage from './pages/ProfilePage'
 import CreatorProfilePage from './pages/CreatorProfilePage'
+import CreatorApplicationPage from './pages/CreatorApplicationPage'
 
 const navItems = [
   { id: 'home', icon: Home },
@@ -24,6 +25,7 @@ function App() {
   const [viewingCreator, setViewingCreator] = useState<any>(null)
   const [user, setUser] = useState<UserType | null>(null)
   const [loading, setLoading] = useState(true)
+  const [showApplication, setShowApplication] = useState(false)
 
   useEffect(() => {
     initUser()
@@ -31,13 +33,12 @@ function App() {
 
   const initUser = async () => {
     const tg = (window as any).Telegram?.WebApp
-    
+
     if (tg) {
       tg.ready()
       tg.expand()
-      
+
       if (tg.initDataUnsafe?.user) {
-        // Get or create user in Supabase
         const dbUser = await getOrCreateUser({
           id: tg.initDataUnsafe.user.id,
           username: tg.initDataUnsafe.user.username,
@@ -45,13 +46,12 @@ function App() {
           last_name: tg.initDataUnsafe.user.last_name,
           photo_url: tg.initDataUnsafe.user.photo_url,
         })
-        
+
         if (dbUser) {
           setUser(dbUser)
         }
       }
     } else {
-      // Dev mode - create mock user
       setUser({
         telegram_id: 123456789,
         username: 'testuser',
@@ -77,19 +77,43 @@ function App() {
     setViewingCreator(null)
   }
 
+  const openApplication = () => {
+    setShowApplication(true)
+  }
+
+  const handleApplicationSuccess = async () => {
+    setShowApplication(false)
+    if (user) {
+      const updatedUser = await getUser(user.telegram_id)
+      if (updatedUser) {
+        setUser(updatedUser)
+      }
+    }
+  }
+
   const renderPage = () => {
     if (!user) return null
-    
+
+    if (showApplication) {
+      return (
+        <CreatorApplicationPage
+          user={user}
+          onBack={() => setShowApplication(false)}
+          onSuccess={handleApplicationSuccess}
+        />
+      )
+    }
+
     if (viewingCreator) {
       return <CreatorProfilePage creator={viewingCreator} onBack={closeCreatorProfile} />
     }
-    
+
     switch (activePage) {
       case 'home': return <HomePage user={user} onCreatorClick={openCreatorProfile} />
       case 'notifications': return <NotificationsPage user={user} />
       case 'create': return <CreatePage user={user} />
       case 'messages': return <MessagesPage user={user} />
-      case 'profile': return <ProfilePage user={user} setUser={setUser} />
+      case 'profile': return <ProfilePage user={user} setUser={setUser} onBecomeCreator={openApplication} />
       default: return <HomePage user={user} onCreatorClick={openCreatorProfile} />
     }
   }
@@ -107,19 +131,21 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="fixed top-0 left-0 right-0 z-50 bg-of-blue text-white">
-        <div className="flex items-center justify-between px-4 py-3">
-          <h1 className="text-xl font-bold">Veronica</h1>
-          <div className="flex items-center gap-2">
-            <span className="text-sm opacity-90">{user?.balance || 0} tokens</span>
+      {!showApplication && (
+        <header className="fixed top-0 left-0 right-0 z-50 bg-of-blue text-white">
+          <div className="flex items-center justify-between px-4 py-3">
+            <h1 className="text-xl font-bold">Veronica</h1>
+            <div className="flex items-center gap-2">
+              <span className="text-sm opacity-90">{user?.balance || 0} tokens</span>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
-      <main className="pt-14 pb-16">
+      <main className={showApplication ? '' : 'pt-14 pb-16'}>
         <AnimatePresence mode="wait">
           <motion.div
-            key={viewingCreator ? 'creator' : activePage}
+            key={showApplication ? 'application' : viewingCreator ? 'creator' : activePage}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -130,7 +156,7 @@ function App() {
         </AnimatePresence>
       </main>
 
-      {!viewingCreator && (
+      {!viewingCreator && !showApplication && (
         <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200">
           <div className="flex items-center justify-around py-1">
             {navItems.map((item) => {
