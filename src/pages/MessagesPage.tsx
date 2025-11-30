@@ -414,23 +414,23 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                initial={{ opacity: 0, scale: 0.9, y: 20 }}
                animate={{ opacity: 1, scale: 1, y: 0 }}
                exit={{ opacity: 0, scale: 0.9, y: 20 }}
-               className="fixed bottom-[140px] left-6 bg-white/95 backdrop-blur-xl rounded-[1.5rem] shadow-[0_10px_40px_rgba(0,0,0,0.2)] border border-gray-100 p-1.5 z-[70] flex flex-col gap-1 min-w-[140px]"
+               className="fixed bottom-[140px] left-6 bg-white/95 backdrop-blur-xl rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.2)] border border-gray-100 p-1 z-[70] flex flex-col gap-0.5 min-w-[130px]"
             >
-              <button onClick={() => { fileInputRef.current?.click(); setShowActions(false); }} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 rounded-xl transition-colors w-full text-left group">
-                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform"><Image className="w-4 h-4" /></div>
-                <span className="font-bold text-gray-700 text-[13px]">Photo</span>
+              <button onClick={() => { fileInputRef.current?.click(); setShowActions(false); }} className="flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-gray-50 rounded-xl transition-colors w-full text-left group">
+                <div className="w-7 h-7 rounded-full bg-blue-50 flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform"><Image className="w-3.5 h-3.5" /></div>
+                <span className="font-bold text-gray-700 text-xs">Photo</span>
               </button>
-              <button onClick={() => { fileInputRef.current?.click(); setShowActions(false); }} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 rounded-xl transition-colors w-full text-left group">
-                <div className="w-8 h-8 rounded-full bg-purple-50 flex items-center justify-center text-purple-500 group-hover:scale-110 transition-transform"><Video className="w-4 h-4" /></div>
-                <span className="font-bold text-gray-700 text-[13px]">Video</span>
+              <button onClick={() => { fileInputRef.current?.click(); setShowActions(false); }} className="flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-gray-50 rounded-xl transition-colors w-full text-left group">
+                <div className="w-7 h-7 rounded-full bg-purple-50 flex items-center justify-center text-purple-500 group-hover:scale-110 transition-transform"><Video className="w-3.5 h-3.5" /></div>
+                <span className="font-bold text-gray-700 text-xs">Video</span>
               </button>
-              <button onClick={() => { setShowGifts(true); setShowActions(false); }} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 rounded-xl transition-colors w-full text-left group">
-                <div className="w-8 h-8 rounded-full bg-pink-50 flex items-center justify-center text-pink-500 group-hover:scale-110 transition-transform"><Gift className="w-4 h-4" /></div>
-                <span className="font-bold text-gray-700 text-[13px]">Gift</span>
+              <button onClick={() => { setShowGifts(true); setShowActions(false); }} className="flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-gray-50 rounded-xl transition-colors w-full text-left group">
+                <div className="w-7 h-7 rounded-full bg-pink-50 flex items-center justify-center text-pink-500 group-hover:scale-110 transition-transform"><Gift className="w-3.5 h-3.5" /></div>
+                <span className="font-bold text-gray-700 text-xs">Gift</span>
               </button>
-              <button onClick={() => { setShowTip(true); setShowActions(false); }} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 rounded-xl transition-colors w-full text-left group">
-                <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-500 group-hover:scale-110 transition-transform"><DollarSign className="w-4 h-4" /></div>
-                <span className="font-bold text-gray-700 text-[13px]">Tip</span>
+              <button onClick={() => { setShowTip(true); setShowActions(false); }} className="flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-gray-50 rounded-xl transition-colors w-full text-left group">
+                <div className="w-7 h-7 rounded-full bg-green-50 flex items-center justify-center text-green-500 group-hover:scale-110 transition-transform"><DollarSign className="w-3.5 h-3.5" /></div>
+                <span className="font-bold text-gray-700 text-xs">Tip</span>
               </button>
             </motion.div>
             </>
