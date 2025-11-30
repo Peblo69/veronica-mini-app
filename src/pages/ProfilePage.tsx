@@ -1,120 +1,91 @@
+import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Coins, Image, Star, Settings, ChevronRight, Crown, Zap, TrendingUp } from 'lucide-react'
+import { Settings, Edit, Grid, Bookmark, Lock, Share2 } from 'lucide-react'
 
 interface ProfilePageProps {
-  user: { name: string; tokens: number; avatar: string | null }
+  user: any
+  
 }
 
-const stats = [
-  { label: 'Images', value: 42, icon: Image },
-  { label: 'Tokens Used', value: '1.2K', icon: Zap },
-  { label: 'Rank', value: '#156', icon: TrendingUp },
-]
-
-const menuItems = [
-  { icon: Coins, label: 'Buy Tokens', badge: 'Sale!', color: 'text-yellow-400' },
-  { icon: Crown, label: 'Premium', badge: 'New', color: 'text-purple-400' },
-  { icon: Star, label: 'Favorites', count: 12, color: 'text-pink-400' },
-  { icon: Settings, label: 'Settings', color: 'text-white/70' },
+const myPosts = [
+  { id: 1, image: 'https://picsum.photos/200/200?random=20', likes: 123, locked: false },
+  { id: 2, image: 'https://picsum.photos/200/250?random=21', likes: 456, locked: true },
+  { id: 3, image: 'https://picsum.photos/200/200?random=22', likes: 789, locked: false },
 ]
 
 export default function ProfilePage({ user }: ProfilePageProps) {
-  return (
-    <div className="space-y-6">
-      {/* Profile Header */}
-      <motion.div 
-        className="card text-center"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <motion.div 
-          className="w-24 h-24 mx-auto mb-4 rounded-full bg-gradient-brand flex items-center justify-center glow-purple text-3xl font-bold"
-          animate={{ scale: [1, 1.05, 1] }}
-          transition={{ duration: 3, repeat: Infinity }}
-        >
-          {user.avatar ? (
-            <img src={user.avatar} alt={user.name} className="w-full h-full rounded-full object-cover" />
-          ) : (
-            user.name.charAt(0).toUpperCase()
-          )}
-        </motion.div>
-        
-        <h2 className="text-xl font-bold mb-1">{user.name}</h2>
-        <p className="text-white/50 text-sm mb-4">AI Art Creator</p>
-        
-        <div className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-brand rounded-full inline-flex">
-          <Coins className="w-4 h-4 text-yellow-300" />
-          <span className="font-semibold">{user.tokens} tokens</span>
-        </div>
-      </motion.div>
+  const [activeTab, setActiveTab] = useState('posts')
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        {stats.map((stat, index) => (
-          <motion.div
-            key={stat.label}
-            className="card text-center"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
-          >
-            <stat.icon className="w-5 h-5 mx-auto mb-2 text-brand-purple" />
-            <div className="text-lg font-bold">{stat.value}</div>
-            <div className="text-xs text-white/50">{stat.label}</div>
+  return (
+    <div className="bg-white min-h-screen">
+      <div className="h-28 bg-gradient-to-r from-of-blue to-blue-400" />
+      
+      <div className="px-4 -mt-12">
+        <div className="flex justify-between items-end">
+          <div className="relative">
+            <img src={user.avatar || 'https://i.pravatar.cc/150?img=33'} alt={user.name} className="w-24 h-24 rounded-full border-4 border-white object-cover shadow-lg" />
+            <button className="absolute bottom-0 right-0 w-8 h-8 bg-of-blue rounded-full flex items-center justify-center border-2 border-white">
+              <Edit className="w-4 h-4 text-white" />
+            </button>
+          </div>
+          <div className="flex gap-2 mb-2">
+            <button className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center">
+              <Share2 className="w-5 h-5 text-gray-600" />
+            </button>
+            <button className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center">
+              <Settings className="w-5 h-5 text-gray-600" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-4 pt-3">
+        <h1 className="text-xl font-bold">{user.name}</h1>
+        <p className="text-gray-500 text-sm">@{user.username}</p>
+
+        <div className="flex items-center gap-6 mt-3 text-sm">
+          <div className="text-center">
+            <div className="font-bold">{myPosts.length}</div>
+            <div className="text-gray-500">Posts</div>
+          </div>
+          <div className="text-center">
+            <div className="font-bold">1.2K</div>
+            <div className="text-gray-500">Likes</div>
+          </div>
+          <div className="text-center">
+            <div className="font-bold">89</div>
+            <div className="text-gray-500">Fans</div>
+          </div>
+        </div>
+
+        <p className="mt-3 text-sm text-gray-700">Your bio goes here. Tell the world about yourself!</p>
+
+        <motion.button className="btn-subscribe w-full mt-4" whileTap={{ scale: 0.98 }}>
+          BECOME A CREATOR
+        </motion.button>
+      </div>
+
+      <div className="flex border-b border-gray-200 mt-4">
+        <button className={'flex-1 py-3 flex items-center justify-center gap-2 text-sm font-semibold ' + (activeTab === 'posts' ? 'tab-active' : 'text-gray-500')} onClick={() => setActiveTab('posts')}>
+          <Grid className="w-4 h-4" /> Posts
+        </button>
+        <button className={'flex-1 py-3 flex items-center justify-center gap-2 text-sm font-semibold ' + (activeTab === 'saved' ? 'tab-active' : 'text-gray-500')} onClick={() => setActiveTab('saved')}>
+          <Bookmark className="w-4 h-4" /> Saved
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-0.5 p-0.5">
+        {myPosts.map((post) => (
+          <motion.div key={post.id} className="relative aspect-square" whileTap={{ scale: 0.98 }}>
+            <img src={post.image} alt="" className="w-full h-full object-cover" />
+            {post.locked && (
+              <div className="absolute top-2 right-2">
+                <Lock className="w-4 h-4 text-white drop-shadow" />
+              </div>
+            )}
           </motion.div>
         ))}
       </div>
-
-      {/* Menu Items */}
-      <div className="space-y-2">
-        {menuItems.map((item, index) => (
-          <motion.button
-            key={item.label}
-            className="card w-full flex items-center justify-between"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.3 + index * 0.1 }}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <div className="flex items-center gap-3">
-              <item.icon className={"w-5 h-5 " + item.color} />
-              <span>{item.label}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {item.badge && (
-                <span className="badge badge-pink">{item.badge}</span>
-              )}
-              {item.count !== undefined && (
-                <span className="text-white/50">{item.count}</span>
-              )}
-              <ChevronRight className="w-4 h-4 text-white/30" />
-            </div>
-          </motion.button>
-        ))}
-      </div>
-
-      {/* Promo Banner */}
-      <motion.div
-        className="relative overflow-hidden rounded-2xl p-6 bg-gradient-brand"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.7 }}
-      >
-        <div className="relative z-10">
-          <h3 className="text-lg font-bold mb-2">Upgrade to Premium</h3>
-          <p className="text-sm text-white/80 mb-4">Unlimited generations, exclusive styles, and more!</p>
-          <motion.button 
-            className="px-6 py-2 bg-white text-brand-purple font-semibold rounded-xl"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            Learn More
-          </motion.button>
-        </div>
-        <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full" />
-        <div className="absolute -right-5 -top-10 w-20 h-20 bg-white/10 rounded-full" />
-      </motion.div>
     </div>
   )
 }
