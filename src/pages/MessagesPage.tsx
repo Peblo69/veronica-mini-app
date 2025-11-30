@@ -260,7 +260,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-3 scroll-smooth bg-gradient-to-b from-blue-50/30 to-pink-50/30 pb-32">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 scroll-smooth bg-white pb-48">
           {messages.map((msg, index) => {
             const isOwn = msg.sender_id === user.telegram_id
             const isPPVLocked = msg.is_ppv && !msg.ppv_unlocked_by?.includes(user.telegram_id) && !isOwn
@@ -269,28 +269,28 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
             return (
               <motion.div
                 key={msg.id}
-                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                initial={{ opacity: 0, y: 10, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{ type: "spring", stiffness: 400, damping: 25 }}
                 className={`flex items-end gap-2 ${isOwn ? 'justify-end' : 'justify-start'}`}
               >
                 {!isOwn && (
-                  <div className="w-8 flex-shrink-0">
+                  <div className="w-8 flex-shrink-0 pb-1">
                     {showAvatar && (
                       <img
                         src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
                         alt=""
-                        className="w-8 h-8 rounded-full object-cover border-2 border-white shadow-sm"
+                        className="w-8 h-8 rounded-full object-cover"
                       />
                     )}
                   </div>
                 )}
 
                 <div
-                  className={`max-w-[80%] px-4 py-2.5 shadow-sm relative group backdrop-blur-sm ${
+                  className={`max-w-[75%] px-5 py-3 shadow-sm relative group ${
                     isOwn
-                      ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-[1.25rem] rounded-br-sm shadow-blue-500/20'
-                      : 'bg-white text-gray-800 rounded-[1.25rem] rounded-bl-sm border border-white shadow-sm'
+                      ? 'bg-of-blue text-white rounded-[24px] rounded-br-sm'
+                      : 'bg-[#E8F7FC] text-gray-800 rounded-[24px] rounded-bl-sm'
                   }`}
                 >
                   {/* Gift message */}
@@ -408,23 +408,23 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                initial={{ opacity: 0, scale: 0.9, y: 20 }}
                animate={{ opacity: 1, scale: 1, y: 0 }}
                exit={{ opacity: 0, scale: 0.9, y: 20 }}
-               className="fixed bottom-[90px] left-4 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 z-[60] flex flex-col gap-2"
+               className="fixed bottom-[150px] left-6 bg-white/95 backdrop-blur-xl rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.2)] border border-gray-100 p-2 z-[70] flex flex-col gap-2 min-w-[160px]"
             >
-              <button onClick={() => { fileInputRef.current?.click(); setShowActions(false); }} className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
+              <button onClick={() => { fileInputRef.current?.click(); setShowActions(false); }} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
                 <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-500"><Image className="w-4 h-4" /></div>
-                <span className="font-medium text-gray-700 text-sm">Photo</span>
+                <span className="font-bold text-gray-700 text-sm">Photo</span>
               </button>
-              <button onClick={() => { fileInputRef.current?.click(); setShowActions(false); }} className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
+              <button onClick={() => { fileInputRef.current?.click(); setShowActions(false); }} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
                 <div className="w-8 h-8 rounded-full bg-purple-50 flex items-center justify-center text-purple-500"><Video className="w-4 h-4" /></div>
-                <span className="font-medium text-gray-700 text-sm">Video</span>
+                <span className="font-bold text-gray-700 text-sm">Video</span>
               </button>
-              <button onClick={() => { setShowGifts(true); setShowActions(false); }} className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
+              <button onClick={() => { setShowGifts(true); setShowActions(false); }} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
                 <div className="w-8 h-8 rounded-full bg-pink-50 flex items-center justify-center text-pink-500"><Gift className="w-4 h-4" /></div>
-                <span className="font-medium text-gray-700 text-sm">Gift</span>
+                <span className="font-bold text-gray-700 text-sm">Gift</span>
               </button>
-              <button onClick={() => { setShowTip(true); setShowActions(false); }} className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
+              <button onClick={() => { setShowTip(true); setShowActions(false); }} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
                 <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-500"><DollarSign className="w-4 h-4" /></div>
-                <span className="font-medium text-gray-700 text-sm">Tip</span>
+                <span className="font-bold text-gray-700 text-sm">Tip</span>
               </button>
             </motion.div>
           )}
@@ -522,18 +522,18 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         </AnimatePresence>
 
         {/* Input */}
-        <div className="fixed bottom-[70px] left-4 right-4 z-50">
-          <div className="glass-panel rounded-[1.5rem] p-1.5 flex items-end gap-2 shadow-premium backdrop-blur-xl bg-white/90 border border-white/60">
+        <div className="fixed bottom-[90px] left-4 right-4 z-[60]">
+          <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-1.5 flex items-end gap-2 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-gray-100">
             <div className="shrink-0">
               <button
                 onClick={() => setShowActions(!showActions)}
-                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${showActions ? 'bg-gray-200 rotate-45' : 'bg-gray-100 hover:bg-blue-50 text-gray-500 hover:text-of-blue'}`}
+                className={`w-11 h-11 rounded-full flex items-center justify-center transition-all duration-300 ${showActions ? 'bg-gray-200 rotate-45' : 'bg-blue-50 hover:bg-blue-100 text-of-blue'}`}
               >
-                <Plus className="w-5 h-5" />
+                <Plus className="w-6 h-6" />
               </button>
             </div>
 
-            <div className="flex-1 py-1">
+            <div className="flex-1 py-1.5">
               <textarea
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
@@ -545,8 +545,8 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 }}
                 placeholder="Message..."
                 rows={1}
-                className="w-full px-2 py-2 bg-transparent text-[15px] focus:outline-none text-gray-800 font-medium placeholder:text-gray-400 resize-none max-h-24"
-                style={{ minHeight: '40px' }}
+                className="w-full px-2 py-1 bg-transparent text-[16px] focus:outline-none text-gray-800 font-medium placeholder:text-gray-400 resize-none max-h-24"
+                style={{ minHeight: '24px' }}
                 onInput={(e) => {
                   const target = e.target as HTMLTextAreaElement;
                   target.style.height = 'auto';
@@ -555,12 +555,12 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
               />
             </div>
             
-            <div className="shrink-0 h-10 flex items-center justify-center w-10">
+            <div className="shrink-0 h-11 flex items-center justify-center w-11 pb-1">
               {newMessage.trim() ? (
                 <button
                   onClick={handleSendMessage}
                   disabled={sending}
-                  className="w-10 h-10 bg-of-blue rounded-full text-white flex items-center justify-center shadow-lg shadow-blue-500/30 hover:scale-105 transition-transform disabled:opacity-50"
+                  className="w-10 h-10 bg-of-blue rounded-full text-white flex items-center justify-center shadow-md hover:scale-105 transition-transform disabled:opacity-50"
                 >
                   {sending ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
