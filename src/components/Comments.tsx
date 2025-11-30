@@ -32,6 +32,9 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
     loadComments()
 
     const unsubscribe = subscribeToComments(postId, (newComment) => {
+      // Skip own comments (already added by handleSubmit)
+      if (newComment.user_id === user.telegram_id) return
+
       if (newComment.parent_id) {
         // Add as reply
         setComments(prev => prev.map(c => {
@@ -47,7 +50,7 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
     })
 
     return () => unsubscribe()
-  }, [postId])
+  }, [postId, user.telegram_id])
 
   const loadComments = async () => {
     setLoading(true)
@@ -103,7 +106,7 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
         return {
           ...c,
           liked: !c.liked,
-          likes_count: c.liked ? c.likes_count - 1 : c.likes_count + 1
+          likes_count: c.liked ? Math.max(0, c.likes_count - 1) : c.likes_count + 1
         }
       }
       if (c.replies) {
@@ -166,7 +169,7 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
           >
             Reply
           </button>
-          {comment.user_id === user.telegram_id && (
+          {Number(comment.user_id) === Number(user.telegram_id) && (
             <div className="relative">
               <button
                 onClick={() => setMenuOpen(menuOpen === comment.id ? null : comment.id)}

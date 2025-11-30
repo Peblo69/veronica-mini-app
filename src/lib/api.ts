@@ -109,15 +109,25 @@ export async function getFeed(userId: number, limit = 20): Promise<Post[]> {
 
   if (!data) return []
 
-  // Get user's likes, saves, and purchases in parallel
-  const [likesRes, savesRes, purchasesRes] = await Promise.all([
+  // Get post IDs for counting actual likes
+  const postIds = data.map(p => p.id)
+
+  // Get user's likes, saves, purchases, and actual like counts in parallel
+  const [likesRes, savesRes, purchasesRes, allLikesRes] = await Promise.all([
     supabase.from('likes').select('post_id').eq('user_id', userId),
     supabase.from('saved_posts').select('post_id').eq('user_id', userId),
-    supabase.from('content_purchases').select('post_id').eq('user_id', userId)
+    supabase.from('content_purchases').select('post_id').eq('user_id', userId),
+    supabase.from('likes').select('post_id').in('post_id', postIds)
   ])
 
   const likedPostIds = new Set(likesRes.data?.map(l => l.post_id) || [])
   const savedPostIds = new Set(savesRes.data?.map(s => s.post_id) || [])
+
+  // Count actual likes per post
+  const actualLikesCount = new Map<number, number>()
+  allLikesRes.data?.forEach(l => {
+    actualLikesCount.set(l.post_id, (actualLikesCount.get(l.post_id) || 0) + 1)
+  })
   const purchasedPostIds = new Set(purchasesRes.data?.map(p => p.post_id) || [])
 
   // Get unique creator IDs
@@ -139,6 +149,7 @@ export async function getFeed(userId: number, limit = 20): Promise<Post[]> {
 
     return {
       ...post,
+      likes_count: actualLikesCount.get(post.id) || 0,
       liked: likedPostIds.has(post.id),
       saved: savedPostIds.has(post.id),
       is_purchased: isPurchased,
@@ -159,15 +170,25 @@ export async function getCreatorPosts(creatorId: number, userId: number): Promis
 
   if (!data) return []
 
-  const { data: userLikes } = await supabase
-    .from('likes')
-    .select('post_id')
-    .eq('user_id', userId)
+  const postIds = data.map(p => p.id)
 
-  const likedPostIds = new Set(userLikes?.map(l => l.post_id) || [])
+  // Get user likes and actual like counts
+  const [userLikesRes, allLikesRes] = await Promise.all([
+    supabase.from('likes').select('post_id').eq('user_id', userId),
+    supabase.from('likes').select('post_id').in('post_id', postIds)
+  ])
+
+  const likedPostIds = new Set(userLikesRes.data?.map(l => l.post_id) || [])
+
+  // Count actual likes per post
+  const actualLikesCount = new Map<number, number>()
+  allLikesRes.data?.forEach(l => {
+    actualLikesCount.set(l.post_id, (actualLikesCount.get(l.post_id) || 0) + 1)
+  })
 
   return data.map(post => ({
     ...post,
+    likes_count: actualLikesCount.get(post.id) || 0,
     liked: likedPostIds.has(post.id)
   })) as Post[]
 }
@@ -560,4 +581,40 @@ export async function hasPurchased(userId: number, postId: number): Promise<bool
     .eq('post_id', postId)
     .single()
   return !!data
+}
+
+// ============================================
+// DATA SYNC UTILITIES
+// ============================================
+
+// Sync all posts' likes_count with actual likes from likes table
+export async function syncAllLikesCounts(): Promise<boolean> {
+  const { data: posts } = await supabase
+    .from('posts')
+    .select('id')
+
+  if (!posts) return false
+
+  for (const post of posts) {
+    const { count } = await supabase
+      .from('likes')
+      .select('*', { count: 'exact', head: true })
+      .eq('post_id', post.id)
+
+    await supabase
+      .from('posts')
+      .update({ likes_count: count || 0 })
+      .eq('id', post.id)
+  }
+
+  return true
+}
+
+// Get actual likes count for a post
+export async function getActualLikesCount(postId: number): Promise<number> {
+  const { count } = await supabase
+    .from('likes')
+    .select('*', { count: 'exact', head: true })
+    .eq('post_id', postId)
+  return count || 0
 }
