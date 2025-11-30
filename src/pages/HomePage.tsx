@@ -231,42 +231,63 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
       {/* Suggestions */}
       {suggestions.length > 0 && (
-        <div className="glass-panel p-5 rounded-3xl">
-          <h3 className="text-xs font-bold text-gray-400 mb-4 tracking-widest uppercase">Recommended For You</h3>
-          <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar snap-x">
+        <div className="py-2">
+          <div className="flex items-center justify-between px-2 mb-4">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">Recommended for you</h3>
+              <p className="text-xs text-gray-500 font-medium">Creators you might like</p>
+            </div>
+            <button className="text-xs font-bold text-of-blue bg-blue-50 px-3 py-1.5 rounded-full hover:bg-blue-100 transition-colors">
+              See All
+            </button>
+          </div>
+          
+          <div className="flex gap-3 overflow-x-auto pb-6 px-2 no-scrollbar snap-x">
             {suggestions.map((creator, idx) => (
-              <motion.button
+              <motion.div
                 key={creator.telegram_id}
-                className="flex flex-col items-center min-w-[80px] snap-center group"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
+                className="min-w-[150px] bg-white rounded-[1.5rem] p-4 border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.03)] flex flex-col items-center relative group overflow-hidden snap-center cursor-pointer"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: idx * 0.05 }}
-                whileTap={{ scale: 0.95 }}
+                whileHover={{ y: -4 }}
                 onClick={() => onCreatorClick(creator)}
               >
-                <div className="relative mb-2">
-                  <div className="w-[70px] h-[70px] rounded-full p-[3px] bg-gradient-to-tr from-of-blue via-purple-400 to-pink-400 group-hover:shadow-lg group-hover:shadow-of-blue/30 transition-all duration-300 animate-liquid">
-                    <div className="w-full h-full rounded-full p-[2px] bg-white">
-                      <img
-                        src={creator.avatar_url || 'https://i.pravatar.cc/150?u=' + creator.telegram_id}
-                        alt={creator.first_name}
-                        className="w-full h-full rounded-full object-cover"
-                      />
+                 {/* Premium background decoration */}
+                 <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-blue-50/80 to-transparent opacity-50" />
+                 <div className="absolute top-[-20px] -right-4 w-12 h-12 bg-gradient-to-br from-of-blue/20 to-purple-500/20 rounded-full blur-xl" />
+                 
+                 {/* Avatar */}
+                 <div className="relative w-16 h-16 mb-3 z-10">
+                    <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-of-blue to-purple-500 p-[2px] shadow-sm opacity-80 group-hover:opacity-100 transition-opacity">
+                      <div className="w-full h-full bg-white rounded-full" />
                     </div>
-                  </div>
-                  {creator.is_verified && (
-                    <div className="absolute bottom-0 right-0 bg-white rounded-full p-0.5 shadow-sm">
-                      <CheckCircle className="w-5 h-5 text-of-blue fill-of-blue" />
-                    </div>
-                  )}
-                </div>
-                <span className="text-xs font-semibold text-gray-800 truncate w-full text-center group-hover:text-of-blue transition-colors">
-                  {creator.first_name}
-                </span>
-                <span className="text-[10px] text-gray-400 truncate w-full text-center">
-                  @{creator.username}
-                </span>
-              </motion.button>
+                    <img 
+                      src={creator.avatar_url || `https://i.pravatar.cc/150?u=${creator.telegram_id}`} 
+                      className="absolute inset-[2px] w-[calc(100%-4px)] h-[calc(100%-4px)] rounded-full object-cover"
+                      alt={creator.first_name}
+                    />
+                    {creator.is_verified && (
+                      <div className="absolute bottom-0 right-0 z-20 bg-white rounded-full p-[2px] shadow-sm ring-1 ring-gray-50">
+                        <CheckCircle className="w-3.5 h-3.5 text-of-blue fill-of-blue" />
+                      </div>
+                    )}
+                 </div>
+
+                 {/* Text */}
+                 <div className="text-center z-10 mb-4 w-full">
+                   <h4 className="font-bold text-[15px] text-gray-900 truncate leading-tight mb-0.5">{creator.first_name}</h4>
+                   <p className="text-[11px] text-gray-400 truncate font-medium">@{creator.username}</p>
+                 </div>
+
+                 {/* Button */}
+                 <motion.button 
+                   whileTap={{ scale: 0.95 }}
+                   className="w-full py-2 bg-gray-900 text-white text-[11px] font-bold rounded-xl shadow-lg shadow-gray-900/10 group-hover:bg-gradient-to-r group-hover:from-of-blue group-hover:to-blue-600 group-hover:shadow-blue-500/20 transition-all duration-300 z-10"
+                 >
+                   View Profile
+                 </motion.button>
+              </motion.div>
             ))}
           </div>
         </div>
