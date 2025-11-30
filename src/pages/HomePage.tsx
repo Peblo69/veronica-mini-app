@@ -186,46 +186,38 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
           <div className="absolute -top-10 -right-10 w-32 h-32 bg-red-500/10 blur-3xl rounded-full" />
           
           {livestreams.length > 0 ? (
-            <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
-              {livestreams.map((stream) => (
+            <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar px-2">
+              {livestreams.map((stream, idx) => (
                 <motion.button
                   key={stream.id}
-                  className="relative min-w-[140px] rounded-2xl overflow-hidden group"
-                  whileHover={{ y: -5 }}
-                  whileTap={{ scale: 0.98 }}
+                  className="relative flex flex-col items-center min-w-[72px]"
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: idx * 0.1 }}
+                  whileTap={{ scale: 0.95 }}
                   onClick={() => onLivestreamClick?.(stream.id)}
                 >
-                  <div className="aspect-[9/16] bg-gray-900 relative">
-                    {stream.thumbnail_url ? (
-                      <img src={stream.thumbnail_url} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-800 to-gray-900">
-                        <img
-                          src={stream.creator?.avatar_url || `https://i.pravatar.cc/150?u=${stream.creator_id}`}
-                          alt=""
-                          className="w-12 h-12 rounded-full border-2 border-white/20"
-                        />
+                  <div className="relative">
+                    <div className="w-[72px] h-[72px] rounded-full p-[3px] bg-gradient-to-r from-red-500 to-pink-500 animate-pulse-slow shadow-lg shadow-red-500/20">
+                      <div className="w-full h-full rounded-full p-[2px] bg-white">
+                        {stream.thumbnail_url ? (
+                           <img src={stream.thumbnail_url} alt="" className="w-full h-full rounded-full object-cover" />
+                        ) : (
+                          <img
+                            src={stream.creator?.avatar_url || `https://i.pravatar.cc/150?u=${stream.creator_id}`}
+                            alt=""
+                            className="w-full h-full rounded-full object-cover"
+                          />
+                        )}
                       </div>
-                    )}
-                  </div>
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent" />
-                  <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 bg-red-500/90 backdrop-blur-md rounded-full border border-white/20">
-                    <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                    <span className="text-white text-[10px] font-bold tracking-wide">LIVE</span>
-                  </div>
-                  <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 bg-black/40 backdrop-blur-md rounded-full border border-white/10">
-                    <Users className="w-3 h-3 text-white" />
-                    <span className="text-white text-[10px] font-medium">{stream.viewer_count}</span>
-                  </div>
-                  <div className="absolute bottom-3 left-3 right-3 text-left">
-                    <p className="text-white text-xs font-bold truncate mb-0.5 shadow-sm">{stream.title}</p>
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-4 h-4 rounded-full bg-white/20 flex-shrink-0 overflow-hidden">
-                        <img src={stream.creator?.avatar_url || `https://i.pravatar.cc/150?u=${stream.creator_id}`} className="w-full h-full object-cover" />
-                      </div>
-                      <p className="text-gray-200 text-[10px] font-medium truncate">{stream.creator?.first_name}</p>
+                    </div>
+                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-red-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full border-2 border-white shadow-sm flex items-center gap-0.5">
+                       <span>LIVE</span>
                     </div>
                   </div>
+                  <span className="text-[11px] font-medium text-gray-700 mt-2 truncate w-full text-center max-w-[72px]">
+                    {stream.creator?.first_name}
+                  </span>
                 </motion.button>
               ))}
             </div>
