@@ -291,11 +291,11 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                     isOwn
                       ? 'bg-of-blue text-white rounded-[24px] rounded-br-sm'
                       : 'bg-[#E8F7FC] text-gray-800 rounded-[24px] rounded-bl-sm'
-                  }`}
+                  } ${msg.message_type === 'text' || msg.message_type === 'voice' ? '' : '!p-0 !bg-transparent !shadow-none !rounded-xl overflow-hidden'}`}
                 >
                   {/* Gift message */}
                   {msg.message_type === 'gift' && msg.gift && (
-                    <div className="text-center py-1 px-1">
+                    <div className={`text-center py-2 px-3 rounded-[24px] ${isOwn ? 'bg-of-blue' : 'bg-[#E8F7FC]'}`}>
                       <motion.div 
                         initial={{ rotate: -10, scale: 0.5 }}
                         animate={{ rotate: 0, scale: 1 }}
@@ -315,7 +315,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
                   {/* Tip message */}
                   {msg.message_type === 'tip' && (
-                    <div className="text-center py-1 px-1">
+                    <div className={`text-center py-2 px-3 rounded-[24px] ${isOwn ? 'bg-of-blue' : 'bg-[#E8F7FC]'}`}>
                       <motion.div 
                         initial={{ y: 10, opacity: 0 }}
                         animate={{ y: 0, opacity: 1 }}
@@ -335,28 +335,29 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
                   {/* PPV message */}
                   {msg.message_type === 'ppv' && (
-                    <div className="min-w-[180px]">
+                    <div className="min-w-[180px] rounded-[20px] overflow-hidden bg-black shadow-md">
                       {isPPVLocked ? (
-                        <div className="text-center py-4 bg-black/5 rounded-xl">
-                          <div className="w-10 h-10 mx-auto bg-white/30 rounded-full flex items-center justify-center mb-2 backdrop-blur-md shadow-sm">
-                            <Lock className={`w-5 h-5 ${isOwn ? 'text-white' : 'text-gray-600'}`} />
+                        <div className="text-center py-4 bg-black/50 backdrop-blur-sm rounded-xl relative z-10">
+                           <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
+                          <div className="w-10 h-10 mx-auto bg-white/20 rounded-full flex items-center justify-center mb-2 backdrop-blur-md shadow-sm">
+                            <Lock className="w-5 h-5 text-white" />
                           </div>
-                          <p className={`text-xs font-bold mb-2 ${isOwn ? 'text-white/90' : 'text-gray-600'}`}>Exclusive Content</p>
+                          <p className="text-xs font-bold mb-2 text-white/90">Exclusive Content</p>
                           <button
                             onClick={() => handleUnlockPPV(msg.id)}
-                            className="bg-white text-of-blue px-4 py-1.5 rounded-full text-xs font-bold shadow-lg hover:scale-105 transition-transform flex items-center justify-center gap-1.5 mx-auto"
+                            className="bg-white text-black px-4 py-1.5 rounded-full text-xs font-bold shadow-lg hover:scale-105 transition-transform flex items-center justify-center gap-1.5 mx-auto"
                           >
                             <CheckCircle className="w-3 h-3" />
                             Unlock ${msg.ppv_price}
                           </button>
                         </div>
                       ) : (
-                        <div className="rounded-xl overflow-hidden shadow-inner relative">
+                        <div className="rounded-xl overflow-hidden relative">
                           {msg.media_url && (
                             msg.media_url.match(/\.(mp4|webm|mov)$/i) ? (
-                              <video src={msg.media_url} controls className="w-full" />
+                              <video src={msg.media_url} controls className="w-full max-h-[300px] object-cover block" />
                             ) : (
-                              <img src={msg.media_url} alt="" className="w-full" />
+                              <img src={msg.media_url} alt="" className="w-full max-h-[300px] object-cover block" />
                             )
                           )}
                         </div>
@@ -368,15 +369,15 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                   {msg.message_type === 'text' && (
                     <>
                       {msg.content?.match(/^https?:\/\/.*\.(jpg|jpeg|png|gif|webp|mp4|webm)$/i) ? (
-                        <div className="rounded-xl overflow-hidden my-1">
+                        <div className="rounded-[20px] overflow-hidden shadow-md bg-black">
                           {msg.content.match(/\.(mp4|webm)$/i) ? (
-                            <video src={msg.content} controls className="w-full" />
+                            <video src={msg.content} controls className="w-full max-h-[300px] object-cover block" />
                           ) : (
-                            <img src={msg.content} alt="" className="w-full" />
+                            <img src={msg.content} alt="" className="w-full max-h-[300px] object-cover block" />
                           )}
                         </div>
                       ) : (
-                        <p className="text-[15px] leading-snug whitespace-pre-wrap">{msg.content}</p>
+                        <p className="text-[15px] leading-snug whitespace-pre-wrap font-normal">{msg.content}</p>
                       )}
                     </>
                   )}
@@ -391,9 +392,12 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                     </div>
                   )}
 
-                  <p className={`text-[10px] mt-1 text-right font-medium opacity-60`}>
-                    {formatTime(msg.created_at)}
-                  </p>
+                  {/* Time only for text/voice bubbles */}
+                  {(msg.message_type === 'text' && !msg.content?.match(/^https?:\/\/.*\.(jpg|jpeg|png|gif|webp|mp4|webm)$/i)) || msg.message_type === 'voice' ? (
+                    <p className={`text-[9px] mt-1 text-right font-medium opacity-60`}>
+                      {formatTime(msg.created_at)}
+                    </p>
+                  ) : null}
                 </div>
               </motion.div>
             )
@@ -404,6 +408,8 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         {/* Actions Menu */}
         <AnimatePresence>
           {showActions && (
+            <>
+            <div className="fixed inset-0 z-[65]" onClick={() => setShowActions(false)} />
             <motion.div
                initial={{ opacity: 0, scale: 0.9, y: 20 }}
                animate={{ opacity: 1, scale: 1, y: 0 }}
