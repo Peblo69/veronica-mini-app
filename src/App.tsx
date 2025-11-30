@@ -272,7 +272,7 @@ function App() {
 
       {!viewingCreator && !showApplication && !showAdmin && (
         <nav className="fixed bottom-4 left-4 right-4 z-50">
-          <div className="glass-panel rounded-2xl p-2 flex items-center justify-around shadow-premium">
+          <div className="glass-panel rounded-[1.2rem] p-1.5 flex items-center justify-around shadow-premium backdrop-blur-2xl bg-white/80">
             {navItems.map((item) => {
               const isActive = activePage === item.id
               return (
@@ -290,25 +290,25 @@ function App() {
                   {isActive && (
                     <motion.div
                       layoutId="nav-pill"
-                      className="absolute inset-0 bg-blue-50 rounded-xl -z-10"
+                      className="absolute inset-0 bg-blue-50 rounded-xl -z-10 scale-90"
                       transition={{ type: "spring", stiffness: 300, damping: 30 }}
                     />
                   )}
                   
                   {item.id === 'create' ? (
-                    <div className="w-12 h-12 -mt-6 rounded-full bg-gradient-to-tr from-of-blue to-cyan-400 flex items-center justify-center shadow-lg shadow-of-blue/30 border-4 border-white">
-                      <item.icon className="w-6 h-6 text-white" />
+                    <div className="w-11 h-11 -mt-5 rounded-full bg-gradient-to-tr from-of-blue to-cyan-400 flex items-center justify-center shadow-lg shadow-of-blue/30 border-[3px] border-white transform translate-y-1">
+                      <item.icon className="w-5 h-5 text-white" />
                     </div>
                   ) : item.id === 'notifications' && unreadNotifications > 0 ? (
-                    <div className="relative p-2">
-                      <item.icon className={`w-6 h-6 ${isActive ? 'text-of-blue fill-of-blue/10' : 'text-gray-400'}`} />
-                      <span className="absolute top-1 right-1 min-w-[16px] h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 border-2 border-white">
+                    <div className="relative p-2.5">
+                      <item.icon className={`w-5 h-5 ${isActive ? 'text-of-blue fill-of-blue/10' : 'text-gray-400'}`} />
+                      <span className="absolute top-1.5 right-1.5 min-w-[14px] h-3.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5 border border-white">
                         {unreadNotifications > 99 ? '99+' : unreadNotifications}
                       </span>
                     </div>
                   ) : (
-                    <div className="p-2">
-                      <item.icon className={`w-6 h-6 transition-colors ${isActive ? 'text-of-blue fill-of-blue/10' : 'text-gray-400'}`} />
+                    <div className="p-2.5">
+                      <item.icon className={`w-5 h-5 transition-colors ${isActive ? 'text-of-blue fill-of-blue/10' : 'text-gray-400'}`} />
                     </div>
                   )}
                 </motion.button>
