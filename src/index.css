@@ -6,6 +6,10 @@
   --of-blue: #00AFF0;
   --of-blue-dark: #0095D0;
   --of-blue-light: #E8F7FC;
+  --app-height: 100vh;
+  --keyboard-height: 0px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 * {

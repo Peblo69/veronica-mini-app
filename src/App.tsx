@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Home, Bell, PlusSquare, MessageCircle, User } from 'lucide-react'
 import './index.css'
 
+import { useViewport } from './hooks/useViewport'
 import { getOrCreateUser, getUser, type User as UserType } from './lib/api'
 import { getUnreadCount, subscribeToNotifications } from './lib/notificationApi'
 import HomePage from './pages/HomePage'
@@ -38,6 +39,9 @@ function App() {
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [unreadNotifications, setUnreadNotifications] = useState(0)
   const [showSettings, setShowSettings] = useState(false)
+
+  // Handle viewport/keyboard changes for Telegram
+  useViewport()
 
   // SECURE ADMIN ACCESS CONFIG
   const ADMIN_SECRET_KEY = 'kjkszpj69'
