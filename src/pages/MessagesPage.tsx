@@ -119,7 +119,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     loadGifts()
   }, [])
 
-  // Cleanup preview URLs on unmount
   useEffect(() => {
     return () => {
       previewUrlsRef.current.forEach(url => URL.revokeObjectURL(url))
@@ -508,30 +507,30 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} gap-1`}
               >
                 <div className={`flex items-end gap-1.5 w-full ${isOwn ? 'justify-end' : 'justify-start'}`}>
-                {!isOwn && (
-                  <div className="w-6 flex-shrink-0 pb-0.5">
-                    {showAvatar && (
-                      <img
-                        src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
-                        alt=""
-                        className="w-6 h-6 rounded-full object-cover"
-                      />
-                    )}
-                  </div>
-                )}
-
-                <div
-                  className={`max-w-[78%] px-3 py-1.5 relative group overflow-hidden ${
-                    isOwn
-                      ? 'bg-of-blue text-white rounded-2xl rounded-br-sm'
-                      : 'bg-white text-gray-800 rounded-2xl rounded-bl-sm shadow-sm'
-                  } ${msg.message_type === 'text' || msg.message_type === 'voice' ? '' : '!p-0 !bg-transparent !shadow-none !rounded-xl'} ${isFailed ? 'ring-1 ring-red-200' : ''}`}
-                >
-                  {isPending && msg.message_type !== 'text' && (
-                    <div className="absolute inset-0 rounded-2xl bg-black/30 flex items-center justify-center">
-                      <Loader2 className="w-6 h-6 text-white animate-spin" />
+                  {!isOwn && (
+                    <div className="w-6 flex-shrink-0 pb-0.5">
+                      {showAvatar && (
+                        <img
+                          src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
+                          alt=""
+                          className="w-6 h-6 rounded-full object-cover"
+                        />
+                      )}
                     </div>
                   )}
+
+                  <div
+                    className={`max-w-[78%] px-3 py-1.5 relative group overflow-hidden ${
+                      isOwn
+                        ? 'bg-of-blue text-white rounded-2xl rounded-br-sm'
+                        : 'bg-white text-gray-800 rounded-2xl rounded-bl-sm shadow-sm'
+                    } ${msg.message_type === 'text' || msg.message_type === 'voice' ? '' : '!p-0 !bg-transparent !shadow-none !rounded-xl'} ${isFailed ? 'ring-1 ring-red-200' : ''}`}
+                  >
+                    {isPending && msg.message_type !== 'text' && (
+                      <div className="absolute inset-0 rounded-2xl bg-black/30 flex items-center justify-center">
+                        <Loader2 className="w-6 h-6 text-white animate-spin" />
+                      </div>
+                    )}
                   {/* Gift message */}
                   {msg.message_type === 'gift' && msg.gift && (
                     <div className={`text-center py-2 px-3 rounded-2xl ${isOwn ? 'bg-of-blue' : 'bg-white shadow-sm'}`}>
@@ -649,14 +648,8 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                         <div className="flex items-end gap-1">
                           <p className="text-[14px] leading-tight whitespace-pre-wrap break-words" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{msg.content}</p>
                           <span className={`text-[10px] shrink-0 flex items-center gap-0.5 ${isOwn ? 'text-white/60' : 'text-gray-400'}`}>
-                            {formatTime(msg.created_at)}
-                            {isOwn && (
-                              msg.is_read ? (
-                                <CheckCheck className="w-3.5 h-3.5 text-blue-300" />
-                              ) : (
-                                <CheckCheck className="w-3.5 h-3.5 opacity-60" />
-                              )
-                            )}
+                            {timeLabel}
+                            {renderTicks()}
                           </span>
                         </div>
                       )}
@@ -664,27 +657,28 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                   )}
 
                   {/* Voice message */}
-                  {(msg.message_type === 'voice' || msg.media_url?.match(/\.(webm|ogg|mp3|wav)$/i)) && msg.media_url && (
+                  {(msg.message_type === 'voice' || resolvedMediaUrl?.match(/\.(webm|ogg|mp3|wav)$/i)) && resolvedMediaUrl && (
                     <div className={`flex items-center gap-1.5 min-w-[120px] ${isOwn ? 'text-white' : 'text-gray-800'}`}>
-                      <span className="text-sm">🎤</span>
-                      <audio src={msg.media_url} controls className="h-7 w-full accent-current opacity-90 scale-[0.85] origin-left" />
+                      <span className="text-sm">🎙️</span>
+                      <audio src={resolvedMediaUrl} controls className="h-7 w-full accent-current opacity-90 scale-[0.85] origin-left" />
                     </div>
                   )}
 
                   {/* Time & ticks for non-text bubbles */}
                   {msg.message_type !== 'text' && (
                     <div className={`flex items-center justify-end gap-0.5 mt-0.5 ${isOwn ? 'text-white/60' : 'text-gray-400'}`}>
-                      <span className="text-[10px]">{formatTime(msg.created_at)}</span>
-                      {isOwn && (
-                        msg.is_read ? (
-                          <CheckCheck className="w-3.5 h-3.5 text-blue-300" />
-                        ) : (
-                          <CheckCheck className="w-3.5 h-3.5 opacity-60" />
-                        )
-                      )}
+                      <span className="text-[10px] flex items-center gap-0.5">{timeLabel}</span>
+                      {renderTicks()}
                     </div>
                   )}
+                  </div>
                 </div>
+                {isFailed && (
+                  <div className={`flex items-center gap-1 text-[10px] text-red-500 px-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    <span>{msg.error || 'Failed to send'}</span>
+                  </div>
+                )}
               </motion.div>
             )
           })}
@@ -819,9 +813,12 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
           <div className="bg-white rounded-full p-1 flex items-end gap-1.5 shadow-sm border border-gray-100">
             <button
               onClick={() => setShowActions(!showActions)}
-              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all shrink-0 ${showActions ? 'bg-gray-200 rotate-45' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
+              className={`relative w-9 h-9 rounded-full flex items-center justify-center transition-all shrink-0 ${showActions ? 'bg-gray-200 rotate-45' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
             >
               <Plus className="w-5 h-5" />
+              {uploadingCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-of-blue border-2 border-white animate-pulse" />
+              )}
             </button>
 
             <div className="flex-1 py-1">

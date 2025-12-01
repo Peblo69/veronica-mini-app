@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
   X, ChevronRight, User, Bell, Shield, Eye, Palette, Globe,
   Moon, Sun, Monitor, Check, Lock, MessageCircle, Heart, UserPlus,
