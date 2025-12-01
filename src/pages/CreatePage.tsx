@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { Image, Video, Lock, Globe, Users, Send, Loader2, DollarSign, AlertTriangle, X, Play } from 'lucide-react'
+import { Image, Video, Lock, Globe, Users, Send, Loader2, DollarSign, AlertTriangle, X, Play, Star } from 'lucide-react'
 import { createPost, type User } from '../lib/api'
 import { uploadPostMedia, getMediaType, compressImage } from '../lib/storage'
 
@@ -30,6 +30,8 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
 
   const imageInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
+
+  const isCreator = user.is_creator
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>, _type: 'image' | 'video') => {
     const files = e.target.files
@@ -101,12 +103,17 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
 
       setUploadProgress('Creating post...')
 
+      // Non-creators can only post public content
+      const finalVisibility = isCreator ? visibility : 'public'
+      const finalNsfw = isCreator ? isNsfw : false
+      const finalPrice = isCreator && showPriceInput ? parseFloat(unlockPrice) || 0 : 0
+
       const { error } = await createPost(user.telegram_id, {
         content,
         media_url: mediaUrl,
-        visibility,
-        is_nsfw: isNsfw,
-        unlock_price: showPriceInput ? parseFloat(unlockPrice) || 0 : 0,
+        visibility: finalVisibility,
+        is_nsfw: finalNsfw,
+        unlock_price: finalPrice,
       })
 
       if (error) {
@@ -130,27 +137,6 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
 
     setPosting(false)
     setUploadProgress('')
-  }
-
-  if (!user.is_creator) {
-    return (
-      <div className="p-4">
-        <div className="card p-8 text-center">
-          <div className="w-16 h-16 bg-gradient-to-br from-of-blue to-blue-400 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Users className="w-8 h-8 text-white" />
-          </div>
-          <h2 className="text-xl font-bold mb-2">Become a Creator</h2>
-          <p className="text-gray-500 mb-4">Start sharing content and earning with your fans!</p>
-          <motion.button
-            className="btn-subscribe"
-            whileTap={{ scale: 0.95 }}
-            onClick={onBecomeCreator}
-          >
-            Apply Now
-          </motion.button>
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -256,40 +242,50 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
           )}
         </div>
 
-        <div className="py-3 border-t border-gray-100">
-          <p className="text-xs text-gray-500 mb-2 font-medium">WHO CAN SEE THIS?</p>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setVisibility('public')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
-                visibility === 'public' ? 'bg-of-blue text-white' : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              <Globe className="w-4 h-4" />
-              Public
-            </button>
-            <button
-              onClick={() => setVisibility('followers')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
-                visibility === 'followers' ? 'bg-of-blue text-white' : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              Followers
-            </button>
-            <button
-              onClick={() => setVisibility('subscribers')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
-                visibility === 'subscribers' ? 'bg-of-blue text-white' : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              <Lock className="w-4 h-4" />
-              Subs
-            </button>
+        {isCreator ? (
+          <div className="py-3 border-t border-gray-100">
+            <p className="text-xs text-gray-500 mb-2 font-medium">WHO CAN SEE THIS?</p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setVisibility('public')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
+                  visibility === 'public' ? 'bg-of-blue text-white' : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                <Globe className="w-4 h-4" />
+                Public
+              </button>
+              <button
+                onClick={() => setVisibility('followers')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
+                  visibility === 'followers' ? 'bg-of-blue text-white' : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                Followers
+              </button>
+              <button
+                onClick={() => setVisibility('subscribers')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
+                  visibility === 'subscribers' ? 'bg-of-blue text-white' : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                <Lock className="w-4 h-4" />
+                Subs
+              </button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="py-3 border-t border-gray-100">
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <Globe className="w-4 h-4 text-of-blue" />
+              <span>Your post will be visible to everyone</span>
+            </div>
+          </div>
+        )}
 
-        <div className="py-3 border-t border-gray-100 space-y-3">
+        {isCreator && (
+          <div className="py-3 border-t border-gray-100 space-y-3">
           <label className="flex items-center justify-between cursor-pointer">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-orange-500" />
@@ -335,7 +331,8 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
               <p className="text-xs text-gray-500 mt-1">Users pay this to unlock</p>
             </div>
           )}
-        </div>
+          </div>
+        )}
 
         <div className="pt-3 border-t border-gray-100">
           <motion.button
@@ -359,15 +356,44 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
         </div>
       </div>
 
-      <div className="mt-4 p-4 bg-blue-50 rounded-xl">
-        <h3 className="font-semibold text-sm text-blue-800 mb-2">Visibility Guide</h3>
-        <ul className="text-xs text-blue-700 space-y-1">
-          <li><strong>Public:</strong> Everyone can see</li>
-          <li><strong>Followers:</strong> Only people who follow you</li>
-          <li><strong>Subscribers:</strong> Only paid subscribers</li>
-          <li><strong>NSFW:</strong> Always requires subscription</li>
-        </ul>
-      </div>
+      {!isCreator && (
+        <motion.div
+          className="mt-4 p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-100"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center flex-shrink-0">
+              <Star className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-gray-900 mb-1">Unlock Creator Features</h3>
+              <p className="text-xs text-gray-600 mb-3">
+                Post exclusive content, receive gifts & tips, set subscription prices, and earn money!
+              </p>
+              <motion.button
+                className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-semibold rounded-lg shadow-md"
+                whileTap={{ scale: 0.95 }}
+                onClick={onBecomeCreator}
+              >
+                Become a Creator
+              </motion.button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {isCreator && (
+        <div className="mt-4 p-4 bg-blue-50 rounded-xl">
+          <h3 className="font-semibold text-sm text-blue-800 mb-2">Visibility Guide</h3>
+          <ul className="text-xs text-blue-700 space-y-1">
+            <li><strong>Public:</strong> Everyone can see</li>
+            <li><strong>Followers:</strong> Only people who follow you</li>
+            <li><strong>Subscribers:</strong> Only paid subscribers</li>
+            <li><strong>NSFW:</strong> Always requires subscription</li>
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
