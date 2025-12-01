@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle, Search, ArrowLeft, Send, Image, Gift, DollarSign, Lock, X, Loader2, Plus, Video, CheckCheck } from 'lucide-react'
+import { CheckCircle, Search, ArrowLeft, Send, Image, Gift, DollarSign, Lock, X, Loader2, Plus, Video, CheckCheck, AlertCircle } from 'lucide-react'
 import { type User } from '../lib/api'
 import {
   getConversations,
@@ -20,6 +20,13 @@ import {
 import { uploadMessageMedia, uploadVoiceMessage, getMediaType } from '../lib/storage'
 import VoiceRecorder from '../components/VoiceRecorder'
 
+type ChatMessage = Message & {
+  _localId?: string
+  _status?: 'sending' | 'uploading' | 'failed'
+  preview_url?: string
+  error?: string
+}
+
 interface MessagesPageProps {
   user: User
   selectedConversationId?: string | null
@@ -31,7 +38,7 @@ interface MessagesPageProps {
 export default function MessagesPage({ user, selectedConversationId, onConversationOpened, onChatStateChange, onProfileClick }: MessagesPageProps) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
@@ -41,10 +48,48 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const [tipAmount, setTipAmount] = useState('')
   const [gifts, setGifts] = useState<GiftType[]>([])
   const [searchQuery, setSearchQuery] = useState('')
+  const [uploadingCount, setUploadingCount] = useState(0)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const previewUrlsRef = useRef<Set<string>>(new Set())
   const [viewportHeight, setViewportHeight] = useState('100dvh')
+
+  const trackPreviewUrl = (url: string) => {
+    previewUrlsRef.current.add(url)
+  }
+
+  const releasePreviewUrl = (url?: string) => {
+    if (!url) return
+    if (previewUrlsRef.current.has(url)) {
+      URL.revokeObjectURL(url)
+      previewUrlsRef.current.delete(url)
+    }
+  }
+
+  const resolveTempMessage = (tempId: string, finalMessage?: Message, errorMessage?: string) => {
+    let previewToRelease: string | undefined
+    setMessages(prev =>
+      prev.map(msg => {
+        if (msg._localId === tempId) {
+          if (finalMessage) {
+            previewToRelease = msg.preview_url
+            return finalMessage
+          }
+          return {
+            ...msg,
+            _status: 'failed',
+            error: errorMessage || msg.error || 'Failed to send',
+          }
+        }
+        return msg
+      })
+    )
+
+    if (finalMessage && previewToRelease) {
+      releasePreviewUrl(previewToRelease)
+    }
+  }
 
   // iOS viewport height fix
   useEffect(() => {
@@ -72,6 +117,14 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   useEffect(() => {
     loadConversations()
     loadGifts()
+  }, [])
+
+  // Cleanup preview URLs on unmount
+  useEffect(() => {
+    return () => {
+      previewUrlsRef.current.forEach(url => URL.revokeObjectURL(url))
+      previewUrlsRef.current.clear()
+    }
   }, [])
 
   // Handle selected conversation from external navigation
@@ -139,11 +192,42 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !activeConversation || sending) return
 
+    const text = newMessage.trim()
+    const tempId = `temp-text-${Date.now()}`
+    const optimisticMessage: ChatMessage = {
+      id: tempId,
+      _localId: tempId,
+      _status: 'sending',
+      conversation_id: activeConversation.id,
+      sender_id: user.telegram_id,
+      content: text,
+      message_type: 'text',
+      media_url: null,
+      media_thumbnail: null,
+      is_ppv: false,
+      ppv_price: 0,
+      ppv_unlocked_by: [],
+      gift_id: null,
+      tip_amount: null,
+      is_read: false,
+      is_deleted: false,
+      created_at: new Date().toISOString(),
+    }
+
+    setMessages(prev => [...prev, optimisticMessage])
+    setNewMessage('')
     setSending(true)
-    const msg = await sendMessage(activeConversation.id, user.telegram_id, newMessage.trim())
-    if (msg) {
-      setMessages(prev => [...prev, msg])
-      setNewMessage('')
+
+    try {
+      const msg = await sendMessage(activeConversation.id, user.telegram_id, text)
+      if (msg) {
+        resolveTempMessage(tempId, msg)
+      } else {
+        resolveTempMessage(tempId, undefined, 'Failed to send message')
+      }
+    } catch (err) {
+      console.error('[Chat] Send message error:', err)
+      resolveTempMessage(tempId, undefined, 'Failed to send message')
     }
     setSending(false)
   }
@@ -198,67 +282,121 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   }
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !activeConversation) {
-      console.log('[Chat] No file or conversation:', { file: !!file, conv: !!activeConversation })
+    const files = e.target.files
+    setShowActions(false)
+
+    if (!files?.length || !activeConversation) {
+      e.target.value = ''
       return
     }
 
-    const mediaType = getMediaType(file)
-    console.log('[Chat] File selected:', { name: file.name, type: file.type, size: file.size, mediaType })
+    for (const [index, file] of Array.from(files).entries()) {
+      const mediaType = getMediaType(file)
 
-    if (mediaType === 'unknown' || mediaType === 'audio') {
-      console.log('[Chat] Invalid media type:', mediaType)
-      alert('Please select an image or video file')
-      return
-    }
-
-    setSending(true)
-
-    try {
-      console.log('[Chat] Starting upload to messages bucket...')
-      const result = await uploadMessageMedia(file, user.telegram_id)
-      console.log('[Chat] Upload result:', result)
-
-      if (result.error) {
-        console.error('[Chat] Upload error:', result.error)
-        alert('Upload failed: ' + result.error)
-      } else if (result.url) {
-        console.log('[Chat] Upload success, sending message with URL:', result.url)
-        const msg = await sendMediaMessage(activeConversation.id, user.telegram_id, result.url, mediaType)
-        console.log('[Chat] Message created:', msg)
-
-        if (msg) {
-          setMessages(prev => [...prev, msg])
-        } else {
-          console.error('[Chat] Failed to create message')
-          alert('Failed to send media message')
-        }
-      } else {
-        console.error('[Chat] No URL returned from upload')
-        alert('Upload completed but no URL returned')
+      if (mediaType === 'unknown' || mediaType === 'audio') {
+        alert('Please select an image or video file')
+        continue
       }
-    } catch (err) {
-      console.error('[Chat] Exception during upload:', err)
-      alert('Upload error: ' + (err as Error).message)
+
+      const tempId = `temp-media-${Date.now()}-${index}`
+      const previewUrl = URL.createObjectURL(file)
+      trackPreviewUrl(previewUrl)
+
+      const optimisticMessage: ChatMessage = {
+        id: tempId,
+        _localId: tempId,
+        _status: 'uploading',
+        preview_url: previewUrl,
+        conversation_id: activeConversation.id,
+        sender_id: user.telegram_id,
+        content: null,
+        message_type: mediaType,
+        media_url: previewUrl,
+        media_thumbnail: null,
+        is_ppv: false,
+        ppv_price: 0,
+        ppv_unlocked_by: [],
+        gift_id: null,
+        tip_amount: null,
+        is_read: false,
+        is_deleted: false,
+        created_at: new Date().toISOString(),
+      }
+
+      setMessages(prev => [...prev, optimisticMessage])
+      setUploadingCount(prev => prev + 1)
+
+      try {
+        const result = await uploadMessageMedia(file, user.telegram_id)
+        if (result.error || !result.url) {
+          throw new Error(result.error || 'Upload failed')
+        }
+
+        const msg = await sendMediaMessage(activeConversation.id, user.telegram_id, result.url, mediaType)
+        if (msg) {
+          resolveTempMessage(tempId, msg)
+        } else {
+          throw new Error('Failed to send media message')
+        }
+      } catch (err) {
+        console.error('[Chat] Media upload error:', err)
+        resolveTempMessage(tempId, undefined, (err as Error).message)
+      } finally {
+        setUploadingCount(prev => Math.max(0, prev - 1))
+      }
     }
 
-    setSending(false)
     e.target.value = ''
   }
 
   const handleSendVoice = async (blob: Blob, duration: number) => {
     if (!activeConversation) return
 
-    const result = await uploadVoiceMessage(blob, user.telegram_id, duration)
+    const tempId = `temp-voice-${Date.now()}`
+    const previewUrl = URL.createObjectURL(blob)
+    trackPreviewUrl(previewUrl)
 
-    if (result.error) {
-      alert('Voice upload failed: ' + result.error)
-    } else if (result.url) {
+    const optimisticMessage: ChatMessage = {
+      id: tempId,
+      _localId: tempId,
+      _status: 'uploading',
+      preview_url: previewUrl,
+      conversation_id: activeConversation.id,
+      sender_id: user.telegram_id,
+      content: null,
+      message_type: 'voice',
+      media_url: previewUrl,
+      media_thumbnail: null,
+      is_ppv: false,
+      ppv_price: 0,
+      ppv_unlocked_by: [],
+      gift_id: null,
+      tip_amount: null,
+      is_read: false,
+      is_deleted: false,
+      created_at: new Date().toISOString(),
+    }
+
+    setMessages(prev => [...prev, optimisticMessage])
+    setUploadingCount(prev => prev + 1)
+
+    try {
+      const result = await uploadVoiceMessage(blob, user.telegram_id, duration)
+      if (result.error || !result.url) {
+        throw new Error(result.error || 'Voice upload failed')
+      }
+
       const msg = await sendMediaMessage(activeConversation.id, user.telegram_id, result.url, 'voice')
       if (msg) {
-        setMessages(prev => [...prev, msg])
+        resolveTempMessage(tempId, msg)
+      } else {
+        throw new Error('Failed to send voice message')
       }
+    } catch (err) {
+      console.error('[Chat] Voice upload error:', err)
+      resolveTempMessage(tempId, undefined, (err as Error).message)
+    } finally {
+      setUploadingCount(prev => Math.max(0, prev - 1))
     }
   }
 
@@ -290,6 +428,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
           type="file"
           ref={fileInputRef}
           accept="image/*,video/*"
+          multiple
           className="hidden"
           onChange={handleFileSelect}
         />
@@ -344,6 +483,21 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
             const isOwn = msg.sender_id === user.telegram_id
             const isPPVLocked = msg.is_ppv && !msg.ppv_unlocked_by?.includes(user.telegram_id) && !isOwn
             const showAvatar = !isOwn && (index === messages.length - 1 || messages[index + 1]?.sender_id !== msg.sender_id)
+            const isPending = msg._status === 'sending' || msg._status === 'uploading'
+            const isFailed = msg._status === 'failed'
+            const resolvedMediaUrl = msg.media_url || msg.preview_url || undefined
+            const timeLabel = formatTime(msg.created_at)
+            const renderTicks = () => {
+              if (!isOwn) return null
+              if (isPending) {
+                return <Loader2 className={`w-3 h-3 ${isOwn ? 'text-white/80' : 'text-gray-400'} animate-spin`} />
+              }
+              return msg.is_read ? (
+                <CheckCheck className="w-3.5 h-3.5 text-blue-300" />
+              ) : (
+                <CheckCheck className="w-3.5 h-3.5 opacity-60" />
+              )
+            }
 
             return (
               <motion.div
@@ -351,8 +505,9 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.15 }}
-                className={`flex items-end gap-1.5 ${isOwn ? 'justify-end' : 'justify-start'}`}
+                className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} gap-1`}
               >
+                <div className={`flex items-end gap-1.5 w-full ${isOwn ? 'justify-end' : 'justify-start'}`}>
                 {!isOwn && (
                   <div className="w-6 flex-shrink-0 pb-0.5">
                     {showAvatar && (
@@ -370,8 +525,13 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                     isOwn
                       ? 'bg-of-blue text-white rounded-2xl rounded-br-sm'
                       : 'bg-white text-gray-800 rounded-2xl rounded-bl-sm shadow-sm'
-                  } ${msg.message_type === 'text' || msg.message_type === 'voice' ? '' : '!p-0 !bg-transparent !shadow-none !rounded-xl'}`}
+                  } ${msg.message_type === 'text' || msg.message_type === 'voice' ? '' : '!p-0 !bg-transparent !shadow-none !rounded-xl'} ${isFailed ? 'ring-1 ring-red-200' : ''}`}
                 >
+                  {isPending && msg.message_type !== 'text' && (
+                    <div className="absolute inset-0 rounded-2xl bg-black/30 flex items-center justify-center">
+                      <Loader2 className="w-6 h-6 text-white animate-spin" />
+                    </div>
+                  )}
                   {/* Gift message */}
                   {msg.message_type === 'gift' && msg.gift && (
                     <div className={`text-center py-2 px-3 rounded-2xl ${isOwn ? 'bg-of-blue' : 'bg-white shadow-sm'}`}>
@@ -433,10 +593,10 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                   )}
 
                   {/* Image message */}
-                  {msg.message_type === 'image' && msg.media_url && (
+                  {msg.message_type === 'image' && resolvedMediaUrl && (
                     <div className="rounded-xl overflow-hidden max-w-[200px]">
                       <img
-                        src={msg.media_url}
+                        src={resolvedMediaUrl}
                         alt=""
                         className="w-full max-h-[240px] object-cover block rounded-xl"
                         onError={(e) => {
@@ -449,10 +609,10 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                   )}
 
                   {/* Video message */}
-                  {msg.message_type === 'video' && msg.media_url && (
+                  {msg.message_type === 'video' && resolvedMediaUrl && (
                     <div className="rounded-xl overflow-hidden max-w-[200px] bg-black">
                       <video
-                        src={msg.media_url}
+                        src={resolvedMediaUrl}
                         controls
                         controlsList="nodownload"
                         playsInline

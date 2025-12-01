@@ -140,7 +140,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
   )
 
   const SectionHeader = ({ title, onBack }: { title: string; onBack: () => void }) => (
-    <div className="flex items-center gap-3 p-2 border-b border-gray-200 sticky top-0 z-10 safe-area-top" style={{ backgroundColor: '#F2F2F7' }}>
+    <div className="flex items-center gap-3 p-2 border-b border-gray-200 sticky top-0 z-10 safe-area-top" style={{ backgroundColor: '#FFFFFF' }}>
       <button
         onClick={onBack}
         className="w-10 h-10 flex items-center justify-center -ml-1 active:opacity-60"
@@ -154,7 +154,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Main Menu
   const renderMainMenu = () => (
-    <div className="space-y-1 pb-8" style={{ backgroundColor: '#F2F2F7' }}>
+    <div className="space-y-1 pb-8" style={{ backgroundColor: '#FFFFFF' }}>
       <div className="px-4 pt-4 pb-6 text-center border-b border-gray-200 mb-2 bg-white">
         <div className="w-20 h-20 mx-auto rounded-full p-1 border border-gray-200 mb-3">
           <img
@@ -222,7 +222,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Account Section
   const renderAccountSection = () => (
-    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
+    <div style={{ backgroundColor: '#FFFFFF', minHeight: '100%' }}>
       <SectionHeader title="Account" onBack={() => { setActiveSection('main'); setEditingProfile(false) }} />
 
       <div className="p-4 space-y-4">
@@ -324,7 +324,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Notifications Section
   const renderNotificationsSection = () => (
-    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
+    <div style={{ backgroundColor: '#FFFFFF', minHeight: '100%' }}>
       <SectionHeader title="Notifications" onBack={() => setActiveSection('main')} />
 
       <div className="p-4 space-y-6">
@@ -396,7 +396,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Privacy Section
   const renderPrivacySection = () => (
-    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
+    <div style={{ backgroundColor: '#FFFFFF', minHeight: '100%' }}>
       <SectionHeader title="Privacy & Security" onBack={() => setActiveSection('main')} />
 
       <div className="p-4 space-y-6">
@@ -486,7 +486,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Content Section
   const renderContentSection = () => (
-    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
+    <div style={{ backgroundColor: '#FFFFFF', minHeight: '100%' }}>
       <SectionHeader title="Content Preferences" onBack={() => setActiveSection('main')} />
 
       <div className="p-4 space-y-4">
@@ -547,7 +547,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Appearance Section
   const renderAppearanceSection = () => (
-    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
+    <div style={{ backgroundColor: '#FFFFFF', minHeight: '100%' }}>
       <SectionHeader title="Appearance" onBack={() => setActiveSection('main')} />
 
       <div className="p-4 space-y-6">
@@ -605,7 +605,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Language Section
   const renderLanguageSection = () => (
-    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
+    <div style={{ backgroundColor: '#FFFFFF', minHeight: '100%' }}>
       <SectionHeader title="Language" onBack={() => setActiveSection('main')} />
 
       <div className="p-4">
@@ -639,7 +639,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Creator Section
   const renderCreatorSection = () => (
-    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
+    <div style={{ backgroundColor: '#FFFFFF', minHeight: '100%' }}>
       <SectionHeader title="Creator Settings" onBack={() => setActiveSection('main')} />
 
       <div className="p-4 space-y-6">
@@ -705,7 +705,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Blocked Users Section
   const renderBlockedSection = () => (
-    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
+    <div style={{ backgroundColor: '#FFFFFF', minHeight: '100%' }}>
       <SectionHeader title="Blocked Users" onBack={() => setActiveSection('privacy')} />
 
       <div className="p-4">
@@ -745,7 +745,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // About Section
   const renderAboutSection = () => (
-    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
+    <div style={{ backgroundColor: '#FFFFFF', minHeight: '100%' }}>
       <SectionHeader title="Help & About" onBack={() => setActiveSection('main')} />
 
       <div className="p-4 space-y-3">
@@ -795,7 +795,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
       case 'about': return renderAboutSection()
       default: return (
         <>
-          <div className="flex items-center justify-center p-3 border-b border-gray-200 sticky top-0 z-10 safe-area-top" style={{ backgroundColor: '#F2F2F7' }}>
+          <div className="flex items-center justify-center p-3 border-b border-gray-200 sticky top-0 z-10 safe-area-top" style={{ backgroundColor: '#FFFFFF' }}>
             <div className="w-8" /> {/* Spacer for centering */}
             <div className="w-10 h-1 bg-gray-300 rounded-full" /> {/* Handle bar */}
             <div className="w-8 flex justify-end">
@@ -815,40 +815,26 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   if (loading) {
     return (
-      <motion.div
-        className="fixed inset-0 z-[100] flex items-center justify-center"
-        style={{ backgroundColor: '#F2F2F7' }}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center"
+        style={{ backgroundColor: '#FFFFFF' }}
       >
         <Loader2 className="w-8 h-8 animate-spin text-of-blue" />
-      </motion.div>
+      </div>
     )
   }
 
   return (
-    <motion.div
-      className="fixed inset-0 z-[100] flex flex-col h-[100dvh]"
-      style={{ backgroundColor: '#F2F2F7' }}
-      initial={{ y: '100%' }}
-      animate={{ y: 0 }}
-      exit={{ y: '100%' }}
-      transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+    <div
+      className="fixed inset-0 z-[9999] flex flex-col"
+      style={{ backgroundColor: '#FFFFFF', height: '100vh', width: '100vw' }}
     >
-      <div className="flex-1 overflow-y-auto relative" style={{ backgroundColor: '#F2F2F7' }}>
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={activeSection}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.2 }}
-            className="min-h-full"
-          >
-            {renderContent()}
-          </motion.div>
-        </AnimatePresence>
+      <div
+        className="flex-1 overflow-y-auto"
+        style={{ backgroundColor: '#FFFFFF' }}
+      >
+        {renderContent()}
       </div>
-    </motion.div>
+    </div>
   )
 }
