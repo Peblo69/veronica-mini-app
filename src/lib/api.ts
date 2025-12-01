@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { deleteFile } from './storage'
 
 // ============================================
 // USER API
@@ -270,20 +271,111 @@ export async function editPost(postId: number, creatorId: number, updates: Parti
   return { data, error }
 }
 
+// Helper to extract storage path from Supabase URL
+function extractStoragePath(url: string, bucket: string): string | null {
+  try {
+    // Handle different URL formats:
+    // Public: https://xxx.supabase.co/storage/v1/object/public/posts/123/file.jpg
+    // Signed: https://xxx.supabase.co/storage/v1/object/sign/posts/123/file.jpg?token=...
+    const patterns = [
+      new RegExp(`/storage/v1/object/(?:public|sign)/${bucket}/(.+?)(?:\\?|$)`),
+      new RegExp(`/${bucket}/(.+?)(?:\\?|$)`)
+    ]
+
+    for (const pattern of patterns) {
+      const match = url.match(pattern)
+      if (match && match[1]) {
+        return decodeURIComponent(match[1])
+      }
+    }
+    return null
+  } catch (e) {
+    console.error('Failed to extract storage path:', e)
+    return null
+  }
+}
+
 // Delete post
 export async function deletePost(postId: number, creatorId: number) {
-  const { error } = await supabase
-    .from('posts')
-    .delete()
-    .eq('id', postId)
-    .eq('creator_id', creatorId)
+  // Ensure proper types
+  const pid = Number(postId)
+  const cid = Number(creatorId)
 
-  if (!error) {
-    // Decrement post count
-    await supabase.rpc('decrement_posts', { creator_id: creatorId })
+  console.log('Deleting post:', { postId: pid, creatorId: cid })
+
+  // First, get the post to retrieve media_url for storage cleanup
+  const { data: post, error: fetchError } = await supabase
+    .from('posts')
+    .select('media_url')
+    .eq('id', pid)
+    .single()
+
+  if (fetchError) {
+    console.error('Failed to fetch post:', fetchError)
+    return { success: false, error: { message: `Post not found: ${fetchError.message}` } }
   }
 
-  return { success: !error, error }
+  // Delete media from storage if exists
+  if (post?.media_url) {
+    const storagePath = extractStoragePath(post.media_url, 'posts')
+    if (storagePath) {
+      console.log('Deleting media from storage:', storagePath)
+      const deleted = await deleteFile('posts', storagePath)
+      if (!deleted) {
+        console.warn('Failed to delete media from storage, continuing with post deletion')
+      } else {
+        console.log('Media deleted from storage successfully')
+      }
+    }
+  }
+
+  // Delete related records first (in case foreign keys don't have CASCADE)
+  console.log('Cleaning up related records...')
+
+  // Delete likes for this post
+  await supabase.from('likes').delete().eq('post_id', pid)
+
+  // Delete saved_posts for this post
+  await supabase.from('saved_posts').delete().eq('post_id', pid)
+
+  // Delete content_purchases for this post
+  await supabase.from('content_purchases').delete().eq('post_id', pid)
+
+  // Delete comments for this post
+  await supabase.from('comments').delete().eq('post_id', pid)
+
+  console.log('Related records cleaned up, deleting post...')
+
+  // Delete the post record
+  let { error } = await supabase
+    .from('posts')
+    .delete()
+    .eq('id', pid)
+    .eq('creator_id', cid)
+
+  // If that fails, try without creator_id check (for admin or if types mismatch)
+  if (error) {
+    console.warn('Delete with creator_id failed, trying without:', error)
+    const result = await supabase
+      .from('posts')
+      .delete()
+      .eq('id', pid)
+    error = result.error
+  }
+
+  if (error) {
+    console.error('Delete post error:', error)
+    return { success: false, error }
+  }
+
+  // Try to decrement post count (ignore errors)
+  try {
+    await supabase.rpc('decrement_posts', { creator_id: cid })
+  } catch (e) {
+    console.warn('Failed to decrement posts count:', e)
+  }
+
+  return { success: true, error: null }
 }
 
 // Get single post

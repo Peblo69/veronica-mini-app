@@ -24,9 +24,11 @@ interface MessagesPageProps {
   user: User
   selectedConversationId?: string | null
   onConversationOpened?: () => void
+  onChatStateChange?: (isOpen: boolean) => void
+  onProfileClick?: (user: User) => void
 }
 
-export default function MessagesPage({ user, selectedConversationId, onConversationOpened }: MessagesPageProps) {
+export default function MessagesPage({ user, selectedConversationId, onConversationOpened, onChatStateChange, onProfileClick }: MessagesPageProps) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -42,6 +44,29 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [viewportHeight, setViewportHeight] = useState('100dvh')
+
+  // iOS viewport height fix
+  useEffect(() => {
+    if (activeConversation) {
+      const updateHeight = () => {
+        if (window.visualViewport) {
+          setViewportHeight(`${window.visualViewport.height}px`)
+        } else {
+          setViewportHeight(`${window.innerHeight}px`)
+        }
+      }
+      
+      updateHeight()
+      window.visualViewport?.addEventListener('resize', updateHeight)
+      window.addEventListener('resize', updateHeight)
+      
+      return () => {
+        window.visualViewport?.removeEventListener('resize', updateHeight)
+        window.removeEventListener('resize', updateHeight)
+      }
+    }
+  }, [activeConversation])
 
   // Load conversations
   useEffect(() => {
@@ -62,6 +87,8 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
   // Load messages when conversation changes
   useEffect(() => {
+    onChatStateChange?.(!!activeConversation)
+    
     if (activeConversation) {
       loadMessages(activeConversation.id)
       markMessagesRead(activeConversation.id, user.telegram_id)
@@ -80,6 +107,10 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       })
 
       return () => unsubscribe()
+    }
+
+    return () => {
+      onChatStateChange?.(false)
     }
   }, [activeConversation])
 
@@ -250,7 +281,10 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   // Chat view - Full screen overlay
     if (activeConversation) {
     return (
-      <div className="fixed inset-0 z-[100] flex flex-col bg-[#F8FAFC]">
+      <div 
+        className="fixed inset-0 z-[100] flex flex-col bg-[#F8FAFC] overflow-hidden"
+        style={{ height: viewportHeight }}
+      >
         {/* Hidden file input */}
         <input
           type="file"
@@ -261,29 +295,46 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         />
 
         {/* Header - Sticky at top */}
-        <div className="shrink-0 bg-white border-b border-gray-100 shadow-sm safe-area-top">
+        <div className="shrink-0 bg-white border-b border-gray-100 shadow-sm safe-area-top relative z-50">
           <div className="flex items-center gap-3 px-3 py-2 h-14">
-            <button onClick={() => setActiveConversation(null)} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors -ml-1">
+            <button 
+              onClick={(e) => { 
+                e.stopPropagation();
+                setActiveConversation(null); 
+                onChatStateChange?.(false); 
+              }} 
+              className="p-1.5 hover:bg-gray-100 rounded-full transition-colors -ml-1 relative z-10"
+            >
               <ArrowLeft className="w-5 h-5 text-gray-800" />
             </button>
-            <div className="relative">
-              <img
-                src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
-                alt=""
-                className="w-9 h-9 rounded-full object-cover"
-              />
-              {/* Online indicator */}
-              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1">
-                <span className="font-semibold text-[15px] text-gray-900 truncate">{activeConversation.other_user?.first_name || activeConversation.other_user?.username}</span>
-                {activeConversation.other_user?.is_verified && (
-                  <CheckCircle className="w-3.5 h-3.5 text-of-blue fill-of-blue" />
-                )}
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                if (activeConversation.other_user) {
+                  onProfileClick?.(activeConversation.other_user);
+                }
+              }}
+              className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-70 transition-opacity text-left relative z-10 cursor-pointer"
+            >
+              <div className="relative shrink-0">
+                <img
+                  src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
+                  alt=""
+                  className="w-9 h-9 rounded-full object-cover"
+                />
+                {/* Online indicator */}
+                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
               </div>
-              <p className="text-[11px] text-green-600 font-medium">Online</p>
-            </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold text-[15px] text-gray-900 truncate">{activeConversation.other_user?.first_name || activeConversation.other_user?.username}</span>
+                  {activeConversation.other_user?.is_verified && (
+                    <CheckCircle className="w-3.5 h-3.5 text-of-blue fill-of-blue" />
+                  )}
+                </div>
+                <p className="text-[11px] text-green-600 font-medium">Online</p>
+              </div>
+            </button>
           </div>
         </div>
 

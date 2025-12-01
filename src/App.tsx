@@ -35,6 +35,7 @@ function App() {
   void secretBuffer // Used in keyboard listener
   const [showLivestream, setShowLivestream] = useState<{ isCreator: boolean; livestreamId?: string } | null>(null)
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
+  const [isChatOpen, setIsChatOpen] = useState(false)
   const [unreadNotifications, setUnreadNotifications] = useState(0)
   const [showSettings, setShowSettings] = useState(false)
 
@@ -248,7 +249,7 @@ function App() {
       case 'home': return <HomePage user={user} onCreatorClick={openCreatorProfile} onLivestreamClick={(id) => openLivestream(false, id)} onGoLive={() => openLivestream(true)} />
       case 'notifications': return <NotificationsPage user={user} />
       case 'create': return <CreatePage user={user} onBecomeCreator={openApplication} />
-      case 'messages': return <MessagesPage user={user} selectedConversationId={selectedConversationId} onConversationOpened={() => setSelectedConversationId(null)} />
+      case 'messages': return <MessagesPage user={user} selectedConversationId={selectedConversationId} onConversationOpened={() => setSelectedConversationId(null)} onChatStateChange={setIsChatOpen} onProfileClick={openCreatorProfile} />
       case 'profile': return <ProfilePage user={user} setUser={setUser} onBecomeCreator={openApplication} onSettingsClick={() => setShowSettings(true)} />
       default: return <HomePage user={user} onCreatorClick={openCreatorProfile} />
     }
@@ -266,10 +267,10 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50/50 relative overflow-hidden">
+    <div className="h-full w-full bg-gray-50/50 relative overflow-hidden flex flex-col">
       <div className="fixed inset-0 bg-gradient-to-br from-blue-50/50 via-purple-50/30 to-pink-50/30 -z-10" />
       
-      {!showApplication && !showAdmin && (
+      {!showApplication && !showAdmin && !isChatOpen && (
         <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-lg border-b border-white/20 shadow-sm">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-2">
@@ -295,14 +296,15 @@ function App() {
         </header>
       )}
 
-      <main className={showApplication || showAdmin ? '' : 'pt-16 pb-32'}>
+      <main className={`flex-1 overflow-y-auto overflow-x-hidden overscroll-none ${showApplication || showAdmin || isChatOpen ? '' : 'pt-16 pb-24'}`}>
         <AnimatePresence mode="wait">
           <motion.div
             key={showAdmin ? 'admin' : showApplication ? 'application' : viewingCreator ? 'creator' : activePage}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="h-full"
           >
             {renderPage()}
           </motion.div>
@@ -320,7 +322,7 @@ function App() {
         )}
       </AnimatePresence>
 
-      {!viewingCreator && !showApplication && !showAdmin && (
+      {!viewingCreator && !showApplication && !showAdmin && !isChatOpen && (
         <nav className="fixed bottom-4 left-4 right-4 z-50">
           <div className="glass-panel rounded-[1.2rem] p-1.5 flex items-center justify-around shadow-premium backdrop-blur-2xl bg-white/80">
             {navItems.map((item) => {

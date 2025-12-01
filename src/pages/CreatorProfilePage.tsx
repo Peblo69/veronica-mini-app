@@ -153,19 +153,19 @@ export default function CreatorProfilePage({ creator, currentUser, onBack, onMes
   void _exclusiveCount; void _mediaCount // Used for future tab counts
 
   return (
-    <div className="bg-gray-50 min-h-screen relative overflow-hidden">
+    <div className="bg-gray-50 min-h-full relative">
       {/* Animated Background Banner */}
-      <div className="relative h-48 overflow-hidden">
+      <div className="relative h-44 overflow-hidden">
          <div className="absolute inset-0 bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 animate-gradient bg-[length:200%_200%]" />
          <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-100 contrast-150"></div>
          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-gray-50/90" />
-         
-         {/* Back Navigation */}
-         <div className="absolute top-0 left-0 right-0 p-4 z-20 flex justify-between items-center">
-            <button onClick={onBack} className="w-10 h-10 bg-black/20 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-black/30 transition-colors border border-white/20">
+
+         {/* Back Navigation - Fixed at top */}
+         <div className="absolute top-2 left-0 right-0 px-3 z-20 flex justify-between items-center">
+            <button onClick={onBack} className="w-9 h-9 bg-black/20 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-black/30 transition-colors border border-white/20">
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <button className="w-10 h-10 bg-black/20 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-black/30 transition-colors border border-white/20">
+            <button className="w-9 h-9 bg-black/20 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-black/30 transition-colors border border-white/20">
               <MoreHorizontal className="w-5 h-5" />
             </button>
          </div>

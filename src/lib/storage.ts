@@ -98,10 +98,19 @@ export async function uploadMultipleFiles(
 
 // Delete file from bucket
 export async function deleteFile(bucket: BucketName, path: string): Promise<boolean> {
-  const { error } = await supabase.storage
+  console.log(`[Storage] Deleting file from ${bucket}:`, path)
+
+  const { data, error } = await supabase.storage
     .from(bucket)
     .remove([path])
-  return !error
+
+  if (error) {
+    console.error(`[Storage] Delete error from ${bucket}:`, error)
+    return false
+  }
+
+  console.log(`[Storage] Delete success:`, data)
+  return true
 }
 
 // Upload avatar

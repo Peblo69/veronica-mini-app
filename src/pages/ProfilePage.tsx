@@ -112,9 +112,9 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
   }
 
   return (
-    <div className="bg-gray-50 min-h-screen relative overflow-hidden">
+    <div className="bg-gray-50 min-h-full relative">
       {/* Animated Background Banner */}
-      <div className="relative h-48 overflow-hidden">
+      <div className="relative h-44 overflow-hidden">
          <div className="absolute inset-0 bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 animate-gradient bg-[length:200%_200%]" />
          <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-100 contrast-150"></div>
          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-gray-50/90" />

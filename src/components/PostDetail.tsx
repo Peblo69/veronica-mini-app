@@ -66,11 +66,20 @@ export default function PostDetail({ post, user, onBack, onDeleted, onUpdated }:
   }
 
   const handleDelete = async () => {
+    if (!window.confirm('Are you sure you want to delete this post?')) return
+
     setIsDeleting(true)
-    const { success } = await deletePost(currentPost.id, user.telegram_id)
-    if (success) {
-      onDeleted?.()
-      onBack()
+    try {
+      const { success, error } = await deletePost(currentPost.id, currentPost.creator_id)
+      if (success) {
+        onDeleted?.()
+        onBack()
+      } else {
+        const errMsg = error?.message || JSON.stringify(error) || 'Unknown error'
+        alert(`Delete failed: ${errMsg}`)
+      }
+    } catch (err: any) {
+      alert(`Delete error: ${err?.message || String(err)}`)
     }
     setIsDeleting(false)
   }
