@@ -25,6 +25,7 @@ export default function PostDetail({ post, user, onBack, onDeleted, onUpdated }:
   const [isDeleting, setIsDeleting] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const isOwner = Number(post.creator_id) === Number(user.telegram_id)
 
@@ -66,20 +67,19 @@ export default function PostDetail({ post, user, onBack, onDeleted, onUpdated }:
   }
 
   const handleDelete = async () => {
-    if (!window.confirm('Are you sure you want to delete this post?')) return
-
     setIsDeleting(true)
+    setDeleteError(null)
     try {
-      const { success, error } = await deletePost(currentPost.id, currentPost.creator_id)
+      const { success } = await deletePost(currentPost.id, currentPost.creator_id)
       if (success) {
+        setShowDeleteConfirm(false)
         onDeleted?.()
         onBack()
       } else {
-        const errMsg = error?.message || JSON.stringify(error) || 'Unknown error'
-        alert(`Delete failed: ${errMsg}`)
+        setDeleteError('Unable to delete post. Please try again.')
       }
-    } catch (err: any) {
-      alert(`Delete error: ${err?.message || String(err)}`)
+    } catch {
+      setDeleteError('Something went wrong. Please try again.')
     }
     setIsDeleting(false)
   }
@@ -319,8 +319,8 @@ export default function PostDetail({ post, user, onBack, onDeleted, onUpdated }:
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-6"
-            onClick={() => setShowDeleteConfirm(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[120] p-6"
+            onClick={() => { setShowDeleteConfirm(false); setDeleteError(null); }}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -333,18 +333,26 @@ export default function PostDetail({ post, user, onBack, onDeleted, onUpdated }:
                 <Trash2 className="w-7 h-7 text-red-500" />
               </div>
               <h3 className="text-xl font-bold mb-2 text-center text-gray-900">Delete Post?</h3>
-              <p className="text-gray-500 mb-8 text-center text-sm">This action cannot be undone. The post will be permanently removed.</p>
+              <p className="text-gray-500 mb-4 text-center text-sm">This action cannot be undone. The post will be permanently removed.</p>
+
+              {deleteError && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-xl">
+                  <p className="text-red-600 text-sm text-center font-medium">{deleteError}</p>
+                </div>
+              )}
+
               <div className="flex gap-3">
                 <button
-                  onClick={() => setShowDeleteConfirm(false)}
+                  onClick={() => { setShowDeleteConfirm(false); setDeleteError(null); }}
                   className="flex-1 py-3 border border-gray-200 rounded-xl font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                  disabled={isDeleting}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDelete}
                   disabled={isDeleting}
-                  className="flex-1 py-3 bg-red-500 text-white rounded-xl font-semibold hover:bg-red-600 transition-colors flex items-center justify-center shadow-lg shadow-red-500/30"
+                  className="flex-1 py-3 bg-red-500 text-white rounded-xl font-semibold hover:bg-red-600 transition-colors flex items-center justify-center shadow-lg shadow-red-500/30 disabled:opacity-50"
                 >
                   {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Delete'}
                 </button>

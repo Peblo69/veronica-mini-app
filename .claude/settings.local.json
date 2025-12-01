@@ -5,7 +5,10 @@
       "Bash(npx tsc:*)",
       "Bash(npm run build:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(npm install:*)",
+      "Bash(npx gh-pages:*)"
     ],
     "deny": [],
     "ask": []
