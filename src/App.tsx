@@ -138,11 +138,21 @@ function App() {
           })
         }
       } else {
-        // Development/test mode - no Telegram WebApp
-        setUser({
-          telegram_id: 123456789,
+        // Development/test mode - ensure a Supabase user exists so follow/like/etc. work
+        const fallbackTelegramUser = {
+          id: 123456789,
           username: 'testuser',
           first_name: 'Test',
+          last_name: 'User',
+          photo_url: 'https://i.pravatar.cc/150?u=testuser',
+        }
+        const seededUser = await getOrCreateUser(fallbackTelegramUser)
+
+        setUser(seededUser || {
+          telegram_id: fallbackTelegramUser.id,
+          username: fallbackTelegramUser.username,
+          first_name: fallbackTelegramUser.first_name,
+          last_name: fallbackTelegramUser.last_name,
           balance: 100,
           is_creator: false,
           is_verified: false,

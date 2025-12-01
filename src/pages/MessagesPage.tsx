@@ -27,6 +27,12 @@ type ChatMessage = Message & {
   error?: string
 }
 
+type PendingMedia = {
+  file: File | Blob
+  mediaType: 'image' | 'video' | 'voice'
+  duration?: number
+}
+
 interface MessagesPageProps {
   user: User
   selectedConversationId?: string | null
@@ -53,6 +59,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const previewUrlsRef = useRef<Set<string>>(new Set())
+  const pendingMediaRef = useRef<Map<string, PendingMedia>>(new Map())
   const [viewportHeight, setViewportHeight] = useState('100dvh')
 
   const trackPreviewUrl = (url: string) => {
@@ -88,6 +95,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
     if (finalMessage && previewToRelease) {
       releasePreviewUrl(previewToRelease)
+      pendingMediaRef.current.delete(tempId)
     }
   }
 
@@ -186,6 +194,41 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const loadGifts = async () => {
     const data = await getGifts()
     setGifts(data)
+  }
+
+  const runMediaUpload = async (tempId: string, payload: PendingMedia, conversationId: string) => {
+    setUploadingCount(prev => prev + 1)
+    try {
+      if (payload.mediaType === 'voice') {
+        const voiceResult = await uploadVoiceMessage(payload.file as Blob, user.telegram_id, payload.duration || 0)
+        if (voiceResult.error || !voiceResult.url) {
+          throw new Error(voiceResult.error || 'Voice upload failed')
+        }
+        const msg = await sendMediaMessage(conversationId, user.telegram_id, voiceResult.url, 'voice')
+        if (msg) {
+          resolveTempMessage(tempId, msg)
+        } else {
+          throw new Error('Failed to send voice message')
+        }
+      } else {
+        const mediaResult = await uploadMessageMedia(payload.file as File, user.telegram_id)
+        if (mediaResult.error || !mediaResult.url) {
+          throw new Error(mediaResult.error || 'Upload failed')
+        }
+        const msg = await sendMediaMessage(conversationId, user.telegram_id, mediaResult.url, payload.mediaType)
+        if (msg) {
+          resolveTempMessage(tempId, msg)
+        } else {
+          throw new Error('Failed to send media message')
+        }
+      }
+      pendingMediaRef.current.delete(tempId)
+    } catch (err) {
+      console.error('[Chat] Media upload error:', err)
+      resolveTempMessage(tempId, undefined, (err as Error).message)
+    } finally {
+      setUploadingCount(prev => Math.max(0, prev - 1))
+    }
   }
 
   const handleSendMessage = async () => {
@@ -323,26 +366,8 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       }
 
       setMessages(prev => [...prev, optimisticMessage])
-      setUploadingCount(prev => prev + 1)
-
-      try {
-        const result = await uploadMessageMedia(file, user.telegram_id)
-        if (result.error || !result.url) {
-          throw new Error(result.error || 'Upload failed')
-        }
-
-        const msg = await sendMediaMessage(activeConversation.id, user.telegram_id, result.url, mediaType)
-        if (msg) {
-          resolveTempMessage(tempId, msg)
-        } else {
-          throw new Error('Failed to send media message')
-        }
-      } catch (err) {
-        console.error('[Chat] Media upload error:', err)
-        resolveTempMessage(tempId, undefined, (err as Error).message)
-      } finally {
-        setUploadingCount(prev => Math.max(0, prev - 1))
-      }
+      pendingMediaRef.current.set(tempId, { file, mediaType })
+      void runMediaUpload(tempId, pendingMediaRef.current.get(tempId)!, activeConversation.id)
     }
 
     e.target.value = ''
@@ -377,26 +402,43 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     }
 
     setMessages(prev => [...prev, optimisticMessage])
-    setUploadingCount(prev => prev + 1)
+    pendingMediaRef.current.set(tempId, { file: blob, mediaType: 'voice', duration })
+    void runMediaUpload(tempId, pendingMediaRef.current.get(tempId)!, activeConversation.id)
+  }
 
-    try {
-      const result = await uploadVoiceMessage(blob, user.telegram_id, duration)
-      if (result.error || !result.url) {
-        throw new Error(result.error || 'Voice upload failed')
-      }
+  const retryFailedMessage = async (msg: ChatMessage) => {
+    if (!activeConversation || msg._status !== 'failed') return
+    const tempId = msg._localId || msg.id
 
-      const msg = await sendMediaMessage(activeConversation.id, user.telegram_id, result.url, 'voice')
-      if (msg) {
-        resolveTempMessage(tempId, msg)
-      } else {
-        throw new Error('Failed to send voice message')
+    if (msg.message_type === 'text' && msg.content) {
+      setMessages(prev =>
+        prev.map(m => (m._localId === tempId ? { ...m, _status: 'sending', error: undefined, created_at: new Date().toISOString() } : m))
+      )
+      setSending(true)
+      try {
+        const result = await sendMessage(activeConversation.id, user.telegram_id, msg.content)
+        if (result) {
+          resolveTempMessage(tempId, result)
+        } else {
+          resolveTempMessage(tempId, undefined, 'Failed to send message')
+        }
+      } catch (err) {
+        resolveTempMessage(tempId, undefined, (err as Error).message)
       }
-    } catch (err) {
-      console.error('[Chat] Voice upload error:', err)
-      resolveTempMessage(tempId, undefined, (err as Error).message)
-    } finally {
-      setUploadingCount(prev => Math.max(0, prev - 1))
+      setSending(false)
+      return
     }
+
+    const pending = pendingMediaRef.current.get(tempId)
+    if (!pending) {
+      alert('Original media is no longer available. Please resend the file.')
+      return
+    }
+
+    setMessages(prev =>
+      prev.map(m => (m._localId === tempId ? { ...m, _status: 'uploading', error: undefined } : m))
+    )
+    void runMediaUpload(tempId, pending, activeConversation.id)
   }
 
   const formatTime = (date: string) => {
@@ -674,10 +716,13 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                   </div>
                 </div>
                 {isFailed && (
-                  <div className={`flex items-center gap-1 text-[10px] text-red-500 px-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                  <button
+                    onClick={() => retryFailedMessage(msg)}
+                    className={`flex items-center gap-1 text-[10px] text-red-500 px-1 underline-offset-2 ${isOwn ? 'justify-end' : 'justify-start'} hover:underline`}
+                  >
                     <AlertCircle className="w-3.5 h-3.5" />
-                    <span>{msg.error || 'Failed to send'}</span>
-                  </div>
+                    <span>{msg.error || 'Failed to send. Tap to retry.'}</span>
+                  </button>
                 )}
               </motion.div>
             )

@@ -795,17 +795,14 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
       case 'about': return renderAboutSection()
       default: return (
         <>
-          <div className="flex items-center justify-center p-3 border-b border-gray-200 sticky top-0 z-10 safe-area-top" style={{ backgroundColor: '#FFFFFF' }}>
-            <div className="w-8" /> {/* Spacer for centering */}
-            <div className="w-10 h-1 bg-gray-300 rounded-full" /> {/* Handle bar */}
-            <div className="w-8 flex justify-end">
-              <button
-                onClick={onClose}
-                className="w-8 h-8 flex items-center justify-center bg-gray-200/80 rounded-full"
-              >
-                <X className="w-5 h-5 text-gray-600" />
-              </button>
-            </div>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 z-10 safe-area-top" style={{ backgroundColor: '#FFFFFF' }}>
+            <h2 className="text-[17px] font-semibold text-gray-900">Settings</h2>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"
+            >
+              <X className="w-5 h-5 text-gray-600" />
+            </button>
           </div>
           {renderMainMenu()}
         </>
