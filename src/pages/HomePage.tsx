@@ -4,6 +4,8 @@ import { Heart, MessageCircle, Bookmark, Share2, MoreHorizontal, CheckCircle, Lo
 import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, purchaseContent, deletePost, type User, type Post } from '../lib/api'
 import { getLivestreams, type Livestream } from '../lib/livestreamApi'
 import PostDetail from '../components/PostDetail'
+import { reportPost } from '../lib/reportApi'
+import { blockUser } from '../lib/settingsApi'
 
 interface HomePageProps {
   user: User
@@ -101,9 +103,22 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
     setPostMenuOpen(null)
   }
 
-  const handleReportPost = (_post: Post) => {
-    // TODO: Implement report functionality with _post.id
-    alert('Post reported. Thank you for keeping our community safe.')
+  const handleReportPost = async (post: Post) => {
+    const reason = window.prompt('Let us know why you are reporting this post:', 'Inappropriate content')
+    const trimmedReason = reason?.trim()
+    if (!trimmedReason) {
+      setPostMenuOpen(null)
+      return
+    }
+
+    const description = window.prompt('Add any additional details (optional):')?.trim()
+    const result = await reportPost(user.telegram_id, post.id, trimmedReason, description || undefined)
+
+    if (result.success) {
+      alert('Post reported. Thank you for helping keep the community safe.')
+    } else {
+      alert(`Unable to submit report: ${result.error || 'Please try again later.'}`)
+    }
     setPostMenuOpen(null)
   }
 
@@ -114,10 +129,20 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
     setPostMenuOpen(null)
   }
 
-  const handleBlockUser = (post: Post) => {
-    // TODO: Implement block user functionality
-    alert(`User blocked. You won't see their posts anymore.`)
-    setPosts(posts.filter(p => p.creator_id !== post.creator_id))
+  const handleBlockUser = async (post: Post) => {
+    if (!window.confirm(`Block @${post.creator?.username || 'this user'}? You won't see their content anymore.`)) {
+      return
+    }
+
+    const success = await blockUser(user.telegram_id, post.creator_id)
+
+    if (success) {
+      setPosts(prev => prev.filter(p => p.creator_id !== post.creator_id))
+      setSuggestions(prev => prev.filter(creator => creator.telegram_id !== post.creator_id))
+      alert('User blocked successfully.')
+    } else {
+      alert('Failed to block this user. Please try again later.')
+    }
     setPostMenuOpen(null)
   }
 

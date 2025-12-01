@@ -424,6 +424,13 @@ export async function followUser(followerId: number, followingId: number) {
   const { error } = await supabase
     .from('follows')
     .insert({ follower_id: followerId, following_id: followingId })
+
+  if (!error) {
+    // Update follower's following_count
+    await supabase.rpc('increment_following', { user_id: followerId })
+    // Update followed user's followers_count
+    await supabase.rpc('increment_followers', { user_id: followingId })
+  }
   return !error
 }
 
@@ -434,6 +441,13 @@ export async function unfollowUser(followerId: number, followingId: number) {
     .delete()
     .eq('follower_id', followerId)
     .eq('following_id', followingId)
+
+  if (!error) {
+    // Update follower's following_count
+    await supabase.rpc('decrement_following', { user_id: followerId })
+    // Update followed user's followers_count
+    await supabase.rpc('decrement_followers', { user_id: followingId })
+  }
   return !error
 }
 

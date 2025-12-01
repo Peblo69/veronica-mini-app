@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   X, ChevronRight, User, Bell, Shield, Eye, Palette, Globe,
   Moon, Sun, Monitor, Check, Lock, MessageCircle, Heart, UserPlus,
-  DollarSign, Gift, Mail, Smartphone, LogOut, Trash2, Download,
+  DollarSign, Gift, Mail, Smartphone, Trash2, Download,
   HelpCircle, FileText, ExternalLink, Wifi, WifiOff,
   ImageOff, Play, Pause, Crown, Loader2, AlertTriangle
 } from 'lucide-react'
@@ -126,84 +126,103 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
     rightContent?: React.ReactNode;
     danger?: boolean;
   }) => (
-    <motion.button
+    <button
       onClick={onClick}
-      className={`w-full flex items-center gap-4 p-4 bg-white rounded-2xl border border-gray-100 text-left hover:bg-gray-50 transition-colors ${danger ? 'hover:bg-red-50' : ''}`}
-      whileTap={{ scale: 0.98 }}
+      className={`w-full flex items-center gap-3.5 py-3 px-4 text-left active:bg-gray-50 transition-colors ${danger ? 'text-red-600' : 'text-gray-900'}`}
     >
-      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${danger ? 'bg-red-50' : 'bg-gray-50'}`}>
-        <Icon className={`w-5 h-5 ${danger ? 'text-red-500' : 'text-gray-600'}`} />
-      </div>
+      <Icon className={`w-5 h-5 ${danger ? 'text-red-500' : 'text-gray-600'}`} strokeWidth={1.5} />
       <div className="flex-1 min-w-0">
-        <div className={`font-semibold ${danger ? 'text-red-600' : 'text-gray-900'}`}>{label}</div>
-        {description && <div className="text-sm text-gray-500 truncate">{description}</div>}
+        <div className="text-[15px] font-normal leading-tight">{label}</div>
+        {description && <div className="text-[13px] text-gray-500 mt-0.5 truncate">{description}</div>}
       </div>
-      {rightContent || <ChevronRight className="w-5 h-5 text-gray-400" />}
-    </motion.button>
+      {rightContent || <ChevronRight className="w-5 h-5 text-gray-300" strokeWidth={1.5} />}
+    </button>
   )
 
   const SectionHeader = ({ title, onBack }: { title: string; onBack: () => void }) => (
-    <div className="flex items-center gap-3 p-4 border-b border-gray-100 bg-white sticky top-0 z-10">
-      <motion.button
+    <div className="flex items-center gap-3 p-2 border-b border-gray-200 sticky top-0 z-10 safe-area-top" style={{ backgroundColor: '#F2F2F7' }}>
+      <button
         onClick={onBack}
-        className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center"
-        whileTap={{ scale: 0.9 }}
+        className="w-10 h-10 flex items-center justify-center -ml-1 active:opacity-60"
       >
-        <X className="w-5 h-5 text-gray-600" />
-      </motion.button>
-      <h2 className="text-lg font-bold text-gray-900">{title}</h2>
-      {saving && <Loader2 className="w-4 h-4 animate-spin text-of-blue ml-auto" />}
+        <ChevronRight className="w-7 h-7 text-of-blue rotate-180" strokeWidth={2} />
+      </button>
+      <h2 className="text-[17px] font-semibold text-gray-900">{title}</h2>
+      {saving && <Loader2 className="w-4 h-4 animate-spin text-gray-500 ml-auto mr-2" />}
     </div>
   )
 
   // Main Menu
   const renderMainMenu = () => (
-    <div className="space-y-3">
-      <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-100">
-        <img
-          src={user.avatar_url || `https://i.pravatar.cc/150?u=${user.telegram_id}`}
-          alt=""
-          className="w-14 h-14 rounded-full object-cover border-2 border-white shadow-sm"
-        />
-        <div className="flex-1">
-          <div className="font-bold text-gray-900">{user.first_name}</div>
-          <div className="text-sm text-gray-500">@{user.username || 'user'}</div>
+    <div className="space-y-1 pb-8" style={{ backgroundColor: '#F2F2F7' }}>
+      <div className="px-4 pt-4 pb-6 text-center border-b border-gray-200 mb-2 bg-white">
+        <div className="w-20 h-20 mx-auto rounded-full p-1 border border-gray-200 mb-3">
+          <img
+            src={user.avatar_url || `https://i.pravatar.cc/150?u=${user.telegram_id}`}
+            alt=""
+            className="w-full h-full rounded-full object-cover"
+          />
         </div>
-        <motion.button
+        <div className="font-bold text-lg text-gray-900">{user.first_name}</div>
+        <div className="text-sm text-gray-500 mb-4">@{user.username || 'user'}</div>
+        
+        <button
           onClick={() => { setEditingProfile(true); setActiveSection('account') }}
-          className="px-4 py-2 bg-white text-of-blue text-sm font-semibold rounded-xl border border-blue-200"
-          whileTap={{ scale: 0.95 }}
+          className="px-6 py-2 bg-gray-900 text-white text-sm font-semibold rounded-lg active:scale-95 transition-transform"
         >
-          Edit
-        </motion.button>
+          Edit Profile
+        </button>
       </div>
 
-      <SettingItem icon={User} label="Account" description="Profile, username, password" onClick={() => setActiveSection('account')} />
-      <SettingItem icon={Bell} label="Notifications" description="Push, email, sounds" onClick={() => setActiveSection('notifications')} />
-      <SettingItem icon={Shield} label="Privacy & Security" description="Visibility, blocking, data" onClick={() => setActiveSection('privacy')} />
-      <SettingItem icon={Eye} label="Content Preferences" description="NSFW, autoplay, data saver" onClick={() => setActiveSection('content')} />
-      <SettingItem icon={Palette} label="Appearance" description="Theme, colors" onClick={() => setActiveSection('appearance')} />
-      <SettingItem icon={Globe} label="Language" description={languages.find(l => l.code === settings.language)?.name || 'English'} onClick={() => setActiveSection('language')} />
+      <div className="px-4">
+        <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-4 pl-1">Settings</div>
+        <div className="bg-white rounded-xl overflow-hidden divide-y divide-gray-100">
+          <SettingItem icon={User} label="Account" onClick={() => setActiveSection('account')} />
+          <SettingItem icon={Bell} label="Notifications" onClick={() => setActiveSection('notifications')} />
+          <SettingItem icon={Shield} label="Privacy & Security" onClick={() => setActiveSection('privacy')} />
+          <SettingItem icon={Eye} label="Content Preferences" onClick={() => setActiveSection('content')} />
+          <SettingItem icon={Palette} label="Appearance" onClick={() => setActiveSection('appearance')} />
+          <SettingItem icon={Globe} label="Language" description={languages.find(l => l.code === settings.language)?.name} onClick={() => setActiveSection('language')} />
+        </div>
 
-      {user.is_creator && (
-        <SettingItem icon={Crown} label="Creator Settings" description="Monetization, defaults" onClick={() => setActiveSection('creator')} />
-      )}
+        {user.is_creator && (
+          <>
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-6 pl-1">Creator</div>
+            <div className="bg-white rounded-xl overflow-hidden">
+              <SettingItem icon={Crown} label="Creator Tools" onClick={() => setActiveSection('creator')} />
+            </div>
+          </>
+        )}
 
-      <SettingItem icon={HelpCircle} label="Help & About" description="Support, legal, version" onClick={() => setActiveSection('about')} />
+        <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-6 pl-1">Support</div>
+        <div className="bg-white rounded-xl overflow-hidden">
+          <SettingItem icon={HelpCircle} label="Help & Support" onClick={() => setActiveSection('about')} />
+        </div>
 
-      <div className="pt-4">
-        <SettingItem icon={LogOut} label="Log Out" danger onClick={() => {
-          if (window.confirm('Are you sure you want to log out?')) {
-            window.location.reload()
-          }
-        }} />
+        <div className="mt-6">
+          <div className="bg-white rounded-xl overflow-hidden">
+            <button
+              onClick={() => {
+                if (window.confirm('Are you sure you want to log out?')) {
+                  window.location.reload()
+                }
+              }}
+              className="w-full py-3.5 text-center text-[15px] font-medium text-red-600 active:bg-gray-50"
+            >
+              Log Out
+            </button>
+          </div>
+          <div className="text-center mt-8 pb-8">
+            <div className="text-xs text-gray-400">Veronica v1.0.0</div>
+          </div>
+        </div>
       </div>
     </div>
   )
 
   // Account Section
   const renderAccountSection = () => (
-    <div className="space-y-4">
+    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
       <SectionHeader title="Account" onBack={() => { setActiveSection('main'); setEditingProfile(false) }} />
 
       <div className="p-4 space-y-4">
@@ -305,7 +324,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Notifications Section
   const renderNotificationsSection = () => (
-    <div className="space-y-4">
+    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
       <SectionHeader title="Notifications" onBack={() => setActiveSection('main')} />
 
       <div className="p-4 space-y-6">
@@ -377,7 +396,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Privacy Section
   const renderPrivacySection = () => (
-    <div className="space-y-4">
+    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
       <SectionHeader title="Privacy & Security" onBack={() => setActiveSection('main')} />
 
       <div className="p-4 space-y-6">
@@ -467,7 +486,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Content Section
   const renderContentSection = () => (
-    <div className="space-y-4">
+    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
       <SectionHeader title="Content Preferences" onBack={() => setActiveSection('main')} />
 
       <div className="p-4 space-y-4">
@@ -528,7 +547,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Appearance Section
   const renderAppearanceSection = () => (
-    <div className="space-y-4">
+    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
       <SectionHeader title="Appearance" onBack={() => setActiveSection('main')} />
 
       <div className="p-4 space-y-6">
@@ -586,7 +605,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Language Section
   const renderLanguageSection = () => (
-    <div className="space-y-4">
+    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
       <SectionHeader title="Language" onBack={() => setActiveSection('main')} />
 
       <div className="p-4">
@@ -620,7 +639,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Creator Section
   const renderCreatorSection = () => (
-    <div className="space-y-4">
+    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
       <SectionHeader title="Creator Settings" onBack={() => setActiveSection('main')} />
 
       <div className="p-4 space-y-6">
@@ -686,7 +705,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // Blocked Users Section
   const renderBlockedSection = () => (
-    <div className="space-y-4">
+    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
       <SectionHeader title="Blocked Users" onBack={() => setActiveSection('privacy')} />
 
       <div className="p-4">
@@ -726,7 +745,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   // About Section
   const renderAboutSection = () => (
-    <div className="space-y-4">
+    <div style={{ backgroundColor: '#F2F2F7', minHeight: '100%' }}>
       <SectionHeader title="Help & About" onBack={() => setActiveSection('main')} />
 
       <div className="p-4 space-y-3">
@@ -776,17 +795,19 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
       case 'about': return renderAboutSection()
       default: return (
         <>
-          <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-white sticky top-0 z-10">
-            <h2 className="text-lg font-bold text-gray-900">Settings</h2>
-            <motion.button
-              onClick={onClose}
-              className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center"
-              whileTap={{ scale: 0.9 }}
-            >
-              <X className="w-5 h-5 text-gray-600" />
-            </motion.button>
+          <div className="flex items-center justify-center p-3 border-b border-gray-200 sticky top-0 z-10 safe-area-top" style={{ backgroundColor: '#F2F2F7' }}>
+            <div className="w-8" /> {/* Spacer for centering */}
+            <div className="w-10 h-1 bg-gray-300 rounded-full" /> {/* Handle bar */}
+            <div className="w-8 flex justify-end">
+              <button
+                onClick={onClose}
+                className="w-8 h-8 flex items-center justify-center bg-gray-200/80 rounded-full"
+              >
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
           </div>
-          <div className="p-4">{renderMainMenu()}</div>
+          {renderMainMenu()}
         </>
       )
     }
@@ -795,7 +816,8 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
   if (loading) {
     return (
       <motion.div
-        className="fixed inset-0 bg-gray-50 z-50 flex items-center justify-center"
+        className="fixed inset-0 z-[100] flex items-center justify-center"
+        style={{ backgroundColor: '#F2F2F7' }}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
       >
@@ -806,26 +828,27 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
 
   return (
     <motion.div
-      className="fixed inset-0 bg-gray-50 z-50 overflow-y-auto"
-      initial={{ x: '100%' }}
-      animate={{ x: 0 }}
-      exit={{ x: '100%' }}
-      transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+      className="fixed inset-0 z-[100] flex flex-col h-[100dvh]"
+      style={{ backgroundColor: '#F2F2F7' }}
+      initial={{ y: '100%' }}
+      animate={{ y: 0 }}
+      exit={{ y: '100%' }}
+      transition={{ type: 'spring', damping: 30, stiffness: 300 }}
     >
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={activeSection}
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -20 }}
-          transition={{ duration: 0.2 }}
-        >
-          {renderContent()}
-        </motion.div>
-      </AnimatePresence>
-
-      {/* Bottom safe area */}
-      <div className="h-24" />
+      <div className="flex-1 overflow-y-auto relative" style={{ backgroundColor: '#F2F2F7' }}>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={activeSection}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.2 }}
+            className="min-h-full"
+          >
+            {renderContent()}
+          </motion.div>
+        </AnimatePresence>
+      </div>
     </motion.div>
   )
 }

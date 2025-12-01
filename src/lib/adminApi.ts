@@ -277,16 +277,32 @@ export async function getReports(status?: string) {
 
 // Get platform stats
 export async function getPlatformStats(): Promise<PlatformStats> {
-  const today = new Date().toISOString().split('T')[0]
+  const now = new Date()
+  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const endOfDay = new Date(startOfDay)
+  endOfDay.setUTCDate(endOfDay.getUTCDate() + 1)
+  const startIso = startOfDay.toISOString()
+  const endIso = endOfDay.toISOString()
 
-  const [usersRes, creatorsRes, postsRes, applicationsRes, reportsRes, newUsersRes] = await Promise.all([
+  const [usersRes, creatorsRes, postsRes, applicationsRes, reportsRes, newUsersRes, revenueRes] = await Promise.all([
     supabase.from('users').select('id', { count: 'exact', head: true }),
     supabase.from('users').select('id', { count: 'exact', head: true }).eq('is_creator', true),
     supabase.from('posts').select('id', { count: 'exact', head: true }),
     supabase.from('creator_applications').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
     supabase.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-    supabase.from('users').select('id', { count: 'exact', head: true }).gte('created_at', today),
+    supabase.from('users').select('id', { count: 'exact', head: true }).gte('created_at', startIso),
+    supabase
+      .from('transactions')
+      .select('amount')
+      .gte('created_at', startIso)
+      .lt('created_at', endIso)
+      .eq('status', 'completed'),
   ])
+
+  const revenueToday = (revenueRes.data || []).reduce((sum: number, row: { amount: number }) => {
+    const amount = typeof row.amount === 'number' ? row.amount : Number(row.amount || 0)
+    return sum + (isNaN(amount) ? 0 : amount)
+  }, 0)
 
   return {
     total_users: usersRes.count || 0,
@@ -295,7 +311,7 @@ export async function getPlatformStats(): Promise<PlatformStats> {
     pending_applications: applicationsRes.count || 0,
     pending_reports: reportsRes.count || 0,
     new_users_today: newUsersRes.count || 0,
-    revenue_today: 0, // TODO: Calculate from transactions
+    revenue_today: Number(revenueToday.toFixed(2)),
   }
 }
 

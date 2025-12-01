@@ -177,25 +177,23 @@ CREATE TRIGGER on_comment_like_update
   EXECUTE FUNCTION update_comment_likes_count();
 
 -- ============================================
--- 11. TRIGGER FOR POST LIKES DECREMENT
+-- 11. TRIGGER FOR CREATOR LIKES RECEIVED COUNT
+-- Note: likes_count on posts is handled by API RPCs (increment_likes/decrement_likes)
+-- This trigger only handles likes_received on users table
 -- ============================================
 
-CREATE OR REPLACE FUNCTION update_post_likes_count()
+CREATE OR REPLACE FUNCTION update_creator_likes_received()
 RETURNS TRIGGER AS $func$
 BEGIN
   IF TG_OP = 'DELETE' THEN
-    UPDATE posts SET likes_count = GREATEST(0, likes_count - 1) WHERE id = OLD.post_id;
-
-    -- Also decrement creator's total likes received
+    -- Decrement creator's total likes received
     UPDATE users SET likes_received = GREATEST(0, likes_received - 1)
     WHERE telegram_id = (SELECT creator_id FROM posts WHERE id = OLD.post_id);
-
     RETURN OLD;
   ELSIF TG_OP = 'INSERT' THEN
-    -- Also increment creator's total likes received
+    -- Increment creator's total likes received
     UPDATE users SET likes_received = likes_received + 1
     WHERE telegram_id = (SELECT creator_id FROM posts WHERE id = NEW.post_id);
-
     RETURN NEW;
   END IF;
   RETURN NULL;
@@ -203,10 +201,11 @@ END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS on_post_like_update ON likes;
-CREATE TRIGGER on_post_like_update
+DROP TRIGGER IF EXISTS on_creator_likes_update ON likes;
+CREATE TRIGGER on_creator_likes_update
   AFTER INSERT OR DELETE ON likes
   FOR EACH ROW
-  EXECUTE FUNCTION update_post_likes_count();
+  EXECUTE FUNCTION update_creator_likes_received();
 
 -- ============================================
 -- DONE

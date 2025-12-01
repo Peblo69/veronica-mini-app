@@ -366,11 +366,11 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 )}
 
                 <div
-                  className={`max-w-[78%] px-3 py-1.5 relative group ${
+                  className={`max-w-[78%] px-3 py-1.5 relative group overflow-hidden ${
                     isOwn
                       ? 'bg-of-blue text-white rounded-2xl rounded-br-sm'
                       : 'bg-white text-gray-800 rounded-2xl rounded-bl-sm shadow-sm'
-                  } ${msg.message_type === 'text' || msg.message_type === 'voice' ? '' : '!p-0 !bg-transparent !shadow-none !rounded-xl overflow-hidden'}`}
+                  } ${msg.message_type === 'text' || msg.message_type === 'voice' ? '' : '!p-0 !bg-transparent !shadow-none !rounded-xl'}`}
                 >
                   {/* Gift message */}
                   {msg.message_type === 'gift' && msg.gift && (
@@ -487,7 +487,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                         </div>
                       ) : (
                         <div className="flex items-end gap-1">
-                          <p className="text-[14px] leading-tight whitespace-pre-wrap">{msg.content}</p>
+                          <p className="text-[14px] leading-tight whitespace-pre-wrap break-words" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{msg.content}</p>
                           <span className={`text-[10px] shrink-0 flex items-center gap-0.5 ${isOwn ? 'text-white/60' : 'text-gray-400'}`}>
                             {formatTime(msg.created_at)}
                             {isOwn && (

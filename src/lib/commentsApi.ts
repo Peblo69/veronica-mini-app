@@ -188,21 +188,16 @@ export async function deleteComment(
 // ============================================
 
 export async function likeComment(commentId: string, userId: number): Promise<boolean> {
+  // Insert into comment_likes - the on_comment_like_update trigger handles likes_count
   const { error } = await supabase
     .from('comment_likes')
     .insert({ comment_id: commentId, user_id: userId })
-
-  if (!error) {
-    await supabase
-      .from('comments')
-      .update({ likes_count: supabase.rpc('increment_value', { val: 1 }) })
-      .eq('id', commentId)
-  }
 
   return !error
 }
 
 export async function unlikeComment(commentId: string, userId: number): Promise<boolean> {
+  // Delete from comment_likes - the on_comment_like_update trigger handles likes_count
   const { error } = await supabase
     .from('comment_likes')
     .delete()

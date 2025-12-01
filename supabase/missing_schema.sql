@@ -63,6 +63,46 @@ END;
 $func$ LANGUAGE plpgsql;
 
 -- ============================================
+-- 4b. FOLLOWER COUNT FUNCTIONS
+-- ============================================
+
+CREATE OR REPLACE FUNCTION increment_followers(user_id BIGINT)
+RETURNS VOID AS $func$
+BEGIN
+  UPDATE users
+  SET followers_count = followers_count + 1
+  WHERE telegram_id = user_id;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION decrement_followers(user_id BIGINT)
+RETURNS VOID AS $func$
+BEGIN
+  UPDATE users
+  SET followers_count = GREATEST(0, followers_count - 1)
+  WHERE telegram_id = user_id;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION increment_following(user_id BIGINT)
+RETURNS VOID AS $func$
+BEGIN
+  UPDATE users
+  SET following_count = following_count + 1
+  WHERE telegram_id = user_id;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION decrement_following(user_id BIGINT)
+RETURNS VOID AS $func$
+BEGIN
+  UPDATE users
+  SET following_count = GREATEST(0, following_count - 1)
+  WHERE telegram_id = user_id;
+END;
+$func$ LANGUAGE plpgsql;
+
+-- ============================================
 -- 5. UPDATE NOTIFICATIONS TABLE SCHEMA
 -- ============================================
 
