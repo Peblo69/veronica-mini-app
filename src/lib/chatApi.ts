@@ -169,6 +169,8 @@ export async function sendMediaMessage(
   type: 'image' | 'video' | 'voice',
   thumbnailUrl?: string
 ): Promise<Message | null> {
+  console.log('[ChatApi] sendMediaMessage:', { conversationId, senderId, mediaUrl, type })
+
   const { data, error } = await supabase
     .from('messages')
     .insert({
@@ -181,7 +183,12 @@ export async function sendMediaMessage(
     .select('*, sender:users!sender_id(*)')
     .single()
 
-  if (error) return null
+  if (error) {
+    console.error('[ChatApi] sendMediaMessage error:', error)
+    return null
+  }
+
+  console.log('[ChatApi] sendMediaMessage success:', data)
 
   const preview = type === 'image' ? '📷 Photo' : type === 'video' ? '🎥 Video' : '🎤 Voice'
   await updateConversationLastMessage(conversationId, senderId, preview)

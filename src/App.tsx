@@ -14,6 +14,7 @@ import CreatorProfilePage from './pages/CreatorProfilePage'
 import CreatorApplicationPage from './pages/CreatorApplicationPage'
 import AdminPage from './pages/AdminPage'
 import LivestreamPage from './pages/LivestreamPage'
+import SettingsPage from './pages/SettingsPage'
 
 const navItems = [
   { id: 'home', icon: Home },
@@ -35,6 +36,7 @@ function App() {
   const [showLivestream, setShowLivestream] = useState<{ isCreator: boolean; livestreamId?: string } | null>(null)
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
   const [unreadNotifications, setUnreadNotifications] = useState(0)
+  const [showSettings, setShowSettings] = useState(false)
 
   // SECURE ADMIN ACCESS CONFIG
   const ADMIN_SECRET_KEY = 'kjkszpj69'
@@ -97,13 +99,13 @@ function App() {
   }, [user])
 
   const initUser = async () => {
-    const tg = (window as any).Telegram?.WebApp
+    try {
+      const tg = (window as any).Telegram?.WebApp
 
-    if (tg) {
-      tg.ready()
-      tg.expand()
+      if (tg?.initDataUnsafe?.user) {
+        tg.ready()
+        tg.expand()
 
-      if (tg.initDataUnsafe?.user) {
         const dbUser = await getOrCreateUser({
           id: tg.initDataUnsafe.user.id,
           username: tg.initDataUnsafe.user.username,
@@ -114,14 +116,46 @@ function App() {
 
         if (dbUser) {
           setUser(dbUser)
+        } else {
+          // Fallback if DB fails
+          setUser({
+            telegram_id: tg.initDataUnsafe.user.id,
+            username: tg.initDataUnsafe.user.username || 'user',
+            first_name: tg.initDataUnsafe.user.first_name || 'User',
+            balance: 0,
+            is_creator: false,
+            is_verified: false,
+            subscription_price: 0,
+            followers_count: 0,
+            following_count: 0,
+            posts_count: 0,
+            likes_received: 0,
+          })
         }
+      } else {
+        // Development/test mode - no Telegram WebApp
+        setUser({
+          telegram_id: 123456789,
+          username: 'testuser',
+          first_name: 'Test',
+          balance: 100,
+          is_creator: false,
+          is_verified: false,
+          subscription_price: 0,
+          followers_count: 0,
+          following_count: 0,
+          posts_count: 0,
+          likes_received: 0,
+        })
       }
-    } else {
+    } catch (error) {
+      console.error('Failed to init user:', error)
+      // Fallback user on error
       setUser({
         telegram_id: 123456789,
-        username: 'testuser',
-        first_name: 'Test',
-        balance: 100,
+        username: 'guest',
+        first_name: 'Guest',
+        balance: 0,
         is_creator: false,
         is_verified: false,
         subscription_price: 0,
@@ -215,17 +249,17 @@ function App() {
       case 'notifications': return <NotificationsPage user={user} />
       case 'create': return <CreatePage user={user} onBecomeCreator={openApplication} />
       case 'messages': return <MessagesPage user={user} selectedConversationId={selectedConversationId} onConversationOpened={() => setSelectedConversationId(null)} />
-      case 'profile': return <ProfilePage user={user} setUser={setUser} onBecomeCreator={openApplication} />
+      case 'profile': return <ProfilePage user={user} setUser={setUser} onBecomeCreator={openApplication} onSettingsClick={() => setShowSettings(true)} />
       default: return <HomePage user={user} onCreatorClick={openCreatorProfile} />
     }
   }
 
-  if (loading) {
+  if (loading || !user) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-of-blue border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500">Loading...</p>
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-500">{loading ? 'Loading...' : 'Initializing...'}</p>
         </div>
       </div>
     )
@@ -274,6 +308,17 @@ function App() {
           </motion.div>
         </AnimatePresence>
       </main>
+
+      {/* Settings Page */}
+      <AnimatePresence>
+        {showSettings && user && (
+          <SettingsPage
+            user={user}
+            setUser={setUser}
+            onClose={() => setShowSettings(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {!viewingCreator && !showApplication && !showAdmin && (
         <nav className="fixed bottom-4 left-4 right-4 z-50">

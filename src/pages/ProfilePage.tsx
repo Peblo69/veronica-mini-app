@@ -8,9 +8,10 @@ interface ProfilePageProps {
   user: User & { application_status?: string }
   setUser: (user: User) => void
   onBecomeCreator: () => void
+  onSettingsClick: () => void
 }
 
-export default function ProfilePage({ user, setUser, onBecomeCreator }: ProfilePageProps) {
+export default function ProfilePage({ user, setUser, onBecomeCreator, onSettingsClick }: ProfilePageProps) {
   const [activeTab, setActiveTab] = useState<'posts' | 'saved'>('posts')
   const [posts, setPosts] = useState<Post[]>([])
   const [savedPosts, setSavedPosts] = useState<Post[]>([])
@@ -150,6 +151,7 @@ export default function ProfilePage({ user, setUser, onBecomeCreator }: ProfileP
               className="w-11 h-11 rounded-full bg-white/80 backdrop-blur-md border border-white shadow-sm flex items-center justify-center hover:bg-white transition-colors"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
+              onClick={onSettingsClick}
             >
               <Settings className="w-5 h-5 text-gray-700" />
             </motion.button>

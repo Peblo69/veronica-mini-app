@@ -3,14 +3,15 @@
 -- =====================================================
 
 -- Create storage buckets
+-- NOTE: messages bucket is now PUBLIC to allow direct URL access for chat media
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES
   ('avatars', 'avatars', true, 5242880, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
   ('posts', 'posts', true, 104857600, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime']),
-  ('messages', 'messages', false, 104857600, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime', 'audio/mpeg', 'audio/wav', 'audio/ogg']),
+  ('messages', 'messages', true, 104857600, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm']),
   ('stories', 'stories', true, 52428800, ARRAY['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm']),
   ('livestreams', 'livestreams', true, 10485760, ARRAY['image/jpeg', 'image/png', 'image/webp'])
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public, allowed_mime_types = EXCLUDED.allowed_mime_types;
 
 -- =====================================================
 -- STORAGE POLICIES - AVATARS (Public read, authenticated upload)

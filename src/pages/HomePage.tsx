@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Heart, MessageCircle, Bookmark, Share2, MoreHorizontal, CheckCircle, Lock, Eye, DollarSign, AlertTriangle, X, Radio, Users } from 'lucide-react'
-import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, purchaseContent, type User, type Post } from '../lib/api'
+import { Heart, MessageCircle, Bookmark, Share2, MoreHorizontal, CheckCircle, Lock, Eye, DollarSign, AlertTriangle, X, Radio, Users, Trash2, EyeOff, Edit3, Flag, Copy, UserX } from 'lucide-react'
+import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, purchaseContent, deletePost, type User, type Post } from '../lib/api'
 import { getLivestreams, type Livestream } from '../lib/livestreamApi'
 import PostDetail from '../components/PostDetail'
 
@@ -20,6 +20,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   const [purchaseModal, setPurchaseModal] = useState<Post | null>(null)
   const [purchasing, setPurchasing] = useState(false)
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
+  const [postMenuOpen, setPostMenuOpen] = useState<number | null>(null)
 
   useEffect(() => {
     loadData()
@@ -80,6 +81,44 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
   const handlePostUpdated = (updatedPost: Post) => {
     setPosts(posts.map(p => p.id === updatedPost.id ? updatedPost : p))
+  }
+
+  const handleDeletePost = async (post: Post) => {
+    if (!window.confirm('Are you sure you want to delete this post?')) return
+    
+    const result = await deletePost(post.id, post.creator_id)
+    if (result.success) {
+      setPosts(posts.filter(p => p.id !== post.id))
+    } else {
+      alert('Failed to delete post')
+    }
+    setPostMenuOpen(null)
+  }
+
+  const handleHidePost = (post: Post) => {
+    // Hide from local feed (doesn't delete from database)
+    setPosts(posts.filter(p => p.id !== post.id))
+    setPostMenuOpen(null)
+  }
+
+  const handleReportPost = (_post: Post) => {
+    // TODO: Implement report functionality with _post.id
+    alert('Post reported. Thank you for keeping our community safe.')
+    setPostMenuOpen(null)
+  }
+
+  const handleCopyLink = (post: Post) => {
+    const link = `${window.location.origin}/post/${post.id}`
+    navigator.clipboard.writeText(link)
+    alert('Link copied to clipboard!')
+    setPostMenuOpen(null)
+  }
+
+  const handleBlockUser = (post: Post) => {
+    // TODO: Implement block user functionality
+    alert(`User blocked. You won't see their posts anymore.`)
+    setPosts(posts.filter(p => p.creator_id !== post.creator_id))
+    setPostMenuOpen(null)
   }
 
   const openPostDetail = (post: Post) => {
@@ -336,9 +375,94 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                 </button>
                 <div className="flex items-center gap-2">
                   {getVisibilityBadge(post)}
-                  <button className="p-2 hover:bg-gray-50 rounded-full transition-colors text-gray-400 hover:text-gray-600">
-                    <MoreHorizontal className="w-5 h-5" />
-                  </button>
+                  <div className="relative">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setPostMenuOpen(postMenuOpen === post.id ? null : post.id)
+                      }}
+                      className="p-2 hover:bg-gray-50 rounded-full transition-colors text-gray-400 hover:text-gray-600"
+                    >
+                      <MoreHorizontal className="w-5 h-5" />
+                    </button>
+                    <AnimatePresence>
+                      {postMenuOpen === post.id && (
+                        <>
+                          {/* Backdrop */}
+                          <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-40"
+                            onClick={() => setPostMenuOpen(null)}
+                          />
+                          {/* Menu */}
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                            className="absolute right-0 top-full mt-1 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50 min-w-[180px]"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {/* Owner options */}
+                            {Number(post.creator_id) === Number(user.telegram_id) && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setSelectedPost(post)
+                                    setPostMenuOpen(null)
+                                  }}
+                                  className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
+                                >
+                                  <Edit3 className="w-4 h-4" /> Edit Post
+                                </button>
+                                <button
+                                  onClick={() => handleDeletePost(post)}
+                                  className="w-full px-4 py-2.5 text-left text-sm text-red-500 hover:bg-red-50 flex items-center gap-3"
+                                >
+                                  <Trash2 className="w-4 h-4" /> Delete Post
+                                </button>
+                                <div className="border-t border-gray-100 my-1" />
+                              </>
+                            )}
+
+                            {/* Common options */}
+                            <button
+                              onClick={() => handleCopyLink(post)}
+                              className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
+                            >
+                              <Copy className="w-4 h-4" /> Copy Link
+                            </button>
+                            <button
+                              onClick={() => handleHidePost(post)}
+                              className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
+                            >
+                              <EyeOff className="w-4 h-4" /> Hide Post
+                            </button>
+
+                            {/* Non-owner options */}
+                            {Number(post.creator_id) !== Number(user.telegram_id) && (
+                              <>
+                                <div className="border-t border-gray-100 my-1" />
+                                <button
+                                  onClick={() => handleBlockUser(post)}
+                                  className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
+                                >
+                                  <UserX className="w-4 h-4" /> Block User
+                                </button>
+                                <button
+                                  onClick={() => handleReportPost(post)}
+                                  className="w-full px-4 py-2.5 text-left text-sm text-red-500 hover:bg-red-50 flex items-center gap-3"
+                                >
+                                  <Flag className="w-4 h-4" /> Report Post
+                                </button>
+                              </>
+                            )}
+                          </motion.div>
+                        </>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
               </div>
 

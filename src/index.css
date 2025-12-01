@@ -23,7 +23,7 @@ html, body, #root {
 
 body {
   font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #F2F2F7; /* iOS Light Gray Background */
+  background: #F2F2F7;
   color: #000000;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -35,8 +35,9 @@ body {
 
 @layer components {
   .btn-subscribe {
-    @apply px-6 py-2.5 rounded-full font-semibold text-white transition-all duration-300 relative overflow-hidden shadow-lg shadow-of-blue/30;
+    @apply px-6 py-2.5 rounded-full font-semibold text-white transition-all duration-300 relative overflow-hidden;
     background: linear-gradient(135deg, #00AFF0 0%, #0085C0 100%);
+    box-shadow: 0 4px 14px rgba(0, 175, 240, 0.3);
   }
   .btn-subscribe::before {
     content: '';
@@ -53,31 +54,38 @@ body {
   .btn-subscribe:active {
     transform: translateY(1px);
   }
-  
+
   .btn-outline {
-    @apply px-4 py-2 rounded-full font-medium border border-of-blue/30 text-of-blue bg-white/80 backdrop-blur-sm transition-all duration-300;
+    @apply px-4 py-2 rounded-full font-medium bg-white/80 backdrop-blur-sm transition-all duration-300;
+    color: #00AFF0;
+    border: 1px solid rgba(0, 175, 240, 0.3);
   }
   .btn-outline:hover {
-    @apply bg-of-blue text-white border-of-blue shadow-lg shadow-of-blue/20;
+    @apply text-white;
+    background: #00AFF0;
+    border-color: #00AFF0;
+    box-shadow: 0 4px 14px rgba(0, 175, 240, 0.2);
   }
 
   .card {
-    @apply bg-white/90 backdrop-blur-md rounded-2xl shadow-sm border border-white/50 transition-all duration-300;
+    @apply bg-white/90 backdrop-blur-md rounded-2xl shadow-sm transition-all duration-300;
+    border: 1px solid rgba(255, 255, 255, 0.5);
   }
   .card:hover {
-    @apply shadow-md border-of-blue/10;
+    @apply shadow-md;
+    border-color: rgba(0, 175, 240, 0.1);
   }
 
   .nav-item {
     @apply flex flex-col items-center gap-1 p-2 transition-all duration-300 relative;
   }
   .nav-item.active {
-    @apply text-of-blue;
+    color: #00AFF0;
   }
   .nav-item:not(.active) {
     @apply text-gray-400 hover:text-gray-600;
   }
-  
+
   .avatar {
     @apply rounded-full border-2 border-white shadow-lg object-cover transition-transform duration-300;
   }
@@ -88,16 +96,23 @@ body {
   .stats-item {
     @apply flex items-center gap-1 text-sm text-gray-600 font-medium;
   }
-  
+
   .tab-active {
-    @apply text-of-blue border-b-2 border-of-blue font-semibold;
+    @apply font-semibold;
+    color: #00AFF0;
+    border-bottom: 2px solid #00AFF0;
   }
-  
+
   .social-pill {
-    @apply flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 text-sm font-medium bg-white/50 backdrop-blur-sm hover:bg-white hover:border-of-blue/30 transition-colors;
+    @apply flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 text-sm font-medium bg-white/50 backdrop-blur-sm hover:bg-white transition-colors;
+  }
+  .social-pill:hover {
+    border-color: rgba(0, 175, 240, 0.3);
   }
 
   .glass-panel {
-    @apply bg-white/70 backdrop-blur-xl border border-white/40 shadow-glass;
+    @apply bg-white/70 backdrop-blur-xl;
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.4);
   }
 }

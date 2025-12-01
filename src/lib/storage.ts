@@ -28,30 +28,58 @@ export async function uploadFile(
 ): Promise<UploadResult> {
   try {
     const filename = generateFilename(file, userId)
+    console.log(`[Storage] Uploading to ${bucket}:`, { filename, size: file.size, type: file.type })
 
-    const { error } = await supabase.storage
+    const { data, error } = await supabase.storage
       .from(bucket)
       .upload(filename, file, {
         cacheControl: '3600',
-        upsert: false
+        upsert: true // Allow overwriting if file exists
       })
 
     if (error) {
-      console.error('Upload error:', error)
+      console.error(`[Storage] Upload error to ${bucket}:`, error)
       return { url: null, error: error.message, path: null }
     }
 
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from(bucket)
-      .getPublicUrl(filename)
+    console.log(`[Storage] Upload success:`, data)
+
+    // Messages bucket is private, use signed URL
+    // Other buckets are public
+    let url: string
+
+    if (bucket === 'messages') {
+      // Create signed URL that expires in 1 year (31536000 seconds)
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(filename, 31536000)
+
+      if (signedError || !signedData?.signedUrl) {
+        console.error(`[Storage] Signed URL error:`, signedError)
+        // Fallback to public URL
+        const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(filename)
+        url = urlData.publicUrl
+      } else {
+        url = signedData.signedUrl
+        console.log(`[Storage] Signed URL created:`, url)
+      }
+    } else {
+      // Get public URL for public buckets
+      const { data: urlData } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(filename)
+      url = urlData.publicUrl
+    }
+
+    console.log(`[Storage] Final URL:`, url)
 
     return {
-      url: urlData.publicUrl,
+      url,
       error: null,
       path: filename
     }
   } catch (err: any) {
+    console.error(`[Storage] Exception:`, err)
     return { url: null, error: err.message, path: null }
   }
 }
@@ -158,28 +186,45 @@ export async function uploadVoiceMessage(
   const filename = `${userId}/${timestamp}-${random}.webm`
 
   try {
+    console.log('[Storage] Uploading voice message:', { filename, size: blob.size })
+
     const { error } = await supabase.storage
       .from('messages')
       .upload(filename, blob, {
         cacheControl: '3600',
-        contentType: 'audio/webm'
+        contentType: 'audio/webm',
+        upsert: true
       })
 
     if (error) {
+      console.error('[Storage] Voice upload error:', error)
       return { url: null, error: error.message, path: null, duration: 0 }
     }
 
-    const { data: urlData } = supabase.storage
+    // Messages bucket is private, use signed URL
+    const { data: signedData, error: signedError } = await supabase.storage
       .from('messages')
-      .getPublicUrl(filename)
+      .createSignedUrl(filename, 31536000) // 1 year
+
+    let url: string
+    if (signedError || !signedData?.signedUrl) {
+      console.error('[Storage] Voice signed URL error:', signedError)
+      const { data: urlData } = supabase.storage.from('messages').getPublicUrl(filename)
+      url = urlData.publicUrl
+    } else {
+      url = signedData.signedUrl
+    }
+
+    console.log('[Storage] Voice message URL:', url)
 
     return {
-      url: urlData.publicUrl,
+      url,
       error: null,
       path: filename,
       duration
     }
   } catch (err: any) {
+    console.error('[Storage] Voice exception:', err)
     return { url: null, error: err.message, path: null, duration: 0 }
   }
 }

@@ -168,21 +168,48 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file || !activeConversation) return
+    if (!file || !activeConversation) {
+      console.log('[Chat] No file or conversation:', { file: !!file, conv: !!activeConversation })
+      return
+    }
 
     const mediaType = getMediaType(file)
-    if (mediaType === 'unknown') return
+    console.log('[Chat] File selected:', { name: file.name, type: file.type, size: file.size, mediaType })
+
+    if (mediaType === 'unknown' || mediaType === 'audio') {
+      console.log('[Chat] Invalid media type:', mediaType)
+      alert('Please select an image or video file')
+      return
+    }
 
     setSending(true)
-    const result = await uploadMessageMedia(file, user.telegram_id)
 
-    if (result.error) {
-      alert('Upload failed: ' + result.error)
-    } else if (result.url) {
-      const msg = await sendMessage(activeConversation.id, user.telegram_id, result.url)
-      if (msg) {
-        setMessages(prev => [...prev, msg])
+    try {
+      console.log('[Chat] Starting upload to messages bucket...')
+      const result = await uploadMessageMedia(file, user.telegram_id)
+      console.log('[Chat] Upload result:', result)
+
+      if (result.error) {
+        console.error('[Chat] Upload error:', result.error)
+        alert('Upload failed: ' + result.error)
+      } else if (result.url) {
+        console.log('[Chat] Upload success, sending message with URL:', result.url)
+        const msg = await sendMediaMessage(activeConversation.id, user.telegram_id, result.url, mediaType)
+        console.log('[Chat] Message created:', msg)
+
+        if (msg) {
+          setMessages(prev => [...prev, msg])
+        } else {
+          console.error('[Chat] Failed to create message')
+          alert('Failed to send media message')
+        }
+      } else {
+        console.error('[Chat] No URL returned from upload')
+        alert('Upload completed but no URL returned')
       }
+    } catch (err) {
+      console.error('[Chat] Exception during upload:', err)
+      alert('Upload error: ' + (err as Error).message)
     }
 
     setSending(false)
@@ -365,15 +392,57 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                     </div>
                   )}
 
+                  {/* Image message */}
+                  {msg.message_type === 'image' && msg.media_url && (
+                    <div className="rounded-2xl overflow-hidden min-w-[240px] max-w-[280px]">
+                      <img
+                        src={msg.media_url}
+                        alt=""
+                        className="w-full max-h-[350px] object-cover block rounded-2xl"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.onerror = null;
+                          target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="240" height="180" viewBox="0 0 240 180"><rect fill="%231f2937" width="240" height="180" rx="16"/><text fill="%236b7280" font-size="12" x="50%" y="50%" text-anchor="middle" dy=".3em">Failed to load</text></svg>';
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Video message */}
+                  {msg.message_type === 'video' && msg.media_url && (
+                    <div className="rounded-2xl overflow-hidden min-w-[240px] max-w-[280px] bg-black relative group">
+                      <video
+                        src={msg.media_url}
+                        controls
+                        controlsList="nodownload"
+                        playsInline
+                        muted
+                        preload="metadata"
+                        className="w-full max-h-[350px] object-contain block rounded-2xl"
+                        onError={(e) => {
+                          const target = e.target as HTMLVideoElement;
+                          target.style.display = 'none';
+                          const parent = target.parentElement;
+                          if (parent && !parent.querySelector('.video-error')) {
+                            const errorDiv = document.createElement('div');
+                            errorDiv.className = 'video-error flex items-center justify-center h-[180px] text-gray-500 text-sm bg-gray-900 rounded-2xl';
+                            errorDiv.textContent = 'Video unavailable';
+                            parent.appendChild(errorDiv);
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+
                   {/* Regular text/media */}
                   {msg.message_type === 'text' && (
                     <>
                       {msg.content?.match(/^https?:\/\/.*\.(jpg|jpeg|png|gif|webp|mp4|webm)$/i) ? (
-                        <div className="rounded-[20px] overflow-hidden shadow-md bg-black">
+                        <div className="rounded-2xl overflow-hidden min-w-[240px] max-w-[280px]">
                           {msg.content.match(/\.(mp4|webm)$/i) ? (
-                            <video src={msg.content} controls className="w-full max-h-[300px] object-cover block" />
+                            <video src={msg.content} controls controlsList="nodownload" playsInline muted className="w-full max-h-[350px] object-contain block rounded-2xl bg-black" />
                           ) : (
-                            <img src={msg.content} alt="" className="w-full max-h-[300px] object-cover block" />
+                            <img src={msg.content} alt="" className="w-full max-h-[350px] object-cover block rounded-2xl" />
                           )}
                         </div>
                       ) : (

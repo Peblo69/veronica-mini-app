@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, MoreHorizontal, CheckCircle, Image as ImageIcon, Heart, Lock, MessageCircle, UserPlus, UserCheck, Crown, DollarSign, X, AlertTriangle, Eye, Coins, Grid } from 'lucide-react'
+import { ArrowLeft, MoreHorizontal, CheckCircle, Image as ImageIcon, Lock, MessageCircle, UserPlus, Crown, DollarSign, X, AlertTriangle, Grid } from 'lucide-react'
 import { getCreatorPosts, followUser, unfollowUser, getUserRelationship, type User, type Post, canViewPost } from '../lib/api'
 import { getOrCreateConversation } from '../lib/chatApi'
 import { processSubscriptionPayment, processContentPurchase } from '../lib/payments'
@@ -26,7 +26,7 @@ export default function CreatorProfilePage({ creator, currentUser, onBack, onMes
   const [purchasing, setPurchasing] = useState(false)
   const [startingChat, setStartingChat] = useState(false)
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null)
-  const [purchaseError, setPurchaseError] = useState<string | null>(null)
+  const [_purchaseError, setPurchaseError] = useState<string | null>(null)
 
   useEffect(() => {
     loadData()
@@ -148,8 +148,9 @@ export default function CreatorProfilePage({ creator, currentUser, onBack, onMes
     return true
   })
 
-  const exclusiveCount = posts.filter(p => p.visibility === 'subscribers' || p.is_nsfw).length
-  const mediaCount = posts.filter(p => p.media_url).length
+  const _exclusiveCount = posts.filter(p => p.visibility === 'subscribers' || p.is_nsfw).length
+  const _mediaCount = posts.filter(p => p.media_url).length
+  void _exclusiveCount; void _mediaCount // Used for future tab counts
 
   return (
     <div className="bg-gray-50 min-h-screen relative overflow-hidden">
