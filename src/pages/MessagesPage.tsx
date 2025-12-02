@@ -75,6 +75,12 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [keyboardHeight, setKeyboardHeight] = useState(0)
   const keyboardHeightRef = useRef(0)
+  const setKeyboardInset = useCallback((value: number) => {
+    const nextValue = Math.max(0, Math.round(value || 0))
+    if (keyboardHeightRef.current === nextValue) return
+    keyboardHeightRef.current = nextValue
+    setKeyboardHeight(nextValue)
+  }, [])
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastTapRef = useRef<{ time: number; messageId: string } | null>(null)
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
@@ -203,25 +209,18 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
     const tg = (window as any).Telegram?.WebApp
 
-    const applyKeyboardHeight = (value: number) => {
-      const nextValue = Math.max(0, Math.round(value || 0))
-      if (keyboardHeightRef.current === nextValue) return
-      keyboardHeightRef.current = nextValue
-      setKeyboardHeight(nextValue)
-    }
-
-    const handleTelegramViewport = (event?: { height?: number; isStateStable?: boolean }) => {
+    const handleTelegramViewport = (event?: { height?: number }) => {
       if (!tg) return
       const stableHeight = tg.viewportStableHeight || window.innerHeight
       const currentHeight = event?.height ?? tg.viewportHeight ?? window.innerHeight
       const keyboardSpace = Math.max(0, (stableHeight || 0) - (currentHeight || 0))
-      applyKeyboardHeight(keyboardSpace)
+      setKeyboardInset(keyboardSpace)
     }
 
     const handleVisualViewport = () => {
       if (!window.visualViewport) return
       const keyboardSpace = Math.max(0, window.innerHeight - window.visualViewport.height)
-      applyKeyboardHeight(keyboardSpace)
+      setKeyboardInset(keyboardSpace)
     }
 
     handleTelegramViewport()
@@ -235,8 +234,9 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       tg?.offEvent?.('viewportChanged', handleTelegramViewport)
       window.visualViewport?.removeEventListener('resize', handleVisualViewport)
       window.visualViewport?.removeEventListener('scroll', handleVisualViewport)
+      setKeyboardInset(0)
     }
-  }, [activeConversation])
+  }, [activeConversation, setKeyboardInset])
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -1204,6 +1204,11 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                   requestAnimationFrame(() => {
                     messagesEndRef.current?.scrollIntoView({ block: 'end' })
                   })
+                  setKeyboardInset(keyboardHeightRef.current || 0)
+                }}
+                onBlur={() => {
+                  // Drop keyboard inset immediately so composer settles with keyboard
+                  setKeyboardInset(0)
                 }}
                 placeholder="Message..."
                 rows={1}
