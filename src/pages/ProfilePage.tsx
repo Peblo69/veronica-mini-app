@@ -63,6 +63,46 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
     storyInputRef.current?.click()
   }
 
+  const isVideoPost = (post: Post) => {
+    if (!post.media_url) return false
+    if (post.media_type) {
+      const type = post.media_type.toLowerCase()
+      if (type.includes('video')) return true
+    }
+    return /\.(mp4|webm|mov|m4v)$/i.test(post.media_url)
+  }
+
+  const renderPostMedia = (post: Post) => {
+    if (!post.media_url) {
+      return (
+        <div className="w-full h-full bg-gray-50 flex items-center justify-center p-3">
+          <p className="text-[10px] text-gray-500 text-center line-clamp-4">{post.content}</p>
+        </div>
+      )
+    }
+
+    if (isVideoPost(post)) {
+      return (
+        <>
+          <video
+            src={post.media_url}
+            className="w-full h-full object-cover"
+            playsInline
+            muted
+            loop
+            autoPlay
+            preload="metadata"
+          />
+          <div className="absolute top-1 right-1 bg-black/50 rounded-full p-1">
+            <Video className="w-3.5 h-3.5 text-white" />
+          </div>
+        </>
+      )
+    }
+
+    return <img src={post.media_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+  }
+
   const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>, type: 'profile' | 'story') => {
     const file = e.target.files?.[0]
     if (file) {
@@ -296,13 +336,7 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
                   whileTap={{ opacity: 0.9 }}
                   onClick={() => setSelectedPost(post)}
                 >
-                  {post.media_url ? (
-                    <img src={post.media_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-gray-50 flex items-center justify-center p-3">
-                      <p className="text-[10px] text-gray-500 text-center line-clamp-4">{post.content}</p>
-                    </div>
-                  )}
+                  {renderPostMedia(post)}
                   {post.visibility !== 'public' && (
                     <div className="absolute top-1 right-1">
                       <Lock className="w-3 h-3 text-white drop-shadow-md" />
@@ -330,13 +364,7 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
                   whileTap={{ opacity: 0.9 }}
                   onClick={() => setSelectedPost(post)}
                 >
-                  {post.media_url ? (
-                    <img src={post.media_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-gray-50 flex items-center justify-center p-3">
-                       <p className="text-[10px] text-gray-500 text-center line-clamp-4">{post.content}</p>
-                    </div>
-                  )}
+                  {renderPostMedia(post)}
                 </motion.div>
               ))}
             </div>
