@@ -73,6 +73,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const previewUrlsRef = useRef<Set<string>>(new Set())
   const pendingMediaRef = useRef<Map<string, PendingMedia>>(new Map())
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const [keyboardHeight, setKeyboardHeight] = useState(0)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastTapRef = useRef<{ time: number; messageId: string } | null>(null)
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
@@ -114,38 +115,37 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     }
   }
 
-  // Keyboard handling - scroll to bottom when viewport resizes
+  // Keyboard handling - position input above keyboard
   useEffect(() => {
     if (!activeConversation) return
 
-    // Enable VirtualKeyboard API if available (Chrome/Edge)
-    if ('virtualKeyboard' in navigator) {
-      try {
-        (navigator as { virtualKeyboard: { overlaysContent: boolean } }).virtualKeyboard.overlaysContent = true
-      } catch { /* ignore */ }
-    }
+    const updateKeyboardPosition = () => {
+      if (!window.visualViewport) return
 
-    let lastHeight = window.visualViewport?.height ?? window.innerHeight
+      // Calculate keyboard height from visualViewport
+      const keyboardH = window.innerHeight - window.visualViewport.height
 
-    const onViewportResize = () => {
-      const currentHeight = window.visualViewport?.height ?? window.innerHeight
-      const heightDiff = lastHeight - currentHeight
+      if (keyboardH !== keyboardHeight) {
+        setKeyboardHeight(keyboardH)
 
-      // Keyboard opened (height decreased significantly)
-      if (heightDiff > 100) {
-        requestAnimationFrame(() => {
-          messagesEndRef.current?.scrollIntoView({ block: 'end' })
-        })
+        // Scroll messages when keyboard opens
+        if (keyboardH > 100) {
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ block: 'end' })
+          }, 50)
+        }
       }
-
-      lastHeight = currentHeight
     }
 
-    window.visualViewport?.addEventListener('resize', onViewportResize)
+    updateKeyboardPosition()
+    window.visualViewport?.addEventListener('resize', updateKeyboardPosition)
+    window.visualViewport?.addEventListener('scroll', updateKeyboardPosition)
+
     return () => {
-      window.visualViewport?.removeEventListener('resize', onViewportResize)
+      window.visualViewport?.removeEventListener('resize', updateKeyboardPosition)
+      window.visualViewport?.removeEventListener('scroll', updateKeyboardPosition)
     }
-  }, [activeConversation])
+  }, [activeConversation, keyboardHeight])
 
   // Load conversations
   useEffect(() => {
@@ -623,10 +623,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     return (
       <div
         className="fixed inset-0 z-[100] flex flex-col bg-[#F8FAFC]"
-        style={{
-          height: '100dvh',
-          paddingBottom: 'env(keyboard-inset-height, 0px)'
-        }}
+        style={{ height: '100vh' }}
       >
         {/* Hidden file input */}
         <input
@@ -1130,7 +1127,10 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         </AnimatePresence>
 
         {/* Input */}
-        <div className="shrink-0 bg-white border-t border-gray-100 px-3 py-2 pb-[max(8px,env(safe-area-inset-bottom))]">
+        <div
+          className="shrink-0 bg-white border-t border-gray-100 px-3 py-2"
+          style={{ paddingBottom: keyboardHeight > 0 ? `${keyboardHeight}px` : 'max(8px, env(safe-area-inset-bottom))' }}
+        >
           <div className="bg-gray-100 rounded-full p-1.5 flex items-end gap-2">
             <button
               onClick={() => setShowActions(!showActions)}
