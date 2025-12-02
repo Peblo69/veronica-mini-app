@@ -8,6 +8,68 @@ interface ExplorePageProps {
   onCreatorClick: (creator: any) => void
 }
 
+// Video Thumbnail Component with loading state
+function VideoThumbnail({ video, onClick }: { video: Post; onClick: () => void }) {
+  const [isLoaded, setIsLoaded] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    const videoEl = videoRef.current
+    if (!videoEl) return
+
+    const handleLoaded = () => setIsLoaded(true)
+
+    // Check if already loaded
+    if (videoEl.readyState >= 2) {
+      setIsLoaded(true)
+      return
+    }
+
+    videoEl.addEventListener('loadeddata', handleLoaded)
+    return () => videoEl.removeEventListener('loadeddata', handleLoaded)
+  }, [])
+
+  return (
+    <motion.div
+      className="relative aspect-[9/16] bg-gray-900 cursor-pointer overflow-hidden"
+      whileTap={{ scale: 0.98 }}
+      onClick={onClick}
+    >
+      {/* Loading Spinner */}
+      {!isLoaded && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
+          <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* Video Thumbnail - hidden until loaded */}
+      <video
+        ref={videoRef}
+        src={video.media_url}
+        className={`w-full h-full object-cover transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+        muted
+        playsInline
+        preload="metadata"
+      />
+
+      {/* Play Icon Overlay - only show when loaded */}
+      {isLoaded && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+          <Play className="w-8 h-8 text-white/80 fill-white/80" />
+        </div>
+      )}
+
+      {/* Views/Likes Count - only show when loaded */}
+      {isLoaded && (
+        <div className="absolute bottom-2 left-2 flex items-center gap-1">
+          <Play className="w-3 h-3 text-white fill-white" />
+          <span className="text-xs text-white font-medium">{video.likes_count || 0}</span>
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
 export default function ExplorePage({ user, onCreatorClick }: ExplorePageProps) {
   const [videos, setVideos] = useState<Post[]>([])
   const [loading, setLoading] = useState(true)
@@ -113,33 +175,15 @@ export default function ExplorePage({ user, onCreatorClick }: ExplorePageProps) 
       {/* Video Grid */}
       <div className="grid grid-cols-3 gap-0.5 p-0.5">
         {videos.map((video, index) => (
-          <motion.div
+          <div
             key={video.id}
             ref={index === videos.length - 1 ? lastVideoRef : null}
-            className="relative aspect-[9/16] bg-gray-900 cursor-pointer overflow-hidden"
-            whileTap={{ scale: 0.98 }}
-            onClick={() => openReels(index)}
           >
-            {/* Video Thumbnail */}
-            <video
-              src={video.media_url}
-              className="w-full h-full object-cover"
-              muted
-              playsInline
-              preload="metadata"
+            <VideoThumbnail
+              video={video}
+              onClick={() => openReels(index)}
             />
-
-            {/* Play Icon Overlay */}
-            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-              <Play className="w-8 h-8 text-white/80 fill-white/80" />
-            </div>
-
-            {/* Views/Likes Count */}
-            <div className="absolute bottom-2 left-2 flex items-center gap-1">
-              <Play className="w-3 h-3 text-white fill-white" />
-              <span className="text-xs text-white font-medium">{video.likes_count || 0}</span>
-            </div>
-          </motion.div>
+          </div>
         ))}
       </div>
 
@@ -188,6 +232,7 @@ function ReelsViewer({ videos, initialIndex, onClose, onLike, onCreatorClick }: 
   const [currentIndex, setCurrentIndex] = useState(initialIndex)
   const [isMuted, setIsMuted] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
+  const [loadedVideos, setLoadedVideos] = useState<Set<number>>(new Set())
   const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map())
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -204,6 +249,10 @@ function ReelsViewer({ videos, initialIndex, onClose, onLike, onCreatorClick }: 
       }
     })
   }, [currentIndex])
+
+  const handleVideoLoaded = (index: number) => {
+    setLoadedVideos(prev => new Set(prev).add(index))
+  }
 
   const handleDragEnd = (_: any, info: PanInfo) => {
     const threshold = 50
@@ -297,32 +346,42 @@ function ReelsViewer({ videos, initialIndex, onClose, onLike, onCreatorClick }: 
           {videos.map((video, index) => (
             <div
               key={video.id}
-              className="h-screen w-full relative flex items-center justify-center"
+              className="h-screen w-full relative flex items-center justify-center bg-black"
             >
+              {/* Loading Spinner - shows until video is loaded */}
+              {!loadedVideos.has(index) && Math.abs(index - currentIndex) <= 1 && (
+                <div className="absolute inset-0 flex items-center justify-center z-20">
+                  <div className="w-12 h-12 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+                </div>
+              )}
+
+              {/* Video - hidden until loaded */}
               <video
                 ref={el => {
                   if (el) videoRefs.current.set(index, el)
                 }}
                 src={video.media_url}
-                className="h-full w-full object-contain bg-black"
+                className={`h-full w-full object-contain transition-opacity duration-300 ${loadedVideos.has(index) ? 'opacity-100' : 'opacity-0'}`}
                 loop
                 playsInline
                 muted={isMuted}
                 preload={Math.abs(index - currentIndex) <= 1 ? 'auto' : 'none'}
+                onLoadedData={() => handleVideoLoaded(index)}
+                onCanPlay={() => handleVideoLoaded(index)}
               />
 
               {/* Pause Indicator */}
-              {isPaused && index === currentIndex && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              {isPaused && index === currentIndex && loadedVideos.has(index) && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                   <div className="w-20 h-20 bg-black/50 rounded-full flex items-center justify-center">
                     <Play className="w-10 h-10 text-white fill-white ml-1" />
                   </div>
                 </div>
               )}
 
-              {/* Video Info Overlay */}
-              {index === currentIndex && (
-                <div className="absolute bottom-20 left-0 right-16 p-4 pointer-events-auto">
+              {/* Video Info Overlay - only show when loaded */}
+              {index === currentIndex && loadedVideos.has(index) && (
+                <div className="absolute bottom-20 left-0 right-16 p-4 pointer-events-auto z-10">
                   {/* Creator Info */}
                   <div
                     className="flex items-center gap-3 mb-3"
@@ -349,44 +408,46 @@ function ReelsViewer({ videos, initialIndex, onClose, onLike, onCreatorClick }: 
         </motion.div>
       </motion.div>
 
-      {/* Right Side Action Buttons */}
-      <div className="absolute right-3 bottom-32 flex flex-col items-center gap-6 z-50">
-        {/* Like Button */}
-        <button
-          onClick={handleLikeClick}
-          className="flex flex-col items-center"
-        >
-          <div className={`p-2 rounded-full ${currentVideo.liked ? 'text-red-500' : 'text-white'}`}>
-            <Heart className={`w-8 h-8 ${currentVideo.liked ? 'fill-red-500' : ''}`} />
-          </div>
-          <span className="text-white text-xs font-medium">{currentVideo.likes_count || 0}</span>
-        </button>
+      {/* Right Side Action Buttons - only show when video loaded */}
+      {loadedVideos.has(currentIndex) && (
+        <div className="absolute right-3 bottom-32 flex flex-col items-center gap-6 z-50">
+          {/* Like Button */}
+          <button
+            onClick={handleLikeClick}
+            className="flex flex-col items-center"
+          >
+            <div className={`p-2 rounded-full ${currentVideo.liked ? 'text-red-500' : 'text-white'}`}>
+              <Heart className={`w-8 h-8 ${currentVideo.liked ? 'fill-red-500' : ''}`} />
+            </div>
+            <span className="text-white text-xs font-medium">{currentVideo.likes_count || 0}</span>
+          </button>
 
-        {/* Comment Button */}
-        <button className="flex flex-col items-center">
-          <div className="p-2 text-white">
-            <MessageCircle className="w-8 h-8" />
-          </div>
-          <span className="text-white text-xs font-medium">{currentVideo.comments_count || 0}</span>
-        </button>
+          {/* Comment Button */}
+          <button className="flex flex-col items-center">
+            <div className="p-2 text-white">
+              <MessageCircle className="w-8 h-8" />
+            </div>
+            <span className="text-white text-xs font-medium">{currentVideo.comments_count || 0}</span>
+          </button>
 
-        {/* Share Button */}
-        <button className="flex flex-col items-center">
-          <div className="p-2 text-white">
-            <Share2 className="w-8 h-8" />
-          </div>
-          <span className="text-white text-xs font-medium">Share</span>
-        </button>
+          {/* Share Button */}
+          <button className="flex flex-col items-center">
+            <div className="p-2 text-white">
+              <Share2 className="w-8 h-8" />
+            </div>
+            <span className="text-white text-xs font-medium">Share</span>
+          </button>
 
-        {/* Creator Avatar */}
-        <button onClick={handleCreatorClick}>
-          <img
-            src={currentVideo.creator?.avatar_url || `https://i.pravatar.cc/150?u=${currentVideo.creator_id}`}
-            alt=""
-            className="w-12 h-12 rounded-full border-2 border-white object-cover"
-          />
-        </button>
-      </div>
+          {/* Creator Avatar */}
+          <button onClick={handleCreatorClick}>
+            <img
+              src={currentVideo.creator?.avatar_url || `https://i.pravatar.cc/150?u=${currentVideo.creator_id}`}
+              alt=""
+              className="w-12 h-12 rounded-full border-2 border-white object-cover"
+            />
+          </button>
+        </div>
+      )}
 
       {/* Progress Indicator */}
       <div className="absolute top-12 left-0 right-0 flex justify-center gap-1 px-4 z-50">
