@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Grid, Bookmark, Clock, CheckCircle, Lock, Menu, Plus, UserPlus } from 'lucide-react'
+import { Grid, Bookmark, Clock, CheckCircle, Lock, Menu, Plus, UserPlus, Camera, Image, Video, X } from 'lucide-react'
 import { type User, type Post, getCreatorPosts, getSavedPosts } from '../lib/api'
 import PostDetail from '../components/PostDetail'
 
@@ -17,6 +17,9 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
   const [savedPosts, setSavedPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
+  const [showActionMenu, setShowActionMenu] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const storyInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     loadData()
@@ -49,6 +52,36 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
     setPosts(posts.map(p => p.id === updatedPost.id ? { ...updatedPost, can_view: true } : p))
     setSavedPosts(savedPosts.map(p => p.id === updatedPost.id ? { ...updatedPost, can_view: true } : p))
   }
+
+  const handleProfileImageUpload = () => {
+    setShowActionMenu(false)
+    fileInputRef.current?.click()
+  }
+
+  const handleStoryUpload = () => {
+    setShowActionMenu(false)
+    storyInputRef.current?.click()
+  }
+
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>, type: 'profile' | 'story') => {
+    const file = e.target.files?.[0]
+    if (file) {
+      // TODO: Implement actual upload logic
+      console.log(`${type} file selected:`, file.name)
+      // For now, create a local preview URL
+      const previewUrl = URL.createObjectURL(file)
+      if (type === 'profile') {
+        // Update user avatar locally for preview
+        setUser({ ...user, avatar_url: previewUrl })
+      } else {
+        // Story upload - to be implemented
+        console.log('Story upload triggered with:', previewUrl)
+      }
+    }
+    // Reset input
+    e.target.value = ''
+  }
+
   const getApplicationStatusUI = () => {
     if (user.is_creator) return null
 
@@ -134,16 +167,36 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
           {/* Avatar */}
           <div className="relative shrink-0">
              <div className="w-20 h-20 rounded-full p-[2px] bg-gradient-to-tr from-gray-200 to-gray-100">
-               <img 
-                 src={user.avatar_url || 'https://i.pravatar.cc/150?u=' + user.telegram_id} 
-                 alt={user.first_name} 
-                 className="w-full h-full rounded-full object-cover border-2 border-white" 
+               <img
+                 src={user.avatar_url || 'https://i.pravatar.cc/150?u=' + user.telegram_id}
+                 alt={user.first_name}
+                 className="w-full h-full rounded-full object-cover border-2 border-white"
                />
             </div>
-            <div className="absolute bottom-0 right-0 bg-blue-500 rounded-full p-1 border-2 border-white">
+            <motion.button
+              className="absolute bottom-0 right-0 bg-blue-500 rounded-full p-1 border-2 border-white cursor-pointer"
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setShowActionMenu(true)}
+            >
               <Plus className="w-3 h-3 text-white" />
-            </div>
+            </motion.button>
           </div>
+
+          {/* Hidden file inputs */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => handleFileSelected(e, 'profile')}
+          />
+          <input
+            ref={storyInputRef}
+            type="file"
+            accept="image/*,video/*"
+            className="hidden"
+            onChange={(e) => handleFileSelected(e, 'story')}
+          />
 
           {/* Stats */}
           <div className="flex-1 flex justify-around items-center">
@@ -301,6 +354,123 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
             onDeleted={handlePostDeleted}
             onUpdated={handlePostUpdated}
           />
+        )}
+      </AnimatePresence>
+
+      {/* Instagram-Style Action Menu */}
+      <AnimatePresence>
+        {showActionMenu && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 bg-black/50 z-[100]"
+              onClick={() => setShowActionMenu(false)}
+            />
+
+            {/* Bottom Sheet */}
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl z-[101] safe-area-bottom"
+            >
+              {/* Handle bar */}
+              <div className="flex justify-center pt-3 pb-2">
+                <div className="w-10 h-1 bg-gray-300 rounded-full" />
+              </div>
+
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 pb-3 border-b border-gray-100">
+                <span className="text-lg font-bold">Create</span>
+                <motion.button
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setShowActionMenu(false)}
+                  className="p-1"
+                >
+                  <X className="w-6 h-6 text-gray-500" />
+                </motion.button>
+              </div>
+
+              {/* Menu Options */}
+              <div className="py-2">
+                {/* Upload Profile Image */}
+                <motion.button
+                  whileTap={{ scale: 0.98, backgroundColor: '#f3f4f6' }}
+                  onClick={handleProfileImageUpload}
+                  className="w-full flex items-center gap-4 px-4 py-4 active:bg-gray-100 transition-colors"
+                >
+                  <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-orange-400 rounded-full flex items-center justify-center">
+                    <Camera className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="font-semibold text-gray-900">Upload Profile Image</div>
+                    <div className="text-sm text-gray-500">Change your profile picture</div>
+                  </div>
+                </motion.button>
+
+                {/* Add Story */}
+                <motion.button
+                  whileTap={{ scale: 0.98, backgroundColor: '#f3f4f6' }}
+                  onClick={handleStoryUpload}
+                  className="w-full flex items-center gap-4 px-4 py-4 active:bg-gray-100 transition-colors"
+                >
+                  <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
+                    <Plus className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="font-semibold text-gray-900">Add Story</div>
+                    <div className="text-sm text-gray-500">Share a moment with followers</div>
+                  </div>
+                </motion.button>
+
+                {/* Upload Story Image */}
+                <motion.button
+                  whileTap={{ scale: 0.98, backgroundColor: '#f3f4f6' }}
+                  onClick={handleStoryUpload}
+                  className="w-full flex items-center gap-4 px-4 py-4 active:bg-gray-100 transition-colors"
+                >
+                  <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-teal-400 rounded-full flex items-center justify-center">
+                    <Image className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="font-semibold text-gray-900">Upload Story Image</div>
+                    <div className="text-sm text-gray-500">Add a photo to your story</div>
+                  </div>
+                </motion.button>
+
+                {/* Upload Story Video */}
+                <motion.button
+                  whileTap={{ scale: 0.98, backgroundColor: '#f3f4f6' }}
+                  onClick={handleStoryUpload}
+                  className="w-full flex items-center gap-4 px-4 py-4 active:bg-gray-100 transition-colors"
+                >
+                  <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-pink-500 rounded-full flex items-center justify-center">
+                    <Video className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="font-semibold text-gray-900">Upload Story Video</div>
+                    <div className="text-sm text-gray-500">Add a video to your story</div>
+                  </div>
+                </motion.button>
+              </div>
+
+              {/* Cancel Button */}
+              <div className="px-4 pb-4 pt-2">
+                <motion.button
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setShowActionMenu(false)}
+                  className="w-full py-3 bg-gray-100 rounded-xl font-semibold text-gray-700"
+                >
+                  Cancel
+                </motion.button>
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </div>

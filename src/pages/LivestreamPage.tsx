@@ -17,10 +17,13 @@ import {
   sendLivestreamGift,
   subscribeToLivestreamMessages,
   subscribeToViewerCount,
+  getLivestreamAccess,
+  purchaseLivestreamTicket,
   getRemainingStreamMinutes,
   addStreamingMinutes,
   type Livestream,
-  type LivestreamMessage
+  type LivestreamMessage,
+  type LivestreamAccessState
 } from '../lib/livestreamApi'
 
 interface LivestreamPageProps {
@@ -51,6 +54,9 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
   const [remainingMinutes, setRemainingMinutes] = useState(60)
   const [streamDuration, setStreamDuration] = useState(0)
   const [giftAnimation, setGiftAnimation] = useState<{ name: string; sender: string } | null>(null)
+  const [accessState, setAccessState] = useState<LivestreamAccessState | null>(null)
+  const [showTicketPrompt, setShowTicketPrompt] = useState(false)
+  const [unlocking, setUnlocking] = useState(false)
 
   // Stream title for creator
   const [streamTitle, setStreamTitle] = useState('')
@@ -60,6 +66,9 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
   const remoteVideoRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const messageUnsubscribeRef = useRef<(() => void) | null>(null)
+  const viewerCountUnsubscribeRef = useRef<(() => void) | null>(null)
+  const hasLeftRef = useRef(false)
 
   // Initialize
   useEffect(() => {
@@ -113,6 +122,25 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
     setGifts(data)
   }
 
+  const handleIncomingMessage = (msg: LivestreamMessage) => {
+    setMessages(prev => [...prev, msg])
+    if (msg.message_type === 'gift' && msg.gift) {
+      setGiftAnimation({
+        name: msg.gift.name,
+        sender: msg.user?.first_name || msg.user?.username || 'Someone'
+      })
+      setTimeout(() => setGiftAnimation(null), 3000)
+    }
+  }
+
+  const attachRealtimeSubscriptions = (streamId: string) => {
+    messageUnsubscribeRef.current?.()
+    messageUnsubscribeRef.current = subscribeToLivestreamMessages(streamId, handleIncomingMessage)
+
+    viewerCountUnsubscribeRef.current?.()
+    viewerCountUnsubscribeRef.current = subscribeToViewerCount(streamId, setViewerCount)
+  }
+
   const checkStreamingLimit = async () => {
     const remaining = await getRemainingStreamMinutes(user.telegram_id)
     setRemainingMinutes(remaining)
@@ -139,39 +167,24 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
       setLivestream(stream)
       setViewerCount(stream.viewer_count)
 
-      // Load messages
-      const msgs = await getLivestreamMessages(livestreamId)
-      setMessages(msgs)
+      const access = await getLivestreamAccess(stream, user.telegram_id)
+      setAccessState(access)
+      setShowTicketPrompt(false)
 
-      // Subscribe to updates
-      const unsubMessages = subscribeToLivestreamMessages(livestreamId, (msg) => {
-        setMessages(prev => [...prev, msg])
-        // Show gift animation
-        if (msg.message_type === 'gift' && msg.gift) {
-          setGiftAnimation({
-            name: msg.gift.name,
-            sender: msg.user?.first_name || msg.user?.username || 'Someone'
-          })
-          setTimeout(() => setGiftAnimation(null), 3000)
+      if (!access.can_watch) {
+        if (access.requires_ticket && !access.has_ticket) {
+          setShowTicketPrompt(true)
+          setLoading(false)
+          return
         }
-      })
 
-      const unsubViewers = subscribeToViewerCount(livestreamId, setViewerCount)
-
-      // Join stream
-      await joinLivestream(livestreamId, user.telegram_id)
-
-      // Initialize Agora client as viewer
-      if (stream.agora_channel) {
-        await initAgoraViewer(stream.agora_channel)
+        setError(access.reason || 'You do not have access to this stream.')
+        setLoading(false)
+        return
       }
 
-      setLoading(false)
-
-      return () => {
-        unsubMessages()
-        unsubViewers()
-      }
+      hasLeftRef.current = false
+      await enterLivestreamAsViewer(stream)
     } catch (err) {
       console.error('Init viewer error:', err)
       setError('Failed to join stream')
@@ -214,6 +227,28 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
     }
   }
 
+  const enterLivestreamAsViewer = async (stream: Livestream) => {
+    try {
+      setLivestream(stream)
+      setViewerCount(stream.viewer_count)
+      const msgs = await getLivestreamMessages(stream.id)
+      setMessages(msgs)
+      attachRealtimeSubscriptions(stream.id)
+
+      await joinLivestream(stream.id, user.telegram_id)
+
+      if (stream.agora_channel) {
+        await initAgoraViewer(stream.agora_channel)
+      }
+
+      setLoading(false)
+    } catch (err) {
+      console.error('Enter viewer error:', err)
+      setError('Failed to load stream')
+      setLoading(false)
+    }
+  }
+
   const startStream = async () => {
     if (!streamTitle.trim()) {
       alert('Please enter a stream title')
@@ -234,19 +269,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
 
       setLivestream(stream)
 
-      // Subscribe to updates
-      subscribeToLivestreamMessages(stream.id, (msg) => {
-        setMessages(prev => [...prev, msg])
-        if (msg.message_type === 'gift' && msg.gift) {
-          setGiftAnimation({
-            name: msg.gift.name,
-            sender: msg.user?.first_name || msg.user?.username || 'Someone'
-          })
-          setTimeout(() => setGiftAnimation(null), 3000)
-        }
-      })
-
-      subscribeToViewerCount(stream.id, setViewerCount)
+      attachRealtimeSubscriptions(stream.id)
 
       // Initialize Agora as broadcaster
       if (stream.agora_channel) {
@@ -304,12 +327,23 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
   const handleLeaveStream = async () => {
     if (livestream) {
       await leaveLivestream(livestream.id, user.telegram_id)
+      hasLeftRef.current = true
     }
     cleanup()
     onExit()
   }
 
   const cleanup = () => {
+    messageUnsubscribeRef.current?.()
+    viewerCountUnsubscribeRef.current?.()
+    messageUnsubscribeRef.current = null
+    viewerCountUnsubscribeRef.current = null
+    if (!isCreator && livestream && !hasLeftRef.current) {
+      hasLeftRef.current = true
+      void leaveLivestream(livestream.id, user.telegram_id)
+    }
+    setAccessState(null)
+    setShowTicketPrompt(false)
     localVideoTrack?.close()
     localAudioTrack?.close()
     remoteVideoTrack?.stop()
@@ -355,11 +389,39 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
     setSending(false)
   }
 
+  const handleUnlockStream = async () => {
+    if (unlocking) return
+    const targetStream = livestream || (livestreamId ? await getLivestream(livestreamId) : null)
+    if (!targetStream) {
+      setError('This stream is no longer available')
+      setShowTicketPrompt(false)
+      return
+    }
+
+    setUnlocking(true)
+    const result = await purchaseLivestreamTicket(targetStream.id, user.telegram_id)
+    setUnlocking(false)
+
+    if (!result.success) {
+      alert(result.error || 'Failed to unlock this stream')
+      return
+    }
+
+    const updatedAccess = await getLivestreamAccess(targetStream, user.telegram_id)
+    setAccessState(updatedAccess)
+    setShowTicketPrompt(false)
+    hasLeftRef.current = false
+    await enterLivestreamAsViewer(targetStream)
+  }
+
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
+
+  const subscriptionBlocked = !isCreator && Boolean(accessState?.requires_subscription && !accessState?.has_subscription)
+  const ticketPrice = accessState?.entry_price ?? livestream?.entry_price ?? 0
 
   // Error state
   if (error) {
@@ -420,6 +482,25 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
     return (
       <div className="fixed inset-0 bg-black flex items-center justify-center">
         <Loader2 className="w-12 h-12 text-white animate-spin" />
+      </div>
+    )
+  }
+
+  if (subscriptionBlocked) {
+    return (
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-center p-6 space-y-4">
+        <div>
+          <h2 className="text-white text-2xl font-bold mb-2">Subscribers Only</h2>
+          <p className="text-gray-300 text-sm">
+            Subscribe to {livestream?.creator?.first_name || livestream?.creator?.username || 'this creator'} to watch this livestream.
+          </p>
+        </div>
+        <button
+          onClick={onExit}
+          className="px-6 py-3 rounded-full bg-white text-black font-semibold"
+        >
+          Go Back
+        </button>
       </div>
     )
   }
@@ -623,6 +704,49 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
                 </button>
               ))}
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showTicketPrompt && livestream && (
+          <motion.div
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[70] p-6"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="w-full max-w-sm bg-white/90 rounded-3xl p-6 text-center space-y-4 shadow-2xl"
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+            >
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-2">Exclusive Access</p>
+                <h3 className="text-2xl font-bold text-gray-900 mb-1">{livestream?.title || 'Livestream Access'}</h3>
+                <p className="text-gray-600 text-sm">
+                  Unlock this livestream for {ticketPrice} tokens. Tokens go directly to the creator minus platform fees.
+                </p>
+              </div>
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={handleUnlockStream}
+                disabled={unlocking}
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-red-500 to-pink-500 text-white font-semibold disabled:opacity-60"
+              >
+                {unlocking ? 'Unlocking...' : `Unlock for ${ticketPrice} tokens`}
+              </motion.button>
+              <button
+                onClick={() => {
+                  setShowTicketPrompt(false)
+                  onExit()
+                }}
+                className="w-full py-3 rounded-2xl bg-gray-100 text-gray-800 font-semibold"
+              >
+                Not now
+              </button>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
