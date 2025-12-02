@@ -238,20 +238,48 @@ function ReelsViewer({ videos, initialIndex, onClose, onLike, onCreatorClick }: 
 
   const currentVideo = videos[currentIndex]
 
+  // Autoplay current video when index changes or video loads
   useEffect(() => {
-    // Play current video, pause others
-    videoRefs.current.forEach((video, index) => {
-      if (index === currentIndex) {
-        video.currentTime = 0
-        video.play().catch(() => {})
-      } else {
-        video.pause()
-      }
-    })
-  }, [currentIndex])
+    const playCurrentVideo = () => {
+      videoRefs.current.forEach((video, index) => {
+        if (index === currentIndex) {
+          video.currentTime = 0
+          video.muted = isMuted
+          const playPromise = video.play()
+          if (playPromise) {
+            playPromise.catch(() => {
+              // Autoplay was prevented, try muted
+              video.muted = true
+              video.play().catch(() => {})
+            })
+          }
+          setIsPaused(false)
+        } else {
+          video.pause()
+        }
+      })
+    }
+
+    playCurrentVideo()
+  }, [currentIndex, isMuted])
 
   const handleVideoLoaded = (index: number) => {
     setLoadedVideos(prev => new Set(prev).add(index))
+    // If this is the current video, autoplay it
+    if (index === currentIndex) {
+      const video = videoRefs.current.get(index)
+      if (video) {
+        video.muted = isMuted
+        const playPromise = video.play()
+        if (playPromise) {
+          playPromise.catch(() => {
+            video.muted = true
+            video.play().catch(() => {})
+          })
+        }
+        setIsPaused(false)
+      }
+    }
   }
 
   const handleDragEnd = (_: any, info: PanInfo) => {
@@ -365,6 +393,7 @@ function ReelsViewer({ videos, initialIndex, onClose, onLike, onCreatorClick }: 
                 loop
                 playsInline
                 muted={isMuted}
+                autoPlay={index === currentIndex}
                 preload={Math.abs(index - currentIndex) <= 1 ? 'auto' : 'none'}
                 onLoadedData={() => handleVideoLoaded(index)}
                 onCanPlay={() => handleVideoLoaded(index)}
