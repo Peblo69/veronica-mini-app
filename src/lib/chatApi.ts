@@ -148,7 +148,6 @@ export async function sendMessage(
     .insert({
       conversation_id: conversationId,
       sender_id: senderId,
-      client_message_id: clientMessageId,
       content,
       message_type: 'text'
     })
@@ -175,7 +174,7 @@ export async function sendMediaMessage(
   mediaUrl: string,
   type: 'image' | 'video' | 'voice',
   thumbnailUrl?: string,
-  clientMessageId?: string
+  _clientMessageId?: string
 ): Promise<Message | null> {
   console.log('[ChatApi] sendMediaMessage:', { conversationId, senderId, mediaUrl, type })
 
@@ -184,7 +183,6 @@ export async function sendMediaMessage(
     .insert({
       conversation_id: conversationId,
       sender_id: senderId,
-      client_message_id: clientMessageId,
       message_type: type,
       media_url: mediaUrl,
       media_thumbnail: thumbnailUrl
@@ -213,14 +211,13 @@ export async function sendPPVMessage(
   _mediaType: 'image' | 'video',
   price: number,
   thumbnailUrl?: string,
-  clientMessageId?: string
+  _clientMessageId?: string
 ): Promise<Message | null> {
   const { data, error } = await supabase
     .from('messages')
     .insert({
       conversation_id: conversationId,
       sender_id: senderId,
-      client_message_id: clientMessageId,
       message_type: 'ppv',
       media_url: mediaUrl,
       media_thumbnail: thumbnailUrl,
