@@ -1,47 +1,51 @@
 import { useEffect } from 'react'
 
+interface TelegramViewportEvent {
+  isStateStable?: boolean
+}
+
 /**
- * Hook to handle Telegram Mini App viewport changes
- * Sets CSS custom properties for dynamic viewport height
- * Handles keyboard visibility and safe areas
+ * Hook to keep layout height in sync with Telegram keyboard animation.
+ * Uses Telegram's viewportChanged event for instant updates and falls back to visualViewport.
  */
 export function useViewport() {
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp
 
-    const setAppHeight = () => {
-      // Use Telegram's stable viewport height if available
-      const height = tg?.viewportStableHeight || tg?.viewportHeight || window.innerHeight
-      document.documentElement.style.setProperty('--app-height', `${height}px`)
+    const applyViewportMetrics = (opts?: TelegramViewportEvent) => {
+      const height = tg
+        ? (opts?.isStateStable ? tg.viewportStableHeight : tg.viewportHeight) || tg.viewportHeight
+        : window.innerHeight
+
+      document.documentElement.style.setProperty('--app-height', `${height || window.innerHeight}px`)
+      document.documentElement.style.setProperty('--safe-top', `${tg?.safeAreaInsetTop || 0}px`)
+      document.documentElement.style.setProperty('--safe-bottom', `${tg?.safeAreaInsetBottom || 0}px`)
     }
 
     const handleVisualViewport = () => {
       if (window.visualViewport) {
-        // Calculate keyboard height
-        const keyboardHeight = window.innerHeight - window.visualViewport.height
-        document.documentElement.style.setProperty('--keyboard-height', `${keyboardHeight > 0 ? keyboardHeight : 0}px`)
+        const keyboardHeight = Math.max(0, window.innerHeight - window.visualViewport.height)
+        document.documentElement.style.setProperty('--keyboard-height', `${keyboardHeight}px`)
       }
-      setAppHeight()
+      applyViewportMetrics()
     }
 
-    // Initial setup
-    setAppHeight()
+    const handleTelegramViewport = (event?: TelegramViewportEvent) => {
+      applyViewportMetrics(event)
+    }
 
-    // Expand Telegram WebApp to full height
+    const handleWindowResize = () => applyViewportMetrics()
+
+    applyViewportMetrics()
     tg?.expand?.()
 
-    // Listen for resize events
-    window.addEventListener('resize', setAppHeight)
-
-    // Listen for Telegram viewport changes
-    tg?.onEvent?.('viewportChanged', setAppHeight)
-
-    // Listen for visual viewport changes (keyboard)
+    window.addEventListener('resize', handleWindowResize)
+    tg?.onEvent?.('viewportChanged', handleTelegramViewport)
     window.visualViewport?.addEventListener('resize', handleVisualViewport)
 
     return () => {
-      window.removeEventListener('resize', setAppHeight)
-      tg?.offEvent?.('viewportChanged', setAppHeight)
+      window.removeEventListener('resize', handleWindowResize)
+      tg?.offEvent?.('viewportChanged', handleTelegramViewport)
       window.visualViewport?.removeEventListener('resize', handleVisualViewport)
     }
   }, [])
