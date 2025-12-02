@@ -74,6 +74,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const pendingMediaRef = useRef<Map<string, PendingMedia>>(new Map())
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [keyboardHeight, setKeyboardHeight] = useState(0)
+  const keyboardHeightRef = useRef(0)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastTapRef = useRef<{ time: number; messageId: string } | null>(null)
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
@@ -118,34 +119,21 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   // Keyboard handling - position input above keyboard
   useEffect(() => {
     if (!activeConversation) return
-
-    const updateKeyboardPosition = () => {
-      if (!window.visualViewport) return
-
-      // Calculate keyboard height from visualViewport
-      const keyboardH = window.innerHeight - window.visualViewport.height
-
-      if (keyboardH !== keyboardHeight) {
-        setKeyboardHeight(keyboardH)
-
-        // Scroll messages when keyboard opens
-        if (keyboardH > 100) {
-          setTimeout(() => {
-            messagesEndRef.current?.scrollIntoView({ block: 'end' })
-          }, 50)
-        }
+    // We now rely on interactive-widget=resizes-content in index.html for basic resizing.
+    // However, we still listen to visualViewport to ensure we scroll to bottom.
+    
+    const handleResize = () => {
+      if (messagesEndRef.current) {
+        // Use a small timeout to let layout settle
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ block: 'end' })
+        }, 100)
       }
     }
 
-    updateKeyboardPosition()
-    window.visualViewport?.addEventListener('resize', updateKeyboardPosition)
-    window.visualViewport?.addEventListener('scroll', updateKeyboardPosition)
-
-    return () => {
-      window.visualViewport?.removeEventListener('resize', updateKeyboardPosition)
-      window.visualViewport?.removeEventListener('scroll', updateKeyboardPosition)
-    }
-  }, [activeConversation, keyboardHeight])
+    window.visualViewport?.addEventListener('resize', handleResize)
+    return () => window.visualViewport?.removeEventListener('resize', handleResize)
+  }, [activeConversation])
 
   // Load conversations
   useEffect(() => {
@@ -182,7 +170,16 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       // Subscribe to new messages
       const unsubscribe = subscribeToMessages(activeConversation.id, (newMsg) => {
         setMessages(prev => {
-          // Avoid duplicates
+          const clientId = newMsg.client_message_id
+          if (clientId) {
+            const pendingIndex = prev.findIndex(m => m._localId && m._localId === clientId)
+            if (pendingIndex >= 0) {
+              const updated = [...prev]
+              updated[pendingIndex] = newMsg
+              return updated
+            }
+          }
+
           if (prev.some(m => m.id === newMsg.id)) return prev
           return [...prev, newMsg]
         })
@@ -197,6 +194,47 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
     return () => {
       onChatStateChange?.(false)
+    }
+  }, [activeConversation])
+
+  // Keyboard handling - keep composer synced with keyboard height
+  useEffect(() => {
+    if (!activeConversation) return
+
+    const tg = (window as any).Telegram?.WebApp
+
+    const applyKeyboardHeight = (value: number) => {
+      const nextValue = Math.max(0, Math.round(value || 0))
+      if (keyboardHeightRef.current === nextValue) return
+      keyboardHeightRef.current = nextValue
+      setKeyboardHeight(nextValue)
+    }
+
+    const handleTelegramViewport = (event?: { height?: number; isStateStable?: boolean }) => {
+      if (!tg) return
+      const stableHeight = tg.viewportStableHeight || window.innerHeight
+      const currentHeight = event?.height ?? tg.viewportHeight ?? window.innerHeight
+      const keyboardSpace = Math.max(0, (stableHeight || 0) - (currentHeight || 0))
+      applyKeyboardHeight(keyboardSpace)
+    }
+
+    const handleVisualViewport = () => {
+      if (!window.visualViewport) return
+      const keyboardSpace = Math.max(0, window.innerHeight - window.visualViewport.height)
+      applyKeyboardHeight(keyboardSpace)
+    }
+
+    handleTelegramViewport()
+    handleVisualViewport()
+
+    tg?.onEvent?.('viewportChanged', handleTelegramViewport)
+    window.visualViewport?.addEventListener('resize', handleVisualViewport)
+    window.visualViewport?.addEventListener('scroll', handleVisualViewport)
+
+    return () => {
+      tg?.offEvent?.('viewportChanged', handleTelegramViewport)
+      window.visualViewport?.removeEventListener('resize', handleVisualViewport)
+      window.visualViewport?.removeEventListener('scroll', handleVisualViewport)
     }
   }, [activeConversation])
 
@@ -230,7 +268,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         if (voiceResult.error || !voiceResult.url) {
           throw new Error(voiceResult.error || 'Voice upload failed')
         }
-        const msg = await sendMediaMessage(conversationId, user.telegram_id, voiceResult.url, 'voice')
+        const msg = await sendMediaMessage(conversationId, user.telegram_id, voiceResult.url, 'voice', undefined, tempId)
         if (msg) {
           resolveTempMessage(tempId, msg)
         } else {
@@ -241,7 +279,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         if (mediaResult.error || !mediaResult.url) {
           throw new Error(mediaResult.error || 'Upload failed')
         }
-        const msg = await sendMediaMessage(conversationId, user.telegram_id, mediaResult.url, payload.mediaType)
+        const msg = await sendMediaMessage(conversationId, user.telegram_id, mediaResult.url, payload.mediaType, undefined, tempId)
         if (msg) {
           resolveTempMessage(tempId, msg)
         } else {
@@ -280,6 +318,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       is_read: false,
       is_deleted: false,
       created_at: new Date().toISOString(),
+      client_message_id: tempId,
       reply_to: replyTo,
     }
 
@@ -289,7 +328,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     setSending(true)
 
     try {
-      const msg = await sendMessage(activeConversation.id, user.telegram_id, text)
+      const msg = await sendMessage(activeConversation.id, user.telegram_id, text, tempId)
       if (msg) {
         resolveTempMessage(tempId, msg)
       } else {
@@ -390,6 +429,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         is_read: false,
         is_deleted: false,
         created_at: new Date().toISOString(),
+        client_message_id: tempId,
       }
 
       setMessages(prev => [...prev, optimisticMessage])
@@ -426,6 +466,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       is_read: false,
       is_deleted: false,
       created_at: new Date().toISOString(),
+      client_message_id: tempId,
     }
 
     setMessages(prev => [...prev, optimisticMessage])
@@ -443,7 +484,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       )
       setSending(true)
       try {
-        const result = await sendMessage(activeConversation.id, user.telegram_id, msg.content)
+        const result = await sendMessage(activeConversation.id, user.telegram_id, msg.content, tempId)
         if (result) {
           resolveTempMessage(tempId, result)
         } else {
@@ -623,7 +664,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     return (
       <div
         className="fixed inset-0 z-[100] flex flex-col bg-[#F8FAFC]"
-        style={{ height: '100vh' }}
+        style={{ height: 'var(--app-height)', position: 'absolute', inset: 0, width: '100%' }}
       >
         {/* Hidden file input */}
         <input
@@ -1128,8 +1169,13 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
         {/* Input */}
         <div
-          className="shrink-0 bg-white border-t border-gray-100 px-3 py-2"
-          style={{ paddingBottom: keyboardHeight > 0 ? `${keyboardHeight}px` : 'max(8px, env(safe-area-inset-bottom))' }}
+          className="shrink-0 bg-white border-t border-gray-100 px-3 py-2 safe-area-bottom"
+          style={{
+            paddingBottom: keyboardHeight > 0
+              ? `calc(${keyboardHeight}px + env(safe-area-inset-bottom, 0px))`
+              : undefined,
+            transition: 'padding-bottom 0.2s ease'
+          }}
         >
           <div className="bg-gray-100 rounded-full p-1.5 flex items-end gap-2">
             <button

@@ -35,6 +35,7 @@ export interface Message {
   is_read: boolean
   is_deleted: boolean
   created_at: string
+  client_message_id?: string | null
   // Joined data
   sender?: User
   gift?: Gift
@@ -137,13 +138,15 @@ export async function getMessages(conversationId: string, limit = 50): Promise<M
 export async function sendMessage(
   conversationId: string,
   senderId: number,
-  content: string
+  content: string,
+  clientMessageId?: string
 ): Promise<Message | null> {
   const { data, error } = await supabase
     .from('messages')
     .insert({
       conversation_id: conversationId,
       sender_id: senderId,
+      client_message_id: clientMessageId,
       content,
       message_type: 'text'
     })
@@ -167,7 +170,8 @@ export async function sendMediaMessage(
   senderId: number,
   mediaUrl: string,
   type: 'image' | 'video' | 'voice',
-  thumbnailUrl?: string
+  thumbnailUrl?: string,
+  clientMessageId?: string
 ): Promise<Message | null> {
   console.log('[ChatApi] sendMediaMessage:', { conversationId, senderId, mediaUrl, type })
 
@@ -176,6 +180,7 @@ export async function sendMediaMessage(
     .insert({
       conversation_id: conversationId,
       sender_id: senderId,
+      client_message_id: clientMessageId,
       message_type: type,
       media_url: mediaUrl,
       media_thumbnail: thumbnailUrl
@@ -203,13 +208,15 @@ export async function sendPPVMessage(
   mediaUrl: string,
   _mediaType: 'image' | 'video',
   price: number,
-  thumbnailUrl?: string
+  thumbnailUrl?: string,
+  clientMessageId?: string
 ): Promise<Message | null> {
   const { data, error } = await supabase
     .from('messages')
     .insert({
       conversation_id: conversationId,
       sender_id: senderId,
+      client_message_id: clientMessageId,
       message_type: 'ppv',
       media_url: mediaUrl,
       media_thumbnail: thumbnailUrl,
@@ -440,15 +447,19 @@ async function updateConversationLastMessage(
 
   if (!conv) return
 
-  const unreadField = conv.participant_1 === senderId ? 'participant_2_unread' : 'participant_1_unread'
-  const currentUnread = conv.participant_1 === senderId ? conv.participant_2_unread : conv.participant_1_unread
+  const receiverUnreadField = conv.participant_1 === senderId ? 'participant_2_unread' : 'participant_1_unread'
+  const senderUnreadField = conv.participant_1 === senderId ? 'participant_1_unread' : 'participant_2_unread'
+  const receiverCurrentUnread = receiverUnreadField === 'participant_2_unread'
+    ? conv.participant_2_unread
+    : conv.participant_1_unread
 
   await supabase
     .from('conversations')
     .update({
       last_message_at: new Date().toISOString(),
       last_message_preview: preview.substring(0, 100),
-      [unreadField]: currentUnread + 1
+      [receiverUnreadField]: receiverCurrentUnread + 1,
+      [senderUnreadField]: 0
     })
     .eq('id', conversationId)
 }
