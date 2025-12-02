@@ -205,6 +205,36 @@ export async function getSuggestedCreators(limit = 10): Promise<User[]> {
   return (data || []) as User[]
 }
 
+// Get video posts for Explore/Reels
+export async function getVideoPosts(userId: number, limit = 50, offset = 0): Promise<Post[]> {
+  const { data } = await supabase
+    .from('posts')
+    .select('*, creator:users!creator_id(*)')
+    .eq('media_type', 'video')
+    .eq('visibility', 'public')
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1)
+
+  if (!data) return []
+
+  const postIds = data.map(p => p.id)
+
+  // Get user's likes
+  const { data: likesData } = await supabase
+    .from('likes')
+    .select('post_id')
+    .eq('user_id', userId)
+    .in('post_id', postIds)
+
+  const likedPostIds = new Set(likesData?.map(l => l.post_id) || [])
+
+  return data.map(post => ({
+    ...post,
+    liked: likedPostIds.has(post.id),
+    can_view: true
+  })) as Post[]
+}
+
 // ============================================
 // POSTS API
 // ============================================

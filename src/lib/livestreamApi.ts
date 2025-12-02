@@ -517,7 +517,18 @@ export function subscribeToLivestreams(onUpdate: (streams: Livestream[]) => void
         schema: 'public',
         table: 'livestreams'
       },
-      async () => {
+      async (payload: any) => {
+        const eventType = payload.eventType
+        const newStatus = payload.new?.status
+        const oldStatus = payload.old?.status
+
+        const statusChanged =
+          eventType === 'DELETE' ||
+          (eventType === 'INSERT' && newStatus === 'live') ||
+          (eventType === 'UPDATE' && (newStatus === 'live' || oldStatus === 'live'))
+
+        if (!statusChanged) return
+
         const streams = await getLivestreams()
         onUpdate(streams)
       }

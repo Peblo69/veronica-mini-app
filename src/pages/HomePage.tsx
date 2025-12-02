@@ -16,12 +16,8 @@ interface HomePageProps {
   scrollElement?: HTMLElement | null
 }
 
-const formatViewerCount = (count: number) => {
-  if (count >= 1000) {
-    return `${(count / 1000).toFixed(1)}K`
-  }
-  return `${count}`
-}
+const filterLiveStreams = (streams: Livestream[]) =>
+  streams.filter(stream => stream.status === 'live' && !!stream.started_at && !!stream.agora_channel && (stream.viewer_count || 0) > 0)
 
 export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGoLive, scrollElement }: HomePageProps) {
   const [posts, setPosts] = useState<Post[]>([])
@@ -47,7 +43,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   }, [])
 
   useEffect(() => {
-    const unsubscribe = subscribeToLivestreams((streams) => setLivestreams(streams))
+    const unsubscribe = subscribeToLivestreams((streams) => setLivestreams(filterLiveStreams(streams)))
     return () => {
       unsubscribe()
     }
@@ -61,7 +57,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
     ])
     setPosts(feedPosts)
     setSuggestions(suggestedCreators)
-    setLivestreams(liveStreams)
+    setLivestreams(filterLiveStreams(liveStreams))
     setLoading(false)
   }
 
@@ -511,10 +507,6 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                           />
                         )}
                       </div>
-                    </div>
-                    <div className="absolute top-1 right-1 bg-black/60 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-1">
-                      <Users className="w-3 h-3 text-white" />
-                      <span>{formatViewerCount(stream.viewer_count || 0)}</span>
                     </div>
                     <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-red-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full border-2 border-white shadow-sm flex items-center gap-0.5">
                        <span>LIVE</span>

@@ -1,15 +1,14 @@
 ﻿import { useState, useEffect, useCallback, Suspense, lazy } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Home, Bell, PlusSquare, MessageCircle, User } from 'lucide-react'
+import { Home, Search, PlusSquare, MessageCircle, User } from 'lucide-react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import './index.css'
 
 import { useViewport } from './hooks/useViewport'
 import { getOrCreateUser, getUser, type User as UserType } from './lib/api'
-import { getUnreadCount, subscribeToNotifications } from './lib/notificationApi'
 
 const HomePage = lazy(() => import('./pages/HomePage'))
-const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
+const ExplorePage = lazy(() => import('./pages/ExplorePage'))
 const CreatePage = lazy(() => import('./pages/CreatePage'))
 const MessagesPage = lazy(() => import('./pages/MessagesPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
@@ -21,7 +20,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 
 const navItems = [
   { id: 'home', icon: Home, path: '/' },
-  { id: 'notifications', icon: Bell, path: '/notifications' },
+  { id: 'explore', icon: Search, path: '/explore' },
   { id: 'create', icon: PlusSquare, path: '/create' },
   { id: 'messages', icon: MessageCircle, path: '/messages' },
   { id: 'profile', icon: User, path: '/profile' },
@@ -39,7 +38,6 @@ function App() {
   const [showLivestream, setShowLivestream] = useState<{ isCreator: boolean; livestreamId?: string } | null>(null)
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
   const [isChatOpen, setIsChatOpen] = useState(false)
-  const [unreadNotifications, setUnreadNotifications] = useState(0)
   const [showSettings, setShowSettings] = useState(false)
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null)
   void secretBuffer
@@ -90,18 +88,6 @@ function App() {
 
     window.addEventListener('keypress', handleKeyPress)
     return () => window.removeEventListener('keypress', handleKeyPress)
-  }, [user])
-
-  useEffect(() => {
-    if (!user) return
-
-    getUnreadCount(user.telegram_id).then(setUnreadNotifications)
-
-    const unsubscribe = subscribeToNotifications(user.telegram_id, () => {
-      setUnreadNotifications(prev => prev + 1)
-    })
-
-    return () => unsubscribe()
   }, [user])
 
   const initUser = async () => {
@@ -235,7 +221,7 @@ function App() {
             />
           )}
         />
-        <Route path="/notifications" element={<NotificationsPage user={user} scrollElement={scrollElement} />} />
+        <Route path="/explore" element={<ExplorePage user={user} onCreatorClick={openCreatorProfile} />} />
         <Route path="/create" element={<CreatePage user={user} onBecomeCreator={openApplication} />} />
         <Route
           path="/messages/*"
@@ -361,26 +347,14 @@ function App() {
                 <button
                   key={item.id}
                   className="flex flex-col items-center justify-center p-2 transition-colors relative w-full active:scale-95"
-                  onClick={() => {
-                    navigate(item.path)
-                    if (item.id === 'notifications') {
-                      setUnreadNotifications(0)
-                    }
-                  }}
+                  onClick={() => navigate(item.path)}
                 >
                   {item.id === 'create' ? (
                     <div className="w-12 h-12 bg-black rounded-xl flex items-center justify-center shadow-lg">
                       <PlusSquare className="w-7 h-7 text-white" strokeWidth={2} />
                     </div>
                   ) : (
-                    <>
-                      <item.icon className={`w-7 h-7 transition-colors ${isActive ? 'text-black fill-black' : 'text-gray-500'}`} strokeWidth={isActive ? 2.5 : 2} />
-                      {item.id === 'notifications' && unreadNotifications > 0 && (
-                        <span className="absolute top-1 right-4 min-w-[18px] h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
-                          {unreadNotifications > 99 ? '99+' : unreadNotifications}
-                        </span>
-                      )}
-                    </>
+                    <item.icon className={`w-7 h-7 transition-colors ${isActive ? 'text-black fill-black' : 'text-gray-500'}`} strokeWidth={isActive ? 2.5 : 2} />
                   )}
                 </button>
               )
