@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { Image, Video, Lock, Globe, Users, Send, Loader2, DollarSign, AlertTriangle, X, Play, Star } from 'lucide-react'
+import { Image, Video, Lock, Globe, Users, Send, Loader2, DollarSign, X, Play, Star } from 'lucide-react'
 import { createPost, type User } from '../lib/api'
 import { uploadPostMedia, getMediaType, compressImage } from '../lib/storage'
 
@@ -242,97 +242,96 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
           )}
         </div>
 
-        {isCreator ? (
-          <div className="py-3 border-t border-gray-100">
-            <p className="text-xs text-gray-500 mb-2 font-medium">WHO CAN SEE THIS?</p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setVisibility('public')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
-                  visibility === 'public' ? 'bg-of-blue text-white' : 'bg-gray-100 text-gray-600'
-                }`}
-              >
-                <Globe className="w-4 h-4" />
-                Public
-              </button>
-              <button
-                onClick={() => setVisibility('followers')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
-                  visibility === 'followers' ? 'bg-of-blue text-white' : 'bg-gray-100 text-gray-600'
-                }`}
-              >
-                <Users className="w-4 h-4" />
-                Followers
-              </button>
-              <button
-                onClick={() => setVisibility('subscribers')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
-                  visibility === 'subscribers' ? 'bg-of-blue text-white' : 'bg-gray-100 text-gray-600'
-                }`}
-              >
-                <Lock className="w-4 h-4" />
-                Subs
-              </button>
-            </div>
+      {isCreator ? (
+        <div className="py-3 border-t border-gray-100">
+          <p className="text-xs text-gray-500 mb-2 font-medium">WHO CAN SEE THIS?</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setVisibility('public')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
+                visibility === 'public' ? 'bg-of-blue text-white' : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              <Globe className="w-4 h-4" />
+              Public
+            </button>
+            <button
+              onClick={() => setVisibility('followers')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
+                visibility === 'followers' ? 'bg-of-blue text-white' : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              Followers
+            </button>
+            <button
+              onClick={() => setVisibility('subscribers')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
+                visibility === 'subscribers' ? 'bg-of-blue text-white' : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              <Lock className="w-4 h-4" />
+              Subs
+            </button>
           </div>
-        ) : (
-          <div className="py-3 border-t border-gray-100">
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <Globe className="w-4 h-4 text-of-blue" />
-              <span>Your post will be visible to everyone</span>
-            </div>
+        </div>
+      ) : (
+        <div className="py-3 border-t border-gray-100">
+          <p className="text-xs text-gray-500 mb-2 font-medium">WHO CAN SEE THIS?</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setVisibility('public')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
+                visibility === 'public' ? 'bg-of-blue text-white' : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              <Globe className="w-4 h-4" />
+              Public
+            </button>
+            <button
+              onClick={() => setVisibility('followers')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
+                visibility === 'followers' ? 'bg-of-blue text-white' : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              Followers
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isCreator && (
+        <div className="py-3 border-t border-gray-100 space-y-3">
+        <label className="flex items-center justify-between cursor-pointer">
+          <div className="flex items-center gap-2">
+            <DollarSign className="w-4 h-4 text-green-600" />
+            <span className="text-sm font-medium">Pay to Unlock</span>
+          </div>
+          <div
+            onClick={() => setShowPriceInput(!showPriceInput)}
+            className={`w-11 h-6 rounded-full transition-colors cursor-pointer ${showPriceInput ? 'bg-green-500' : 'bg-gray-300'}`}
+          >
+            <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform mt-0.5 ${showPriceInput ? 'translate-x-5 ml-0.5' : 'translate-x-0.5'}`} />
+          </div>
+        </label>
+        {showPriceInput && (
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+            <input
+              type="number"
+              value={unlockPrice}
+              onChange={(e) => setUnlockPrice(e.target.value)}
+              placeholder="5.00"
+              className="w-full pl-7 pr-4 py-2 rounded-lg border border-gray-200 focus:border-of-blue focus:outline-none text-sm"
+              min="0"
+              step="0.50"
+            />
+            <p className="text-xs text-gray-500 mt-1">Users pay this to unlock</p>
           </div>
         )}
-
-        {isCreator && (
-          <div className="py-3 border-t border-gray-100 space-y-3">
-          <label className="flex items-center justify-between cursor-pointer">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-orange-500" />
-              <span className="text-sm font-medium">NSFW Content</span>
-            </div>
-            <div
-              onClick={() => setIsNsfw(!isNsfw)}
-              className={`w-11 h-6 rounded-full transition-colors cursor-pointer ${isNsfw ? 'bg-orange-500' : 'bg-gray-300'}`}
-            >
-              <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform mt-0.5 ${isNsfw ? 'translate-x-5 ml-0.5' : 'translate-x-0.5'}`} />
-            </div>
-          </label>
-          {isNsfw && (
-            <p className="text-xs text-orange-600 bg-orange-50 p-2 rounded-lg">
-              NSFW content is only visible to subscribers
-            </p>
-          )}
-
-          <label className="flex items-center justify-between cursor-pointer">
-            <div className="flex items-center gap-2">
-              <DollarSign className="w-4 h-4 text-green-600" />
-              <span className="text-sm font-medium">Pay to Unlock</span>
-            </div>
-            <div
-              onClick={() => setShowPriceInput(!showPriceInput)}
-              className={`w-11 h-6 rounded-full transition-colors cursor-pointer ${showPriceInput ? 'bg-green-500' : 'bg-gray-300'}`}
-            >
-              <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform mt-0.5 ${showPriceInput ? 'translate-x-5 ml-0.5' : 'translate-x-0.5'}`} />
-            </div>
-          </label>
-          {showPriceInput && (
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
-              <input
-                type="number"
-                value={unlockPrice}
-                onChange={(e) => setUnlockPrice(e.target.value)}
-                placeholder="5.00"
-                className="w-full pl-7 pr-4 py-2 rounded-lg border border-gray-200 focus:border-of-blue focus:outline-none text-sm"
-                min="0"
-                step="0.50"
-              />
-              <p className="text-xs text-gray-500 mt-1">Users pay this to unlock</p>
-            </div>
-          )}
-          </div>
-        )}
+        </div>
+      )}
 
         <div className="pt-3 border-t border-gray-100">
           <motion.button
@@ -390,7 +389,6 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
             <li><strong>Public:</strong> Everyone can see</li>
             <li><strong>Followers:</strong> Only people who follow you</li>
             <li><strong>Subscribers:</strong> Only paid subscribers</li>
-            <li><strong>NSFW:</strong> Always requires subscription</li>
           </ul>
         </div>
       )}

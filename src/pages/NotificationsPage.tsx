@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { Heart, UserPlus, MessageCircle, Star, CheckCircle, Gift, DollarSign, Video, Bell, Check, Trash2, Loader2 } from 'lucide-react'
 import { type User } from '../lib/api'
 import {
@@ -14,6 +15,7 @@ import {
 
 interface NotificationsPageProps {
   user: User
+  scrollElement?: HTMLElement | null
 }
 
 const iconMap: Record<string, typeof Heart> = {
@@ -40,10 +42,18 @@ const colorMap: Record<string, string> = {
   system: 'bg-gray-500',
 }
 
-export default function NotificationsPage({ user }: NotificationsPageProps) {
+export default function NotificationsPage({ user, scrollElement }: NotificationsPageProps) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
   const [markingAllRead, setMarkingAllRead] = useState(false)
+  const defaultScrollElement = typeof document !== 'undefined' ? (document.querySelector('main') as HTMLElement | null) || document.documentElement : null
+  const fallbackScrollElement = defaultScrollElement ?? (typeof document !== 'undefined' ? document.documentElement : null)
+  const notificationsVirtualizer = useVirtualizer({
+    count: notifications.length,
+    getScrollElement: () => (scrollElement ?? fallbackScrollElement)!,
+    estimateSize: () => 96,
+    overscan: 6,
+  })
 
   useEffect(() => {
     loadNotifications()
@@ -96,6 +106,62 @@ export default function NotificationsPage({ user }: NotificationsPageProps) {
   }
 
   const unreadCount = notifications.filter(n => !n.is_read).length
+
+  const renderNotificationCard = (notif: Notification, index: number) => {
+    const Icon = iconMap[notif.type] || Bell
+    const bgColor = colorMap[notif.type] || 'bg-gray-500'
+
+    return (
+      <motion.div
+        key={notif.id}
+        className={`card p-3 flex items-center gap-3 cursor-pointer transition-colors ${notif.is_read ? '' : 'bg-blue-50 border-blue-100'}`}
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ delay: Math.min(index * 0.02, 0.2) }}
+        onClick={() => handleMarkRead(notif)}
+      >
+        <div className="relative flex-shrink-0">
+          <img
+            src={notif.from_user?.avatar_url || `https://i.pravatar.cc/150?u=${notif.from_user_id || 'system'}`}
+            alt=""
+            loading="lazy"
+            className="w-12 h-12 rounded-full object-cover"
+          />
+          <div className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-full ${bgColor} flex items-center justify-center border-2 border-white`}>
+            <Icon className="w-3 h-3 text-white" />
+          </div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm">
+            <span className="font-semibold">
+              {notif.from_user?.first_name || 'System'}
+            </span>
+            {notif.from_user?.is_verified && (
+              <CheckCircle className="w-3 h-3 text-of-blue fill-of-blue inline ml-1" />
+            )}
+            <span className="text-gray-600">
+              {' '}{getNotificationContent(notif)}
+            </span>
+          </p>
+          <span className="text-xs text-gray-400">{formatTime(notif.created_at)}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {!notif.is_read && (
+            <div className="w-2 h-2 rounded-full bg-of-blue"></div>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              handleDelete(notif.id)
+            }}
+            className="p-1 hover:bg-gray-100 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <Trash2 className="w-4 h-4 text-gray-400" />
+          </button>
+        </div>
+      </motion.div>
+    )
+  }
 
   if (loading) {
     return (
@@ -150,65 +216,17 @@ export default function NotificationsPage({ user }: NotificationsPageProps) {
           <p className="text-sm text-gray-400 mt-1">You'll see likes, follows, and more here</p>
         </div>
       ) : (
-        <AnimatePresence>
-          <div className="space-y-2">
-            {notifications.map((notif, index) => {
-              const Icon = iconMap[notif.type] || Bell
-              const bgColor = colorMap[notif.type] || 'bg-gray-500'
-
-              return (
-                <motion.div
-                  key={notif.id}
-                  className={`card p-3 flex items-center gap-3 cursor-pointer transition-colors ${!notif.is_read ? 'bg-blue-50 border-blue-100' : ''}`}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  transition={{ delay: index * 0.03 }}
-                  onClick={() => handleMarkRead(notif)}
-                >
-                  <div className="relative flex-shrink-0">
-                    <img
-                      src={notif.from_user?.avatar_url || `https://i.pravatar.cc/150?u=${notif.from_user_id || 'system'}`}
-                      alt=""
-                      className="w-12 h-12 rounded-full object-cover"
-                    />
-                    <div className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-full ${bgColor} flex items-center justify-center border-2 border-white`}>
-                      <Icon className="w-3 h-3 text-white" />
-                    </div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm">
-                      <span className="font-semibold">
-                        {notif.from_user?.first_name || 'System'}
-                      </span>
-                      {notif.from_user?.is_verified && (
-                        <CheckCircle className="w-3 h-3 text-of-blue fill-of-blue inline ml-1" />
-                      )}
-                      <span className="text-gray-600">
-                        {' '}{getNotificationContent(notif)}
-                      </span>
-                    </p>
-                    <span className="text-xs text-gray-400">{formatTime(notif.created_at)}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {!notif.is_read && (
-                      <div className="w-2 h-2 rounded-full bg-of-blue"></div>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleDelete(notif.id)
-                      }}
-                      className="p-1 hover:bg-gray-100 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 className="w-4 h-4 text-gray-400" />
-                    </button>
-                  </div>
-                </motion.div>
-              )
-            })}
-          </div>
-        </AnimatePresence>
+        <div className="relative" style={{ height: notificationsVirtualizer.getTotalSize() || notifications.length * 96 }}>
+          {notificationsVirtualizer.getVirtualItems().map((virtualRow) => (
+            <div
+              key={virtualRow.key}
+              className="absolute left-0 w-full"
+              style={{ transform: `translateY(${virtualRow.start}px)` }}
+            >
+              {renderNotificationCard(notifications[virtualRow.index], virtualRow.index)}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )

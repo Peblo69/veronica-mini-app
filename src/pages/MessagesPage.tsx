@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle, Search, ArrowLeft, Send, Image, Gift, DollarSign, Lock, X, Loader2, Plus, Video, CheckCheck, AlertCircle } from 'lucide-react'
 import { type User } from '../lib/api'
@@ -39,9 +40,10 @@ interface MessagesPageProps {
   onConversationOpened?: () => void
   onChatStateChange?: (isOpen: boolean) => void
   onProfileClick?: (user: User) => void
+  scrollElement?: HTMLElement | null
 }
 
-export default function MessagesPage({ user, selectedConversationId, onConversationOpened, onChatStateChange, onProfileClick }: MessagesPageProps) {
+export default function MessagesPage({ user, selectedConversationId, onConversationOpened, onChatStateChange, onProfileClick, scrollElement }: MessagesPageProps) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -55,6 +57,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const [gifts, setGifts] = useState<GiftType[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [uploadingCount, setUploadingCount] = useState(0)
+
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -457,6 +460,57 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     c.other_user?.first_name?.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
+  const defaultScrollElement = typeof document !== 'undefined' ? (document.querySelector('main') as HTMLElement | null) || document.documentElement : null
+  const conversationVirtualizer = useVirtualizer({
+    count: filteredConversations.length,
+    getScrollElement: () => (scrollElement ?? defaultScrollElement)!,
+    estimateSize: () => 92,
+    overscan: 6,
+  })
+
+  const renderConversationCard = (conv: Conversation, index: number) => (
+    <motion.button
+      key={conv.id}
+      className="card p-3 flex items-center gap-3 w-full text-left"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: Math.min(index * 0.05, 0.2) }}
+      onClick={() => setActiveConversation(conv)}
+    >
+      <div className="relative">
+        <img
+          src={conv.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${conv.other_user?.telegram_id}`}
+          alt=""
+          loading="lazy"
+          className="w-14 h-14 rounded-full object-cover"
+        />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1">
+          <span className="font-semibold">
+            {conv.other_user?.first_name || conv.other_user?.username || 'User'}
+          </span>
+          {conv.other_user?.is_verified && (
+            <CheckCircle className="w-4 h-4 text-of-blue fill-of-blue" />
+          )}
+        </div>
+        <p className="text-sm text-gray-500 truncate">
+          {conv.last_message_preview || 'Start a conversation'}
+        </p>
+      </div>
+      <div className="text-right">
+        <span className="text-xs text-gray-400">
+          {formatTime(conv.last_message_at)}
+        </span>
+        {(conv.unread_count || 0) > 0 && (
+          <div className="w-5 h-5 rounded-full bg-of-blue text-white text-xs flex items-center justify-center mt-1 ml-auto">
+            {conv.unread_count}
+          </div>
+        )}
+      </div>
+    </motion.button>
+  )
+
   // Chat view - Full screen overlay
     if (activeConversation) {
     return (
@@ -500,6 +554,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 <img
                   src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
                   alt=""
+                  loading="lazy"
                   className="w-9 h-9 rounded-full object-cover"
                 />
                 {/* Online indicator */}
@@ -551,12 +606,13 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 <div className={`flex items-end gap-1.5 w-full ${isOwn ? 'justify-end' : 'justify-start'}`}>
                   {!isOwn && (
                     <div className="w-6 flex-shrink-0 pb-0.5">
-                      {showAvatar && (
-                        <img
-                          src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
-                          alt=""
-                          className="w-6 h-6 rounded-full object-cover"
-                        />
+                    {showAvatar && (
+                      <img
+                        src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
+                        alt=""
+                        loading="lazy"
+                        className="w-6 h-6 rounded-full object-cover"
+                      />
                       )}
                     </div>
                   )}
@@ -639,6 +695,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                       <img
                         src={resolvedMediaUrl}
                         alt=""
+                        loading="lazy"
                         className="w-full max-h-[240px] object-cover block rounded-xl"
                         onError={(e) => {
                           const target = e.target as HTMLImageElement;
@@ -652,17 +709,17 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                   {/* Video message */}
                   {msg.message_type === 'video' && resolvedMediaUrl && (
                     <div className="rounded-xl overflow-hidden max-w-[200px] bg-black">
-                      <video
-                        src={resolvedMediaUrl}
-                        controls
-                        controlsList="nodownload"
-                        playsInline
-                        muted
-                        preload="metadata"
-                        className="w-full max-h-[240px] object-contain block rounded-xl"
-                        onError={(e) => {
-                          const target = e.target as HTMLVideoElement;
-                          target.style.display = 'none';
+                    <video
+                      src={resolvedMediaUrl}
+                      controls
+                      controlsList="nodownload"
+                      playsInline
+                      muted
+                      preload="metadata"
+                      className="w-full max-h-[240px] object-contain block rounded-xl"
+                      onError={(e) => {
+                        const target = e.target as HTMLVideoElement;
+                        target.style.display = 'none';
                           const parent = target.parentElement;
                           if (parent && !parent.querySelector('.video-error')) {
                             const errorDiv = document.createElement('div');
@@ -939,47 +996,15 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
           <p className="text-sm mt-1">Start a conversation from a creator's profile</p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {filteredConversations.map((conv, index) => (
-            <motion.button
-              key={conv.id}
-              className="card p-3 flex items-center gap-3 w-full text-left"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              onClick={() => setActiveConversation(conv)}
+        <div className="relative" style={{ height: conversationVirtualizer.getTotalSize() || filteredConversations.length * 96 }}>
+          {conversationVirtualizer.getVirtualItems().map((virtualRow) => (
+            <div
+              key={virtualRow.key}
+              className="absolute left-0 w-full"
+              style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
-              <div className="relative">
-                <img
-                  src={conv.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${conv.other_user?.telegram_id}`}
-                  alt=""
-                  className="w-14 h-14 rounded-full object-cover"
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1">
-                  <span className="font-semibold">
-                    {conv.other_user?.first_name || conv.other_user?.username || 'User'}
-                  </span>
-                  {conv.other_user?.is_verified && (
-                    <CheckCircle className="w-4 h-4 text-of-blue fill-of-blue" />
-                  )}
-                </div>
-                <p className="text-sm text-gray-500 truncate">
-                  {conv.last_message_preview || 'Start a conversation'}
-                </p>
-              </div>
-              <div className="text-right">
-                <span className="text-xs text-gray-400">
-                  {formatTime(conv.last_message_at)}
-                </span>
-                {(conv.unread_count || 0) > 0 && (
-                  <div className="w-5 h-5 rounded-full bg-of-blue text-white text-xs flex items-center justify-center mt-1 ml-auto">
-                    {conv.unread_count}
-                  </div>
-                )}
-              </div>
-            </motion.button>
+              {renderConversationCard(filteredConversations[virtualRow.index], virtualRow.index)}
+            </div>
           ))}
         </div>
       )}
