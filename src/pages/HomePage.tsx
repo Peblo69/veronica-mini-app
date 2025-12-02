@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Heart, MessageCircle, Bookmark, Share2, MoreHorizontal, CheckCircle, Lock, Eye, DollarSign, AlertTriangle, X, Radio, Users, Trash2, EyeOff, Edit3, Flag, Copy, UserX } from 'lucide-react'
+import { Heart, MessageCircle, Bookmark, Share2, MoreHorizontal, CheckCircle, Lock, Eye, DollarSign, AlertTriangle, X, Radio, Users, Trash2, EyeOff, Edit3, Flag, Copy, UserX, Volume2, VolumeX, Play } from 'lucide-react'
 import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, purchaseContent, deletePost, type User, type Post } from '../lib/api'
 import { getLivestreams, subscribeToLivestreams, type Livestream } from '../lib/livestreamApi'
 import PostDetail from '../components/PostDetail'
@@ -18,6 +18,84 @@ interface HomePageProps {
 
 const filterLiveStreams = (streams: Livestream[]) =>
   streams.filter(stream => stream.status === 'live' && !!stream.started_at && !!stream.agora_channel && (stream.viewer_count || 0) > 0)
+
+// Video Player Component with mute/unmute and tap to pause
+function FeedVideoPlayer({ src }: { src: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const [isMuted, setIsMuted] = useState(true)
+  const [isPaused, setIsPaused] = useState(false)
+  const [isLoaded, setIsLoaded] = useState(false)
+
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setIsMuted(!isMuted)
+  }
+
+  const togglePause = () => {
+    const video = videoRef.current
+    if (!video) return
+
+    if (video.paused) {
+      video.play().catch(() => {})
+      setIsPaused(false)
+    } else {
+      video.pause()
+      setIsPaused(true)
+    }
+  }
+
+  return (
+    <div className="relative bg-black">
+      {/* Loading spinner */}
+      {!isLoaded && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
+          <div className="w-10 h-10 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* Video */}
+      <video
+        ref={videoRef}
+        src={src}
+        className={`w-full max-h-[520px] object-cover transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+        playsInline
+        loop
+        muted={isMuted}
+        autoPlay
+        preload="auto"
+        onClick={togglePause}
+        onLoadedData={() => setIsLoaded(true)}
+        onCanPlay={() => setIsLoaded(true)}
+      />
+
+      {/* Pause indicator */}
+      {isPaused && isLoaded && (
+        <div
+          className="absolute inset-0 flex items-center justify-center bg-black/30 cursor-pointer"
+          onClick={togglePause}
+        >
+          <div className="w-16 h-16 bg-black/50 rounded-full flex items-center justify-center">
+            <Play className="w-8 h-8 text-white fill-white ml-1" />
+          </div>
+        </div>
+      )}
+
+      {/* Mute/Unmute button */}
+      {isLoaded && (
+        <button
+          onClick={toggleMute}
+          className="absolute bottom-3 right-3 p-2 bg-black/60 rounded-full z-20 hover:bg-black/80 transition-colors"
+        >
+          {isMuted ? (
+            <VolumeX className="w-5 h-5 text-white" />
+          ) : (
+            <Volume2 className="w-5 h-5 text-white" />
+          )}
+        </button>
+      )}
+    </div>
+  )
+}
 
 export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGoLive, scrollElement }: HomePageProps) {
   const [posts, setPosts] = useState<Post[]>([])
@@ -326,13 +404,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
       {post.media_url && post.can_view ? (
         <div className="relative">
           {post.media_url.match(/\.(mp4|webm)$/i) ? (
-            <video
-              src={post.media_url}
-              className="w-full max-h-[520px] object-cover"
-              controls
-              playsInline
-              preload="metadata"
-            />
+            <FeedVideoPlayer src={post.media_url} />
           ) : (
             <img src={post.media_url} alt="" loading="lazy" className="w-full max-h-[520px] object-cover" />
           )}
