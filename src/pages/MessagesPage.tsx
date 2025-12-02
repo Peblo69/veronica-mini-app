@@ -75,11 +75,16 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [keyboardHeight, setKeyboardHeight] = useState(0)
   const keyboardHeightRef = useRef(0)
-  const setKeyboardInset = useCallback((value: number) => {
+  const viewportKeyboardRef = useRef(0)
+  const composerFocusedRef = useRef(false)
+  const setKeyboardInset = useCallback((value: number, options?: { force?: boolean }) => {
     const nextValue = Math.max(0, Math.round(value || 0))
-    if (keyboardHeightRef.current === nextValue) return
-    keyboardHeightRef.current = nextValue
-    setKeyboardHeight(nextValue)
+    viewportKeyboardRef.current = nextValue
+    const shouldApply = options?.force || composerFocusedRef.current
+    const finalValue = shouldApply ? nextValue : 0
+    if (keyboardHeightRef.current === finalValue) return
+    keyboardHeightRef.current = finalValue
+    setKeyboardHeight(finalValue)
   }, [])
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastTapRef = useRef<{ time: number; messageId: string } | null>(null)
@@ -209,7 +214,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
     const tg = (window as any).Telegram?.WebApp
 
-    const handleTelegramViewport = (event?: { height?: number }) => {
+    const handleTelegramViewport = (event?: { height?: number; isStateStable?: boolean }) => {
       if (!tg) return
       const stableHeight = tg.viewportStableHeight || window.innerHeight
       const currentHeight = event?.height ?? tg.viewportHeight ?? window.innerHeight
@@ -234,7 +239,8 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       tg?.offEvent?.('viewportChanged', handleTelegramViewport)
       window.visualViewport?.removeEventListener('resize', handleVisualViewport)
       window.visualViewport?.removeEventListener('scroll', handleVisualViewport)
-      setKeyboardInset(0)
+      composerFocusedRef.current = false
+      setKeyboardInset(0, { force: true })
     }
   }, [activeConversation, setKeyboardInset])
 
@@ -326,13 +332,18 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     setNewMessage('')
     setReplyTo(null)
     setSending(true)
+    if (inputRef.current) {
+      inputRef.current.blur()
+    }
+    composerFocusedRef.current = false
+    setKeyboardInset(0, { force: true })
 
     try {
-      const { data: msg, error } = await sendMessage(activeConversation.id, user.telegram_id, text, tempId)
+      const msg = await sendMessage(activeConversation.id, user.telegram_id, text, tempId)
       if (msg) {
         resolveTempMessage(tempId, msg)
       } else {
-        resolveTempMessage(tempId, undefined, error || 'Failed to send message')
+        resolveTempMessage(tempId, undefined, 'Failed to send message')
       }
     } catch (err) {
       console.error('[Chat] Send message error:', err)
@@ -484,11 +495,11 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       )
       setSending(true)
       try {
-        const { data: result, error } = await sendMessage(activeConversation.id, user.telegram_id, msg.content, tempId)
+        const result = await sendMessage(activeConversation.id, user.telegram_id, msg.content, tempId)
         if (result) {
           resolveTempMessage(tempId, result)
         } else {
-          resolveTempMessage(tempId, undefined, error || 'Failed to send message')
+          resolveTempMessage(tempId, undefined, 'Failed to send message')
         }
       } catch (err) {
         resolveTempMessage(tempId, undefined, (err as Error).message)
@@ -1200,15 +1211,17 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 }}
                 ref={inputRef}
                 onFocus={() => {
+                  composerFocusedRef.current = true
                   // Scroll to bottom instantly when focused
                   requestAnimationFrame(() => {
                     messagesEndRef.current?.scrollIntoView({ block: 'end' })
                   })
-                  setKeyboardInset(keyboardHeightRef.current || 0)
+                  setKeyboardInset(viewportKeyboardRef.current, { force: true })
                 }}
                 onBlur={() => {
+                  composerFocusedRef.current = false
                   // Drop keyboard inset immediately so composer settles with keyboard
-                  setKeyboardInset(0)
+                  setKeyboardInset(0, { force: true })
                 }}
                 placeholder="Message..."
                 rows={1}
