@@ -271,6 +271,82 @@ export async function processContentPurchase(
 }
 
 // ============================================
+// LIVESTREAM ENTRY (PPV)
+// ============================================
+
+export async function processLivestreamTicket(
+  viewerId: number,
+  creatorId: number,
+  livestreamId: string,
+  price: number
+): Promise<PaymentResult> {
+  if (price <= 0) {
+    return { success: true }
+  }
+
+  const { data: existingTicket } = await supabase
+    .from('livestream_tickets')
+    .select('id')
+    .eq('livestream_id', livestreamId)
+    .eq('user_id', viewerId)
+    .limit(1)
+
+  if (existingTicket && existingTicket.length > 0) {
+    return { success: true }
+  }
+
+  const paymentResult = await payWithTokens(
+    viewerId,
+    price,
+    `Livestream access for ${livestreamId}`
+  )
+
+  if (!paymentResult.success) {
+    return paymentResult
+  }
+
+  const { error: ticketError } = await supabase
+    .from('livestream_tickets')
+    .insert({
+      livestream_id: livestreamId,
+      user_id: viewerId,
+      amount: price
+    })
+
+  if (ticketError) {
+    await supabase.rpc('add_to_balance', {
+      user_telegram_id: viewerId,
+      amount_to_add: price
+    })
+    return { success: false, error: ticketError.message }
+  }
+
+  const platformFee = Math.ceil(price * 0.1)
+  const netAmount = Math.max(0, price - platformFee)
+
+  await supabase
+    .from('creator_earnings')
+    .insert({
+      creator_id: creatorId,
+      amount: price,
+      source_type: 'livestream',
+      source_id: livestreamId,
+      from_user_id: viewerId,
+      platform_fee: platformFee,
+      net_amount: netAmount
+    })
+
+  if (netAmount > 0) {
+    await supabase.rpc('add_to_balance', {
+      user_telegram_id: creatorId,
+      amount_to_add: netAmount
+    })
+  }
+
+  return { success: true, transactionId: paymentResult.transactionId }
+}
+
+// ============================================
 // TIP PAYMENT
 // ============================================
 

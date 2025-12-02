@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Heart, MessageCircle, Bookmark, Share2, MoreHorizontal, CheckCircle, Lock, Eye, DollarSign, AlertTriangle, X, Radio, Users, Trash2, EyeOff, Edit3, Flag, Copy, UserX } from 'lucide-react'
 import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, purchaseContent, deletePost, type User, type Post } from '../lib/api'
-import { getLivestreams, type Livestream } from '../lib/livestreamApi'
+import { getLivestreams, subscribeToLivestreams, type Livestream } from '../lib/livestreamApi'
 import PostDetail from '../components/PostDetail'
 import { reportPost } from '../lib/reportApi'
 import { blockUser } from '../lib/settingsApi'
@@ -14,6 +14,13 @@ interface HomePageProps {
   onLivestreamClick?: (livestreamId: string) => void
   onGoLive?: () => void
   scrollElement?: HTMLElement | null
+}
+
+const formatViewerCount = (count: number) => {
+  if (count >= 1000) {
+    return `${(count / 1000).toFixed(1)}K`
+  }
+  return `${count}`
 }
 
 export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGoLive, scrollElement }: HomePageProps) {
@@ -37,6 +44,13 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
   useEffect(() => {
     loadData()
+  }, [])
+
+  useEffect(() => {
+    const unsubscribe = subscribeToLivestreams((streams) => setLivestreams(streams))
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   const loadData = async () => {
@@ -497,6 +511,10 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                           />
                         )}
                       </div>
+                    </div>
+                    <div className="absolute top-1 right-1 bg-black/60 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                      <Users className="w-3 h-3 text-white" />
+                      <span>{formatViewerCount(stream.viewer_count || 0)}</span>
                     </div>
                     <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-red-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full border-2 border-white shadow-sm flex items-center gap-0.5">
                        <span>LIVE</span>

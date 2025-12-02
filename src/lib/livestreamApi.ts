@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import type { User } from './api'
+import { processLivestreamTicket, type PaymentResult } from './payments'
 
 // ============================================
 // LIVESTREAM TYPES
@@ -42,6 +43,17 @@ export interface LivestreamMessage {
     name: string
     price: number
   }
+}
+
+export interface LivestreamAccessState {
+  can_watch: boolean
+  requires_ticket: boolean
+  has_ticket: boolean
+  requires_subscription: boolean
+  has_subscription: boolean
+  entry_price: number
+  is_creator: boolean
+  reason?: string
 }
 
 // Agora App ID
@@ -172,6 +184,96 @@ export async function getCreatorLivestream(creatorId: number): Promise<Livestrea
     .single()
 
   return data as Livestream | null
+}
+
+export async function getLivestreamAccess(
+  livestreamOrId: Livestream | string,
+  userId: number
+): Promise<LivestreamAccessState> {
+  let stream: Livestream | null = null
+
+  if (typeof livestreamOrId === 'string') {
+    stream = await getLivestream(livestreamOrId)
+  } else {
+    stream = livestreamOrId
+  }
+
+  if (!stream) {
+    return {
+      can_watch: false,
+      requires_ticket: false,
+      has_ticket: false,
+      requires_subscription: false,
+      has_subscription: false,
+      entry_price: 0,
+      is_creator: false,
+      reason: 'This stream is no longer available.'
+    }
+  }
+
+  const isCreator = stream.creator_id === userId
+  const isLive = stream.status === 'live'
+  const requiresSubscription = Boolean(stream.is_private) && !isCreator
+  const requiresTicket = (stream.entry_price || 0) > 0 && !isCreator
+
+  let hasSubscription = false
+  if (requiresSubscription) {
+    const { data: subscription } = await supabase
+      .from('subscriptions')
+      .select('id')
+      .eq('subscriber_id', userId)
+      .eq('creator_id', stream.creator_id)
+      .eq('is_active', true)
+      .limit(1)
+
+    hasSubscription = Boolean(subscription && subscription.length > 0)
+  }
+
+  let hasTicket = false
+  if (requiresTicket) {
+    const { data: ticket } = await supabase
+      .from('livestream_tickets')
+      .select('id')
+      .eq('livestream_id', stream.id)
+      .eq('user_id', userId)
+      .limit(1)
+
+    hasTicket = Boolean(ticket && ticket.length > 0)
+  }
+
+  let reason: string | undefined
+  if (!isLive && !isCreator) {
+    reason = 'This stream is not live right now.'
+  } else if (requiresSubscription && !hasSubscription) {
+    reason = 'Subscribe to watch this stream.'
+  } else if (requiresTicket && !hasTicket) {
+    reason = `Unlock this stream for ${stream.entry_price} tokens.`
+  }
+
+  const canWatch = isCreator
+    ? true
+    : isLive && (!requiresSubscription || hasSubscription) && (!requiresTicket || hasTicket)
+
+  return {
+    can_watch: canWatch,
+    requires_ticket: requiresTicket,
+    has_ticket: hasTicket,
+    requires_subscription: requiresSubscription,
+    has_subscription: hasSubscription || isCreator,
+    entry_price: stream.entry_price || 0,
+    is_creator: isCreator,
+    reason
+  }
+}
+
+export async function purchaseLivestreamTicket(livestreamId: string, userId: number): Promise<PaymentResult> {
+  const stream = await getLivestream(livestreamId)
+
+  if (!stream) {
+    return { success: false, error: 'Livestream not found.' }
+  }
+
+  return processLivestreamTicket(userId, stream.creator_id, stream.id, stream.entry_price || 0)
 }
 
 // ============================================
@@ -396,6 +498,28 @@ export function subscribeToViewerCount(
       },
       (payload: any) => {
         onUpdate(payload.new.viewer_count || 0)
+      }
+    )
+    .subscribe()
+
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}
+
+export function subscribeToLivestreams(onUpdate: (streams: Livestream[]) => void) {
+  const channel = supabase
+    .channel('livestreams:lobby')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'livestreams'
+      },
+      async () => {
+        const streams = await getLivestreams()
+        onUpdate(streams)
       }
     )
     .subscribe()

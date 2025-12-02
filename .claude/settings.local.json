@@ -10,7 +10,8 @@
       "Bash(npm install:*)",
       "Bash(npx gh-pages:*)",
       "Bash(git checkout:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(npm run dev:*)"
     ],
     "deny": [],
     "ask": []

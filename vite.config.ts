@@ -6,5 +6,14 @@ export default defineConfig({
   base: '/veronica-mini-app/',
   server: {
     allowedHosts: true
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        entryFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
+        chunkFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
+        assetFileNames: `assets/[name]-[hash]-${Date.now()}.[ext]`
+      }
+    }
   }
 })
