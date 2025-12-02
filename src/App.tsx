@@ -329,7 +329,7 @@ function App() {
     <div className="h-full w-full bg-gray-50/50 relative overflow-hidden flex flex-col">
       <div className="fixed inset-0 bg-gradient-to-br from-blue-50/50 via-purple-50/30 to-pink-50/30 -z-10" />
 
-      <main ref={scrollRef} className={`flex-1 overflow-y-auto overflow-x-hidden overscroll-none ${showApplication || showAdmin || isChatOpen || showLivestream ? '' : 'pb-24'}`}>
+      <main ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden overscroll-none">
         <AnimatePresence mode="wait">
           <motion.div
             key={showAdmin ? 'admin' : showApplication ? 'application' : viewingCreator ? 'creator' : showLivestream ? 'livestream' : location.pathname}
@@ -353,14 +353,14 @@ function App() {
       </AnimatePresence>
 
       {!viewingCreator && !showApplication && !showAdmin && !isChatOpen && !showLivestream && (
-        <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-100 safe-area-bottom">
-          <div className="flex items-center justify-around px-2 py-1">
+        <nav className="flex-shrink-0 bg-white border-t-2 border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] safe-area-bottom">
+          <div className="flex items-center justify-around px-2 py-2">
             {navItems.map((item) => {
               const isActive = activeNav === item.id
               return (
                 <button
                   key={item.id}
-                  className="flex flex-col items-center justify-center p-3 transition-colors relative w-full active:scale-95"
+                  className="flex flex-col items-center justify-center p-2 transition-colors relative w-full active:scale-95"
                   onClick={() => {
                     navigate(item.path)
                     if (item.id === 'notifications') {
