@@ -114,23 +114,45 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     }
   }
 
-  // iOS viewport height fix
+  // Smooth keyboard handling - Instagram-like behavior
   useEffect(() => {
     if (activeConversation) {
+      let lastHeight = window.visualViewport?.height ?? window.innerHeight
+
       const updateHeight = () => {
-        if (window.visualViewport) {
-          setViewportHeight(`${window.visualViewport.height}px`)
+        const newHeight = window.visualViewport?.height ?? window.innerHeight
+        const heightDiff = Math.abs(newHeight - lastHeight)
+
+        // Only update if significant change (keyboard open/close)
+        if (heightDiff > 50) {
+          // Use CSS variable for smooth transition (defined in main.tsx)
+          setViewportHeight(`${newHeight}px`)
+
+          // Scroll to bottom when keyboard opens to keep input visible
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+          }, 50)
         } else {
-          setViewportHeight(`${window.innerHeight}px`)
+          setViewportHeight(`${newHeight}px`)
         }
+
+        lastHeight = newHeight
       }
 
       updateHeight()
-      window.visualViewport?.addEventListener('resize', updateHeight)
+
+      // Use visualViewport for better keyboard detection
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', updateHeight)
+        window.visualViewport.addEventListener('scroll', updateHeight)
+      }
       window.addEventListener('resize', updateHeight)
 
       return () => {
-        window.visualViewport?.removeEventListener('resize', updateHeight)
+        if (window.visualViewport) {
+          window.visualViewport.removeEventListener('resize', updateHeight)
+          window.visualViewport.removeEventListener('scroll', updateHeight)
+        }
         window.removeEventListener('resize', updateHeight)
       }
     }
@@ -612,7 +634,11 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     return (
       <div
         className="fixed inset-0 z-[100] flex flex-col bg-[#F8FAFC]"
-        style={{ height: viewportHeight }}
+        style={{
+          height: viewportHeight,
+          transition: 'height 0.15s ease-out',
+          willChange: 'height'
+        }}
       >
         {/* Hidden file input */}
         <input
@@ -1137,6 +1163,12 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                     e.preventDefault()
                     handleSendMessage()
                   }
+                }}
+                onFocus={() => {
+                  // Scroll to bottom when keyboard opens
+                  setTimeout(() => {
+                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+                  }, 100)
                 }}
                 placeholder="Message..."
                 rows={1}

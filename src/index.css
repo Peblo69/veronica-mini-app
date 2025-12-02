@@ -6,7 +6,7 @@
   --of-blue: #00AFF0;
   --of-blue-dark: #0095D0;
   --of-blue-light: #E8F7FC;
-  --app-height: 100vh;
+  --app-height: 100dvh;
   --keyboard-height: 0px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -21,17 +21,17 @@
 
 html {
   height: 100%;
+  height: 100dvh; /* Dynamic viewport height - adjusts for keyboard */
   width: 100%;
   overflow: hidden;
-  position: fixed;
   overscroll-behavior: none;
 }
 
 body {
   height: 100%;
+  height: 100dvh; /* Dynamic viewport height - adjusts for keyboard */
   width: 100%;
   overflow: hidden;
-  position: fixed;
   overscroll-behavior: none;
   font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #F2F2F7;
@@ -39,6 +39,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-overflow-scrolling: touch;
+  /* Smooth transition for keyboard resize */
+  transition: height 0.15s ease-out;
 }
 
 #root {
@@ -46,6 +48,8 @@ body {
   width: 100%;
   overflow: hidden;
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 .safe-area-top {
