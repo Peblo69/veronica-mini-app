@@ -39,8 +39,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-overflow-scrolling: touch;
-  /* Smooth transition for keyboard resize */
-  transition: height 0.15s ease-out;
+  /* NO transition - instant updates to match keyboard speed */
 }
 
 #root {

@@ -72,7 +72,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const fileInputRef = useRef<HTMLInputElement>(null)
   const previewUrlsRef = useRef<Set<string>>(new Set())
   const pendingMediaRef = useRef<Map<string, PendingMedia>>(new Map())
-  const [viewportHeight, setViewportHeight] = useState('100dvh')
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastTapRef = useRef<{ time: number; messageId: string } | null>(null)
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
@@ -114,47 +114,36 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     }
   }
 
-  // Smooth keyboard handling - Instagram-like behavior
+  // Keyboard handling - scroll to bottom when viewport resizes
   useEffect(() => {
-    if (activeConversation) {
-      let lastHeight = window.visualViewport?.height ?? window.innerHeight
+    if (!activeConversation) return
 
-      const updateHeight = () => {
-        const newHeight = window.visualViewport?.height ?? window.innerHeight
-        const heightDiff = Math.abs(newHeight - lastHeight)
+    // Enable VirtualKeyboard API if available (Chrome/Edge)
+    if ('virtualKeyboard' in navigator) {
+      try {
+        (navigator as { virtualKeyboard: { overlaysContent: boolean } }).virtualKeyboard.overlaysContent = true
+      } catch { /* ignore */ }
+    }
 
-        // Only update if significant change (keyboard open/close)
-        if (heightDiff > 50) {
-          // Use CSS variable for smooth transition (defined in main.tsx)
-          setViewportHeight(`${newHeight}px`)
+    let lastHeight = window.visualViewport?.height ?? window.innerHeight
 
-          // Scroll to bottom when keyboard opens to keep input visible
-          setTimeout(() => {
-            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-          }, 50)
-        } else {
-          setViewportHeight(`${newHeight}px`)
-        }
+    const onViewportResize = () => {
+      const currentHeight = window.visualViewport?.height ?? window.innerHeight
+      const heightDiff = lastHeight - currentHeight
 
-        lastHeight = newHeight
+      // Keyboard opened (height decreased significantly)
+      if (heightDiff > 100) {
+        requestAnimationFrame(() => {
+          messagesEndRef.current?.scrollIntoView({ block: 'end' })
+        })
       }
 
-      updateHeight()
+      lastHeight = currentHeight
+    }
 
-      // Use visualViewport for better keyboard detection
-      if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', updateHeight)
-        window.visualViewport.addEventListener('scroll', updateHeight)
-      }
-      window.addEventListener('resize', updateHeight)
-
-      return () => {
-        if (window.visualViewport) {
-          window.visualViewport.removeEventListener('resize', updateHeight)
-          window.visualViewport.removeEventListener('scroll', updateHeight)
-        }
-        window.removeEventListener('resize', updateHeight)
-      }
+    window.visualViewport?.addEventListener('resize', onViewportResize)
+    return () => {
+      window.visualViewport?.removeEventListener('resize', onViewportResize)
     }
   }, [activeConversation])
 
@@ -635,9 +624,8 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       <div
         className="fixed inset-0 z-[100] flex flex-col bg-[#F8FAFC]"
         style={{
-          height: viewportHeight,
-          transition: 'height 0.15s ease-out',
-          willChange: 'height'
+          height: '100dvh',
+          paddingBottom: 'env(keyboard-inset-height, 0px)'
         }}
       >
         {/* Hidden file input */}
@@ -1164,11 +1152,12 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                     handleSendMessage()
                   }
                 }}
+                ref={inputRef}
                 onFocus={() => {
-                  // Scroll to bottom when keyboard opens
-                  setTimeout(() => {
-                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-                  }, 100)
+                  // Scroll to bottom instantly when focused
+                  requestAnimationFrame(() => {
+                    messagesEndRef.current?.scrollIntoView({ block: 'end' })
+                  })
                 }}
                 placeholder="Message..."
                 rows={1}
