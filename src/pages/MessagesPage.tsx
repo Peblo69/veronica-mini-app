@@ -328,15 +328,15 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     setSending(true)
 
     try {
-      const msg = await sendMessage(activeConversation.id, user.telegram_id, text, tempId)
+      const { data: msg, error } = await sendMessage(activeConversation.id, user.telegram_id, text, tempId)
       if (msg) {
         resolveTempMessage(tempId, msg)
       } else {
-        resolveTempMessage(tempId, undefined, 'Failed to send message')
+        resolveTempMessage(tempId, undefined, error || 'Failed to send message')
       }
     } catch (err) {
       console.error('[Chat] Send message error:', err)
-      resolveTempMessage(tempId, undefined, 'Failed to send message')
+      resolveTempMessage(tempId, undefined, (err as Error).message || 'Failed to send message')
     }
     setSending(false)
   }
@@ -484,11 +484,11 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       )
       setSending(true)
       try {
-        const result = await sendMessage(activeConversation.id, user.telegram_id, msg.content, tempId)
+        const { data: result, error } = await sendMessage(activeConversation.id, user.telegram_id, msg.content, tempId)
         if (result) {
           resolveTempMessage(tempId, result)
         } else {
-          resolveTempMessage(tempId, undefined, 'Failed to send message')
+          resolveTempMessage(tempId, undefined, error || 'Failed to send message')
         }
       } catch (err) {
         resolveTempMessage(tempId, undefined, (err as Error).message)

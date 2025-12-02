@@ -140,7 +140,9 @@ export async function sendMessage(
   senderId: number,
   content: string,
   clientMessageId?: string
-): Promise<Message | null> {
+): Promise<{ data: Message | null; error: string | null }> {
+  console.log('[ChatApi] sendMessage:', { conversationId, senderId, content: content.substring(0, 50), clientMessageId })
+
   const { data, error } = await supabase
     .from('messages')
     .insert({
@@ -154,14 +156,16 @@ export async function sendMessage(
     .single()
 
   if (error) {
-    console.error('Send message error:', error)
-    return null
+    console.error('[ChatApi] Send message error:', error)
+    return { data: null, error: error.message || 'Database error' }
   }
+
+  console.log('[ChatApi] Message sent successfully:', data?.id)
 
   // Update conversation
   await updateConversationLastMessage(conversationId, senderId, content)
 
-  return data as Message
+  return { data: data as Message, error: null }
 }
 
 // Send media message
