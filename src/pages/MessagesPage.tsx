@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle, Search, ArrowLeft, Send, Image, Gift, DollarSign, Lock, X, Loader2, Plus, Video, CheckCheck, AlertCircle } from 'lucide-react'
+import { CheckCircle, Search, ArrowLeft, Send, Image, Gift, DollarSign, Lock, X, Loader2, Plus, Video, CheckCheck, AlertCircle, CornerUpLeft, Forward, Trash2, Flag, MoreHorizontal, Smile } from 'lucide-react'
 import { type User } from '../lib/api'
 import {
   getConversations,
@@ -26,6 +25,8 @@ type ChatMessage = Message & {
   _status?: 'sending' | 'uploading' | 'failed'
   preview_url?: string
   error?: string
+  reactions?: { emoji: string; user_id: number }[]
+  reply_to?: ChatMessage | null
 }
 
 type PendingMedia = {
@@ -33,6 +34,8 @@ type PendingMedia = {
   mediaType: 'image' | 'video' | 'voice'
   duration?: number
 }
+
+type MessageCategory = 'primary' | 'general' | 'requests'
 
 interface MessagesPageProps {
   user: User
@@ -43,7 +46,9 @@ interface MessagesPageProps {
   scrollElement?: HTMLElement | null
 }
 
-export default function MessagesPage({ user, selectedConversationId, onConversationOpened, onChatStateChange, onProfileClick, scrollElement }: MessagesPageProps) {
+const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '😡', '👍']
+
+export default function MessagesPage({ user, selectedConversationId, onConversationOpened, onChatStateChange, onProfileClick, scrollElement: _scrollElement }: MessagesPageProps) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -57,13 +62,20 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const [gifts, setGifts] = useState<GiftType[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [uploadingCount, setUploadingCount] = useState(0)
-
+  const [activeCategory, setActiveCategory] = useState<MessageCategory>('primary')
+  const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null)
+  const [showMessageMenu, setShowMessageMenu] = useState(false)
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
+  const [messageReactions, setMessageReactions] = useState<Map<string, { emoji: string; user_id: number }[]>>(new Map())
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const previewUrlsRef = useRef<Set<string>>(new Set())
   const pendingMediaRef = useRef<Map<string, PendingMedia>>(new Map())
   const [viewportHeight, setViewportHeight] = useState('100dvh')
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastTapRef = useRef<{ time: number; messageId: string } | null>(null)
+  const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
   const trackPreviewUrl = (url: string) => {
     previewUrlsRef.current.add(url)
@@ -112,11 +124,11 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
           setViewportHeight(`${window.innerHeight}px`)
         }
       }
-      
+
       updateHeight()
       window.visualViewport?.addEventListener('resize', updateHeight)
       window.addEventListener('resize', updateHeight)
-      
+
       return () => {
         window.visualViewport?.removeEventListener('resize', updateHeight)
         window.removeEventListener('resize', updateHeight)
@@ -151,7 +163,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   // Load messages when conversation changes
   useEffect(() => {
     onChatStateChange?.(!!activeConversation)
-    
+
     if (activeConversation) {
       loadMessages(activeConversation.id)
       markMessagesRead(activeConversation.id, user.telegram_id)
@@ -257,10 +269,12 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       is_read: false,
       is_deleted: false,
       created_at: new Date().toISOString(),
+      reply_to: replyTo,
     }
 
     setMessages(prev => [...prev, optimisticMessage])
     setNewMessage('')
+    setReplyTo(null)
     setSending(true)
 
     try {
@@ -321,7 +335,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     if (error) {
       alert(error)
     } else if (success) {
-      // Refresh messages to show unlocked content
       loadMessages(activeConversation!.id)
     }
   }
@@ -444,6 +457,74 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     void runMediaUpload(tempId, pending, activeConversation.id)
   }
 
+  // Long press handler
+  const handleTouchStart = useCallback((msg: ChatMessage) => {
+    longPressTimer.current = setTimeout(() => {
+      setSelectedMessage(msg)
+      setShowMessageMenu(true)
+    }, 500)
+  }, [])
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }, [])
+
+  // Double tap handler for quick like
+  const handleMessageTap = useCallback((msg: ChatMessage) => {
+    const now = Date.now()
+    if (lastTapRef.current && lastTapRef.current.messageId === msg.id && now - lastTapRef.current.time < 300) {
+      // Double tap - add heart reaction
+      handleAddReaction(msg.id, '❤️')
+      lastTapRef.current = null
+    } else {
+      lastTapRef.current = { time: now, messageId: msg.id }
+    }
+  }, [])
+
+  // Add reaction to message
+  const handleAddReaction = (messageId: string, emoji: string) => {
+    setMessageReactions(prev => {
+      const newMap = new Map(prev)
+      const reactions = newMap.get(messageId) || []
+      const existingIndex = reactions.findIndex(r => r.user_id === user.telegram_id && r.emoji === emoji)
+
+      if (existingIndex >= 0) {
+        // Remove reaction
+        reactions.splice(existingIndex, 1)
+      } else {
+        // Add reaction
+        reactions.push({ emoji, user_id: user.telegram_id })
+      }
+
+      newMap.set(messageId, reactions)
+      return newMap
+    })
+    setShowMessageMenu(false)
+    setSelectedMessage(null)
+  }
+
+  // Reply to message
+  const handleReply = () => {
+    if (selectedMessage) {
+      setReplyTo(selectedMessage)
+      setShowMessageMenu(false)
+      setSelectedMessage(null)
+    }
+  }
+
+  // Scroll to replied message
+  const scrollToMessage = (messageId: string) => {
+    const element = messageRefs.current.get(messageId)
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      element.classList.add('bg-blue-100')
+      setTimeout(() => element.classList.remove('bg-blue-100'), 1500)
+    }
+  }
+
   const formatTime = (date: string) => {
     const d = new Date(date)
     const now = new Date()
@@ -455,26 +536,41 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
   }
 
-  const filteredConversations = conversations.filter(c =>
-    c.other_user?.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.other_user?.first_name?.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  // Filter conversations by category
+  const getFilteredConversations = () => {
+    let filtered = conversations.filter(c =>
+      c.other_user?.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.other_user?.first_name?.toLowerCase().includes(searchQuery.toLowerCase())
+    )
 
-  const defaultScrollElement = typeof document !== 'undefined' ? (document.querySelector('main') as HTMLElement | null) || document.documentElement : null
-  const conversationVirtualizer = useVirtualizer({
-    count: filteredConversations.length,
-    getScrollElement: () => (scrollElement ?? defaultScrollElement)!,
-    estimateSize: () => 92,
-    overscan: 6,
-  })
+    // For now, simulate categories (in real app, this would come from backend)
+    switch (activeCategory) {
+      case 'primary':
+        return filtered
+      case 'general':
+        return filtered.filter((_, i) => i % 3 === 0) // Simulated
+      case 'requests':
+        return filtered.filter((_, i) => i % 5 === 0) // Simulated
+      default:
+        return filtered
+    }
+  }
 
-  const renderConversationCard = (conv: Conversation, index: number) => (
+  const filteredConversations = getFilteredConversations()
+
+  const categories: { id: MessageCategory; label: string }[] = [
+    { id: 'primary', label: 'Primary' },
+    { id: 'general', label: 'General' },
+    { id: 'requests', label: 'Requests' },
+  ]
+
+  const renderConversationCard = (conv: Conversation) => (
     <motion.button
       key={conv.id}
-      className="card p-3 flex items-center gap-3 w-full text-left"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index * 0.05, 0.2) }}
+      className="card p-4 flex items-center gap-4 w-full text-left hover:bg-gray-50 transition-colors"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.15 }}
       onClick={() => setActiveConversation(conv)}
     >
       <div className="relative">
@@ -487,18 +583,18 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1">
-          <span className="font-semibold">
+          <span className="font-semibold text-[15px]">
             {conv.other_user?.first_name || conv.other_user?.username || 'User'}
           </span>
           {conv.other_user?.is_verified && (
             <CheckCircle className="w-4 h-4 text-of-blue fill-of-blue" />
           )}
         </div>
-        <p className="text-sm text-gray-500 truncate">
+        <p className="text-sm text-gray-500 truncate mt-0.5">
           {conv.last_message_preview || 'Start a conversation'}
         </p>
       </div>
-      <div className="text-right">
+      <div className="text-right shrink-0">
         <span className="text-xs text-gray-400">
           {formatTime(conv.last_message_at)}
         </span>
@@ -512,10 +608,10 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   )
 
   // Chat view - Full screen overlay
-    if (activeConversation) {
+  if (activeConversation) {
     return (
-      <div 
-        className="fixed inset-0 z-[100] flex flex-col bg-[#F8FAFC] overflow-hidden"
+      <div
+        className="fixed inset-0 z-[100] flex flex-col bg-[#F8FAFC]"
         style={{ height: viewportHeight }}
       >
         {/* Hidden file input */}
@@ -531,33 +627,30 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         {/* Header - Sticky at top */}
         <div className="shrink-0 bg-white border-b border-gray-100 shadow-sm safe-area-top relative z-50">
           <div className="flex items-center gap-3 px-3 py-2 h-14">
-            <button 
-              onClick={(e) => { 
-                e.stopPropagation();
-                setActiveConversation(null); 
-                onChatStateChange?.(false); 
-              }} 
-              className="p-1.5 hover:bg-gray-100 rounded-full transition-colors -ml-1 relative z-10"
+            <button
+              onClick={() => {
+                setActiveConversation(null)
+                onChatStateChange?.(false)
+              }}
+              className="p-1.5 hover:bg-gray-100 rounded-full transition-colors -ml-1"
             >
               <ArrowLeft className="w-5 h-5 text-gray-800" />
             </button>
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
+            <button
+              onClick={() => {
                 if (activeConversation.other_user) {
-                  onProfileClick?.(activeConversation.other_user);
+                  onProfileClick?.(activeConversation.other_user)
                 }
               }}
-              className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-70 transition-opacity text-left relative z-10 cursor-pointer"
+              className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-70 transition-opacity text-left cursor-pointer"
             >
               <div className="relative shrink-0">
                 <img
                   src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
                   alt=""
                   loading="lazy"
-                  className="w-9 h-9 rounded-full object-cover"
+                  className="w-10 h-10 rounded-full object-cover"
                 />
-                {/* Online indicator */}
                 <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
               </div>
               <div className="flex-1 min-w-0">
@@ -574,7 +667,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         </div>
 
         {/* Messages - Scrollable area */}
-        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1 overscroll-none">
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2 overscroll-none">
           {messages.map((msg, index) => {
             const isOwn = msg.sender_id === user.telegram_id
             const isPPVLocked = msg.is_ppv && !msg.ppv_unlocked_by?.includes(user.telegram_id) && !isOwn
@@ -583,241 +676,332 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
             const isFailed = msg._status === 'failed'
             const resolvedMediaUrl = msg.media_url || msg.preview_url || undefined
             const timeLabel = formatTime(msg.created_at)
+            const reactions = messageReactions.get(msg.id) || []
+
             const renderTicks = () => {
               if (!isOwn) return null
               if (isPending) {
-                return <Loader2 className={`w-3 h-3 ${isOwn ? 'text-white/80' : 'text-gray-400'} animate-spin`} />
+                return <Loader2 className="w-3 h-3 text-white/70 animate-spin" />
               }
               return msg.is_read ? (
                 <CheckCheck className="w-3.5 h-3.5 text-blue-300" />
               ) : (
-                <CheckCheck className="w-3.5 h-3.5 opacity-60" />
+                <CheckCheck className="w-3.5 h-3.5 text-white/50" />
               )
             }
 
             return (
-              <motion.div
+              <div
                 key={msg.id}
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.15 }}
-                className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} gap-1`}
+                ref={el => { if (el) messageRefs.current.set(msg.id, el) }}
+                className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} transition-colors duration-500 rounded-2xl`}
               >
-                <div className={`flex items-end gap-1.5 w-full ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                {/* Reply preview */}
+                {msg.reply_to && (
+                  <button
+                    onClick={() => scrollToMessage(msg.reply_to!.id)}
+                    className={`text-xs px-3 py-1.5 rounded-xl mb-1 max-w-[70%] truncate ${
+                      isOwn ? 'bg-blue-400/30 text-blue-100 ml-auto' : 'bg-gray-200 text-gray-600'
+                    }`}
+                  >
+                    ↩ {msg.reply_to.content?.slice(0, 30) || 'Media'}...
+                  </button>
+                )}
+
+                <div className={`flex items-end gap-2 w-full ${isOwn ? 'justify-end' : 'justify-start'}`}>
                   {!isOwn && (
-                    <div className="w-6 flex-shrink-0 pb-0.5">
-                    {showAvatar && (
-                      <img
-                        src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
-                        alt=""
-                        loading="lazy"
-                        className="w-6 h-6 rounded-full object-cover"
-                      />
+                    <div className="w-7 shrink-0 pb-0.5">
+                      {showAvatar && (
+                        <img
+                          src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
+                          alt=""
+                          loading="lazy"
+                          className="w-7 h-7 rounded-full object-cover"
+                        />
                       )}
                     </div>
                   )}
 
                   <div
-                    className={`max-w-[78%] px-3 py-1.5 relative group overflow-hidden ${
+                    className={`relative max-w-[75%] px-4 py-2.5 ${
                       isOwn
-                        ? 'bg-of-blue text-white rounded-2xl rounded-br-sm'
-                        : 'bg-white text-gray-800 rounded-2xl rounded-bl-sm shadow-sm'
-                    } ${msg.message_type === 'text' || msg.message_type === 'voice' ? '' : '!p-0 !bg-transparent !shadow-none !rounded-xl'} ${isFailed ? 'ring-1 ring-red-200' : ''}`}
+                        ? 'bg-of-blue text-white rounded-[20px] rounded-br-md'
+                        : 'bg-white text-gray-800 rounded-[20px] rounded-bl-md shadow-sm border border-gray-100'
+                    } ${msg.message_type === 'text' || msg.message_type === 'voice' ? '' : '!p-0 !bg-transparent !shadow-none !border-0 !rounded-2xl'} ${isFailed ? 'ring-2 ring-red-300' : ''}`}
+                    onTouchStart={() => handleTouchStart(msg)}
+                    onTouchEnd={handleTouchEnd}
+                    onTouchCancel={handleTouchEnd}
+                    onClick={() => handleMessageTap(msg)}
                   >
                     {isPending && msg.message_type !== 'text' && (
-                      <div className="absolute inset-0 rounded-2xl bg-black/30 flex items-center justify-center">
-                        <Loader2 className="w-6 h-6 text-white animate-spin" />
+                      <div className="absolute inset-0 rounded-2xl bg-black/40 flex items-center justify-center z-10">
+                        <Loader2 className="w-8 h-8 text-white animate-spin" />
                       </div>
                     )}
-                  {/* Gift message */}
-                  {msg.message_type === 'gift' && msg.gift && (
-                    <div className={`text-center py-2 px-3 rounded-2xl ${isOwn ? 'bg-of-blue' : 'bg-white shadow-sm'}`}>
-                      <div className="w-8 h-8 mx-auto bg-gradient-to-tr from-pink-400 to-rose-500 rounded-lg flex items-center justify-center mb-1">
-                        <Gift className="w-4 h-4 text-white" />
-                      </div>
-                      <p className={`font-semibold text-xs ${isOwn ? 'text-white' : 'text-gray-800'}`}>
-                        {msg.gift.name}
-                      </p>
-                      <div className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium mt-0.5 ${isOwn ? 'bg-white/20 text-white' : 'bg-pink-50 text-pink-600'}`}>
-                        {msg.gift.price} tokens
-                      </div>
-                    </div>
-                  )}
 
-                  {/* Tip message */}
-                  {msg.message_type === 'tip' && (
-                    <div className={`text-center py-2 px-3 rounded-2xl ${isOwn ? 'bg-of-blue' : 'bg-white shadow-sm'}`}>
-                      <div className="w-8 h-8 mx-auto bg-gradient-to-tr from-green-400 to-emerald-500 rounded-full flex items-center justify-center mb-1">
-                        <DollarSign className="w-4 h-4 text-white" />
+                    {/* Gift message */}
+                    {msg.message_type === 'gift' && msg.gift && (
+                      <div className={`text-center py-3 px-4 rounded-2xl ${isOwn ? 'bg-of-blue' : 'bg-white shadow-sm border border-gray-100'}`}>
+                        <div className="w-10 h-10 mx-auto bg-gradient-to-tr from-pink-400 to-rose-500 rounded-xl flex items-center justify-center mb-2">
+                          <Gift className="w-5 h-5 text-white" />
+                        </div>
+                        <p className={`font-semibold text-sm ${isOwn ? 'text-white' : 'text-gray-800'}`}>
+                          {msg.gift.name}
+                        </p>
+                        <div className={`inline-block px-3 py-1 rounded-full text-xs font-medium mt-1 ${isOwn ? 'bg-white/20 text-white' : 'bg-pink-50 text-pink-600'}`}>
+                          {msg.gift.price} tokens
+                        </div>
                       </div>
-                      <p className={`font-semibold text-xs ${isOwn ? 'text-white' : 'text-gray-800'}`}>
-                        Tip
-                      </p>
-                      <div className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold mt-0.5 ${isOwn ? 'bg-white/20 text-white' : 'bg-green-50 text-green-600'}`}>
-                        ${msg.tip_amount}
-                      </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* PPV message */}
-                  {msg.message_type === 'ppv' && (
-                    <div className="min-w-[160px] max-w-[200px] rounded-xl overflow-hidden bg-black">
-                      {isPPVLocked ? (
-                        <div className="text-center py-3 bg-black/60 backdrop-blur-sm">
-                          <div className="w-8 h-8 mx-auto bg-white/20 rounded-full flex items-center justify-center mb-1.5">
-                            <Lock className="w-4 h-4 text-white" />
+                    {/* Tip message */}
+                    {msg.message_type === 'tip' && (
+                      <div className={`text-center py-3 px-4 rounded-2xl ${isOwn ? 'bg-of-blue' : 'bg-white shadow-sm border border-gray-100'}`}>
+                        <div className="w-10 h-10 mx-auto bg-gradient-to-tr from-green-400 to-emerald-500 rounded-full flex items-center justify-center mb-2">
+                          <DollarSign className="w-5 h-5 text-white" />
+                        </div>
+                        <p className={`font-semibold text-sm ${isOwn ? 'text-white' : 'text-gray-800'}`}>
+                          Tip
+                        </p>
+                        <div className={`inline-block px-3 py-1 rounded-full text-sm font-semibold mt-1 ${isOwn ? 'bg-white/20 text-white' : 'bg-green-50 text-green-600'}`}>
+                          ${msg.tip_amount}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* PPV message */}
+                    {msg.message_type === 'ppv' && (
+                      <div className="min-w-[180px] max-w-[220px] rounded-2xl overflow-hidden bg-black">
+                        {isPPVLocked ? (
+                          <div className="text-center py-4 bg-black/60 backdrop-blur-sm">
+                            <div className="w-10 h-10 mx-auto bg-white/20 rounded-full flex items-center justify-center mb-2">
+                              <Lock className="w-5 h-5 text-white" />
+                            </div>
+                            <p className="text-xs font-medium mb-2 text-white/80">Exclusive Content</p>
+                            <button
+                              onClick={() => handleUnlockPPV(msg.id)}
+                              className="bg-white text-black px-4 py-1.5 rounded-full text-xs font-bold"
+                            >
+                              Unlock ${msg.ppv_price}
+                            </button>
                           </div>
-                          <p className="text-[10px] font-medium mb-1.5 text-white/80">Exclusive</p>
-                          <button
-                            onClick={() => handleUnlockPPV(msg.id)}
-                            className="bg-white text-black px-3 py-1 rounded-full text-[10px] font-bold"
-                          >
-                            Unlock ${msg.ppv_price}
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="rounded-xl overflow-hidden">
-                          {msg.media_url && (
-                            msg.media_url.match(/\.(mp4|webm|mov)$/i) ? (
-                              <video src={msg.media_url} controls className="w-full max-h-[200px] object-cover block" />
+                        ) : (
+                          <div className="rounded-2xl overflow-hidden">
+                            {msg.media_url && (
+                              msg.media_url.match(/\.(mp4|webm|mov)$/i) ? (
+                                <video src={msg.media_url} controls className="w-full max-h-[220px] object-cover block" />
+                              ) : (
+                                <img src={msg.media_url} alt="" className="w-full max-h-[220px] object-cover block" />
+                              )
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Image message */}
+                    {msg.message_type === 'image' && resolvedMediaUrl && (
+                      <div className="rounded-2xl overflow-hidden max-w-[220px]">
+                        <img
+                          src={resolvedMediaUrl}
+                          alt=""
+                          loading="lazy"
+                          className="w-full max-h-[260px] object-cover block rounded-2xl"
+                        />
+                      </div>
+                    )}
+
+                    {/* Video message */}
+                    {msg.message_type === 'video' && resolvedMediaUrl && (
+                      <div className="rounded-2xl overflow-hidden max-w-[220px] bg-black">
+                        <video
+                          src={resolvedMediaUrl}
+                          controls
+                          controlsList="nodownload"
+                          playsInline
+                          muted
+                          preload="metadata"
+                          className="w-full max-h-[260px] object-contain block rounded-2xl"
+                        />
+                      </div>
+                    )}
+
+                    {/* Regular text */}
+                    {msg.message_type === 'text' && (
+                      <>
+                        {msg.content?.match(/^https?:\/\/.*\.(jpg|jpeg|png|gif|webp|mp4|webm)$/i) ? (
+                          <div className="rounded-2xl overflow-hidden max-w-[220px]">
+                            {msg.content.match(/\.(mp4|webm)$/i) ? (
+                              <video src={msg.content} controls controlsList="nodownload" playsInline muted className="w-full max-h-[260px] object-contain block rounded-2xl bg-black" />
                             ) : (
-                              <img src={msg.media_url} alt="" className="w-full max-h-[200px] object-cover block" />
-                            )
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                              <img src={msg.content} alt="" className="w-full max-h-[260px] object-cover block rounded-2xl" />
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-end gap-2">
+                            <p className="text-[15px] leading-relaxed whitespace-pre-wrap break-words" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{msg.content}</p>
+                            <span className={`text-[10px] shrink-0 flex items-center gap-1 ${isOwn ? 'text-white/60' : 'text-gray-400'}`}>
+                              {timeLabel}
+                              {renderTicks()}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    )}
 
-                  {/* Image message */}
-                  {msg.message_type === 'image' && resolvedMediaUrl && (
-                    <div className="rounded-xl overflow-hidden max-w-[200px]">
-                      <img
-                        src={resolvedMediaUrl}
-                        alt=""
-                        loading="lazy"
-                        className="w-full max-h-[240px] object-cover block rounded-xl"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          target.onerror = null;
-                          target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120" viewBox="0 0 160 120"><rect fill="%231f2937" width="160" height="120" rx="12"/><text fill="%236b7280" font-size="10" x="50%" y="50%" text-anchor="middle" dy=".3em">Failed</text></svg>';
-                        }}
-                      />
-                    </div>
-                  )}
+                    {/* Voice message */}
+                    {(msg.message_type === 'voice' || resolvedMediaUrl?.match(/\.(webm|ogg|mp3|wav)$/i)) && resolvedMediaUrl && (
+                      <div className={`flex items-center gap-2 min-w-[140px] ${isOwn ? 'text-white' : 'text-gray-800'}`}>
+                        <span className="text-lg">🎙️</span>
+                        <audio src={resolvedMediaUrl} controls className="h-8 w-full accent-current opacity-90" />
+                      </div>
+                    )}
 
-                  {/* Video message */}
-                  {msg.message_type === 'video' && resolvedMediaUrl && (
-                    <div className="rounded-xl overflow-hidden max-w-[200px] bg-black">
-                    <video
-                      src={resolvedMediaUrl}
-                      controls
-                      controlsList="nodownload"
-                      playsInline
-                      muted
-                      preload="metadata"
-                      className="w-full max-h-[240px] object-contain block rounded-xl"
-                      onError={(e) => {
-                        const target = e.target as HTMLVideoElement;
-                        target.style.display = 'none';
-                          const parent = target.parentElement;
-                          if (parent && !parent.querySelector('.video-error')) {
-                            const errorDiv = document.createElement('div');
-                            errorDiv.className = 'video-error flex items-center justify-center h-[120px] text-gray-400 text-xs bg-gray-900 rounded-xl';
-                            errorDiv.textContent = 'Video unavailable';
-                            parent.appendChild(errorDiv);
-                          }
-                        }}
-                      />
-                    </div>
-                  )}
+                    {/* Time & ticks for non-text bubbles */}
+                    {msg.message_type !== 'text' && (
+                      <div className={`flex items-center justify-end gap-1 mt-1 ${isOwn ? 'text-white/60' : 'text-gray-400'}`}>
+                        <span className="text-[10px]">{timeLabel}</span>
+                        {renderTicks()}
+                      </div>
+                    )}
 
-                  {/* Regular text/media */}
-                  {msg.message_type === 'text' && (
-                    <>
-                      {msg.content?.match(/^https?:\/\/.*\.(jpg|jpeg|png|gif|webp|mp4|webm)$/i) ? (
-                        <div className="rounded-xl overflow-hidden max-w-[200px]">
-                          {msg.content.match(/\.(mp4|webm)$/i) ? (
-                            <video src={msg.content} controls controlsList="nodownload" playsInline muted className="w-full max-h-[240px] object-contain block rounded-xl bg-black" />
-                          ) : (
-                            <img src={msg.content} alt="" className="w-full max-h-[240px] object-cover block rounded-xl" />
-                          )}
-                        </div>
-                      ) : (
-                        <div className="flex items-end gap-1">
-                          <p className="text-[14px] leading-tight whitespace-pre-wrap break-words" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{msg.content}</p>
-                          <span className={`text-[10px] shrink-0 flex items-center gap-0.5 ${isOwn ? 'text-white/60' : 'text-gray-400'}`}>
-                            {timeLabel}
-                            {renderTicks()}
-                          </span>
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  {/* Voice message */}
-                  {(msg.message_type === 'voice' || resolvedMediaUrl?.match(/\.(webm|ogg|mp3|wav)$/i)) && resolvedMediaUrl && (
-                    <div className={`flex items-center gap-1.5 min-w-[120px] ${isOwn ? 'text-white' : 'text-gray-800'}`}>
-                      <span className="text-sm">🎙️</span>
-                      <audio src={resolvedMediaUrl} controls className="h-7 w-full accent-current opacity-90 scale-[0.85] origin-left" />
-                    </div>
-                  )}
-
-                  {/* Time & ticks for non-text bubbles */}
-                  {msg.message_type !== 'text' && (
-                    <div className={`flex items-center justify-end gap-0.5 mt-0.5 ${isOwn ? 'text-white/60' : 'text-gray-400'}`}>
-                      <span className="text-[10px] flex items-center gap-0.5">{timeLabel}</span>
-                      {renderTicks()}
-                    </div>
-                  )}
+                    {/* Reactions */}
+                    {reactions.length > 0 && (
+                      <div className={`absolute -bottom-3 ${isOwn ? 'right-2' : 'left-2'} flex gap-0.5 bg-white rounded-full px-1.5 py-0.5 shadow-md border border-gray-100`}>
+                        {reactions.map((r, i) => (
+                          <span key={i} className="text-sm">{r.emoji}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
+
                 {isFailed && (
                   <button
                     onClick={() => retryFailedMessage(msg)}
-                    className={`flex items-center gap-1 text-[10px] text-red-500 px-1 underline-offset-2 ${isOwn ? 'justify-end' : 'justify-start'} hover:underline`}
+                    className={`flex items-center gap-1 text-xs text-red-500 px-2 mt-1 ${isOwn ? 'justify-end' : 'justify-start'} hover:underline`}
                   >
                     <AlertCircle className="w-3.5 h-3.5" />
-                    <span>{msg.error || 'Failed to send. Tap to retry.'}</span>
+                    <span>{msg.error || 'Failed. Tap to retry.'}</span>
                   </button>
                 )}
-              </motion.div>
+              </div>
             )
           })}
-          <div ref={messagesEndRef} className="h-4" />
+          <div ref={messagesEndRef} className="h-6" />
         </div>
+
+        {/* Message Action Menu */}
+        <AnimatePresence>
+          {showMessageMenu && selectedMessage && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/40 z-[200]"
+                onClick={() => { setShowMessageMenu(false); setSelectedMessage(null) }}
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl z-[201] safe-area-bottom overflow-hidden"
+              >
+                {/* Quick Reactions */}
+                <div className="flex justify-center gap-3 py-4 border-b border-gray-100">
+                  {QUICK_REACTIONS.map(emoji => (
+                    <button
+                      key={emoji}
+                      onClick={() => handleAddReaction(selectedMessage.id, emoji)}
+                      className="w-12 h-12 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-2xl transition-transform active:scale-90"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => {}}
+                    className="w-12 h-12 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-transform active:scale-90"
+                  >
+                    <Smile className="w-6 h-6 text-gray-500" />
+                  </button>
+                </div>
+
+                {/* Menu Options */}
+                <div className="py-2">
+                  <button onClick={handleReply} className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100">
+                    <CornerUpLeft className="w-5 h-5 text-gray-600" />
+                    <span className="font-medium text-gray-800">Reply</span>
+                  </button>
+                  <button className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100">
+                    <Smile className="w-5 h-5 text-gray-600" />
+                    <span className="font-medium text-gray-800">Add Sticker</span>
+                  </button>
+                  <button className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100">
+                    <Forward className="w-5 h-5 text-gray-600" />
+                    <span className="font-medium text-gray-800">Forward</span>
+                  </button>
+                  <button className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100">
+                    <Trash2 className="w-5 h-5 text-red-500" />
+                    <span className="font-medium text-red-500">Delete</span>
+                  </button>
+                  <button className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100">
+                    <Flag className="w-5 h-5 text-gray-600" />
+                    <span className="font-medium text-gray-800">Report</span>
+                  </button>
+                  <button className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100">
+                    <MoreHorizontal className="w-5 h-5 text-gray-600" />
+                    <span className="font-medium text-gray-800">More...</span>
+                  </button>
+                </div>
+
+                {/* Cancel */}
+                <div className="px-4 pb-4 pt-2">
+                  <button
+                    onClick={() => { setShowMessageMenu(false); setSelectedMessage(null) }}
+                    className="w-full py-3.5 bg-gray-100 rounded-xl font-semibold text-gray-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
 
         {/* Actions Menu */}
         <AnimatePresence>
           {showActions && (
             <>
-            <div className="absolute inset-0 z-[101]" onClick={() => setShowActions(false)} />
-            <motion.div
-               initial={{ opacity: 0, scale: 0.9, y: 10 }}
-               animate={{ opacity: 1, scale: 1, y: 0 }}
-               exit={{ opacity: 0, scale: 0.9, y: 10 }}
-               className="absolute bottom-20 left-4 bg-white rounded-xl shadow-lg border border-gray-100 p-1 z-[102] flex flex-col gap-0.5"
-            >
-              <button onClick={() => { fileInputRef.current?.click(); setShowActions(false); }} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors w-full text-left">
-                <div className="w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center text-blue-500"><Image className="w-3 h-3" /></div>
-                <span className="font-medium text-gray-700 text-xs">Photo</span>
-              </button>
-              <button onClick={() => { fileInputRef.current?.click(); setShowActions(false); }} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors w-full text-left">
-                <div className="w-6 h-6 rounded-full bg-purple-50 flex items-center justify-center text-purple-500"><Video className="w-3 h-3" /></div>
-                <span className="font-medium text-gray-700 text-xs">Video</span>
-              </button>
-              <button onClick={() => { setShowGifts(true); setShowActions(false); }} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors w-full text-left">
-                <div className="w-6 h-6 rounded-full bg-pink-50 flex items-center justify-center text-pink-500"><Gift className="w-3 h-3" /></div>
-                <span className="font-medium text-gray-700 text-xs">Gift</span>
-              </button>
-              <button onClick={() => { setShowTip(true); setShowActions(false); }} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors w-full text-left">
-                <div className="w-6 h-6 rounded-full bg-green-50 flex items-center justify-center text-green-500"><DollarSign className="w-3 h-3" /></div>
-                <span className="font-medium text-gray-700 text-xs">Tip</span>
-              </button>
-            </motion.div>
+              <div className="fixed inset-0 z-[101]" onClick={() => setShowActions(false)} />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                className="absolute bottom-20 left-4 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 z-[102] flex flex-col gap-1"
+              >
+                <button onClick={() => { fileInputRef.current?.click(); setShowActions(false) }} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
+                  <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-500"><Image className="w-4 h-4" /></div>
+                  <span className="font-medium text-gray-700">Photo</span>
+                </button>
+                <button onClick={() => { fileInputRef.current?.click(); setShowActions(false) }} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
+                  <div className="w-8 h-8 rounded-full bg-purple-50 flex items-center justify-center text-purple-500"><Video className="w-4 h-4" /></div>
+                  <span className="font-medium text-gray-700">Video</span>
+                </button>
+                <button onClick={() => { setShowGifts(true); setShowActions(false) }} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
+                  <div className="w-8 h-8 rounded-full bg-pink-50 flex items-center justify-center text-pink-500"><Gift className="w-4 h-4" /></div>
+                  <span className="font-medium text-gray-700">Gift</span>
+                </button>
+                <button onClick={() => { setShowTip(true); setShowActions(false) }} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
+                  <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-500"><DollarSign className="w-4 h-4" /></div>
+                  <span className="font-medium text-gray-700">Tip</span>
+                </button>
+              </motion.div>
             </>
           )}
         </AnimatePresence>
+
+        {/* Gifts Modal */}
         <AnimatePresence>
           {showGifts && (
             <motion.div
@@ -825,9 +1009,9 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: '100%' }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl rounded-t-[2rem] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] border-t border-white/50 z-[100] max-h-[60vh] overflow-hidden flex flex-col"
+              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-[150] max-h-[60vh] overflow-hidden flex flex-col"
             >
-              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-white/50">
+              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
                 <h3 className="font-bold text-gray-800 text-lg">Send a Gift</h3>
                 <button onClick={() => setShowGifts(false)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors">
                   <X className="w-5 h-5 text-gray-500" />
@@ -839,13 +1023,13 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                     <button
                       key={gift.id}
                       onClick={() => handleSendGift(gift)}
-                      className="flex flex-col items-center p-4 rounded-2xl bg-gray-50 border border-gray-100 hover:border-pink-300 hover:bg-pink-50 hover:shadow-md transition-all group relative overflow-hidden"
+                      className="flex flex-col items-center p-4 rounded-2xl bg-gray-50 border border-gray-100 hover:border-pink-300 hover:bg-pink-50 transition-all"
                     >
-                      <div className="w-12 h-12 bg-gradient-to-br from-pink-100 to-rose-100 rounded-xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-inner">
-                         <Gift className="w-6 h-6 text-pink-500" />
+                      <div className="w-12 h-12 bg-gradient-to-br from-pink-100 to-rose-100 rounded-xl flex items-center justify-center mb-2">
+                        <Gift className="w-6 h-6 text-pink-500" />
                       </div>
                       <span className="text-sm font-bold text-gray-800 mb-1">{gift.name}</span>
-                      <span className="text-xs font-medium text-pink-600 bg-white px-2 py-0.5 rounded-full shadow-sm border border-pink-100">
+                      <span className="text-xs font-medium text-pink-600 bg-white px-2 py-0.5 rounded-full">
                         {gift.price} tokens
                       </span>
                     </button>
@@ -864,7 +1048,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: '100%' }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl rounded-t-[2rem] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] border-t border-white/50 z-[100] p-6"
+              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-[150] p-6"
             >
               <div className="flex justify-between items-center mb-6">
                 <h3 className="font-bold text-gray-800 text-lg">Send a Tip</h3>
@@ -877,10 +1061,10 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                   <button
                     key={amount}
                     onClick={() => setTipAmount(String(amount))}
-                    className={`flex-1 py-3 rounded-xl font-bold text-lg transition-all shadow-sm border ${
-                      tipAmount === String(amount) 
-                        ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white border-transparent shadow-green-500/30 scale-105' 
-                        : 'bg-white text-gray-700 border-gray-200 hover:border-green-500 hover:text-green-600'
+                    className={`flex-1 py-3.5 rounded-xl font-bold text-lg transition-all ${
+                      tipAmount === String(amount)
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white scale-105'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
                     ${amount}
@@ -894,30 +1078,51 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                     type="number"
                     value={tipAmount}
                     onChange={(e) => setTipAmount(e.target.value)}
-                    placeholder="Custom amount"
-                    className="w-full pl-8 pr-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 font-bold text-gray-800"
+                    placeholder="Custom"
+                    className="w-full pl-8 pr-4 py-3.5 rounded-xl bg-gray-100 font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-green-500"
                   />
                 </div>
                 <button
                   onClick={handleSendTip}
                   disabled={!tipAmount || sending}
-                  className="px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-green-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-bold disabled:opacity-50"
                 >
-                  {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Send Tip'}
+                  {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Send'}
                 </button>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Input - At bottom of flex container */}
-        <div className="shrink-0 bg-[#F8FAFC] border-t border-gray-100 px-3 py-2 pb-[max(8px,env(safe-area-inset-bottom))]">
-          <div className="bg-white rounded-full p-1 flex items-end gap-1.5 shadow-sm border border-gray-100">
+        {/* Reply Preview */}
+        <AnimatePresence>
+          {replyTo && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="shrink-0 bg-gray-100 border-t border-gray-200 px-4 py-2 flex items-center gap-3"
+            >
+              <div className="w-1 h-10 bg-of-blue rounded-full" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-of-blue">Replying to</p>
+                <p className="text-sm text-gray-600 truncate">{replyTo.content?.slice(0, 50) || 'Media'}</p>
+              </div>
+              <button onClick={() => setReplyTo(null)} className="p-1.5 hover:bg-gray-200 rounded-full">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Input */}
+        <div className="shrink-0 bg-white border-t border-gray-100 px-3 py-2 pb-[max(8px,env(safe-area-inset-bottom))]">
+          <div className="bg-gray-100 rounded-full p-1.5 flex items-end gap-2">
             <button
               onClick={() => setShowActions(!showActions)}
-              className={`relative w-9 h-9 rounded-full flex items-center justify-center transition-all shrink-0 ${showActions ? 'bg-gray-200 rotate-45' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shrink-0 ${showActions ? 'bg-gray-300 rotate-45' : 'bg-white hover:bg-gray-200'}`}
             >
-              <Plus className="w-5 h-5" />
+              <Plus className="w-5 h-5 text-gray-600" />
               {uploadingCount > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-of-blue border-2 border-white animate-pulse" />
               )}
@@ -929,18 +1134,18 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 onChange={(e) => setNewMessage(e.target.value)}
                 onKeyPress={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
+                    e.preventDefault()
+                    handleSendMessage()
                   }
                 }}
                 placeholder="Message..."
                 rows={1}
-                className="w-full px-1 py-0.5 bg-transparent text-[15px] focus:outline-none text-gray-800 placeholder:text-gray-400 resize-none max-h-20"
-                style={{ minHeight: '22px' }}
+                className="w-full px-2 py-1 bg-transparent text-[15px] focus:outline-none text-gray-800 placeholder:text-gray-400 resize-none max-h-24"
+                style={{ minHeight: '24px' }}
                 onInput={(e) => {
-                  const target = e.target as HTMLTextAreaElement;
-                  target.style.height = 'auto';
-                  target.style.height = Math.min(target.scrollHeight, 80) + 'px';
+                  const target = e.target as HTMLTextAreaElement
+                  target.style.height = 'auto'
+                  target.style.height = Math.min(target.scrollHeight, 96) + 'px'
                 }}
               />
             </div>
@@ -950,17 +1155,13 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 <button
                   onClick={handleSendMessage}
                   disabled={sending}
-                  className="w-9 h-9 bg-of-blue rounded-full text-white flex items-center justify-center disabled:opacity-50"
+                  className="w-10 h-10 bg-of-blue rounded-full text-white flex items-center justify-center disabled:opacity-50"
                 >
-                  {sending ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4 ml-0.5" />
-                  )}
+                  {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 ml-0.5" />}
                 </button>
               ) : (
-                <div className="w-9 h-9 flex items-center justify-center">
-                   <VoiceRecorder onSend={handleSendVoice} disabled={sending} />
+                <div className="w-10 h-10 flex items-center justify-center">
+                  <VoiceRecorder onSend={handleSendVoice} disabled={sending} />
                 </div>
               )}
             </div>
@@ -972,42 +1173,58 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
   // Conversations list
   return (
-    <div className="p-4">
-      <h2 className="text-lg font-bold mb-4">Messages</h2>
+    <div className="min-h-full bg-white">
+      {/* Header */}
+      <div className="sticky top-0 z-40 bg-white border-b border-gray-100 px-4 pt-4 pb-3">
+        <h2 className="text-2xl font-bold mb-4">Messages</h2>
 
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search messages..."
-          className="w-full pl-10 pr-4 py-2.5 rounded-full bg-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-of-blue"
-        />
-      </div>
-
-      {loading ? (
-        <div className="text-center py-8">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto text-of-blue" />
-        </div>
-      ) : filteredConversations.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">
-          <p>No messages yet</p>
-          <p className="text-sm mt-1">Start a conversation from a creator's profile</p>
-        </div>
-      ) : (
-        <div className="relative" style={{ height: conversationVirtualizer.getTotalSize() || filteredConversations.length * 96 }}>
-          {conversationVirtualizer.getVirtualItems().map((virtualRow) => (
-            <div
-              key={virtualRow.key}
-              className="absolute left-0 w-full"
-              style={{ transform: `translateY(${virtualRow.start}px)` }}
+        {/* Category Tabs */}
+        <div className="flex gap-2 mb-4">
+          {categories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setActiveCategory(cat.id)}
+              className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${
+                activeCategory === cat.id
+                  ? 'bg-black text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
             >
-              {renderConversationCard(filteredConversations[virtualRow.index], virtualRow.index)}
-            </div>
+              {cat.label}
+            </button>
           ))}
         </div>
-      )}
+
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search messages..."
+            className="w-full pl-11 pr-4 py-3 rounded-xl bg-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-of-blue"
+          />
+        </div>
+      </div>
+
+      {/* Conversations */}
+      <div className="px-4 py-2">
+        {loading ? (
+          <div className="text-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto text-of-blue" />
+          </div>
+        ) : filteredConversations.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            <p className="font-medium">No messages</p>
+            <p className="text-sm mt-1">Start a conversation from a creator's profile</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filteredConversations.map((conv) => renderConversationCard(conv))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
