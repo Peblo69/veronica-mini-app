@@ -246,7 +246,12 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
   // Scroll to bottom on new messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (messages.length > 0) {
+      // Use setTimeout to ensure DOM has updated
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant', block: 'end' })
+      }, 50)
+    }
   }, [messages])
 
   const loadConversations = async () => {
