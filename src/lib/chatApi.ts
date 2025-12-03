@@ -647,42 +647,51 @@ export async function getMessageReactions(messageIds: string[]): Promise<Map<str
   return reactionsMap
 }
 
-// Add reaction to message
+// Add reaction to message (toggle behavior - add if not exists, remove if exists)
+// NOTE: Table column is 'emoji' - make sure your Supabase table has this column!
 export async function addReaction(
   messageId: string,
   userId: number,
   emoji: string
-): Promise<{ success: boolean; error: string | null }> {
-  console.log('[addReaction] Adding reaction:', { messageId, userId, emoji })
+): Promise<{ success: boolean; error: string | null; action?: 'added' | 'removed' }> {
+  console.log('[addReaction] Toggle reaction:', { messageId, userId, emoji })
 
   try {
-    // Check if reaction already exists (don't use .single() - it throws on no results)
+    // Check if this exact reaction already exists
     const { data: existingList, error: checkError } = await supabase
       .from('message_reactions')
       .select('id')
       .eq('message_id', messageId)
       .eq('user_id', userId)
       .eq('emoji', emoji)
-      .limit(1)
 
     if (checkError) {
       console.error('[addReaction] Check error:', checkError)
+      // If column doesn't exist, it might be named 'reaction' instead
+      if (checkError.message.includes('emoji')) {
+        console.error('[addReaction] Column "emoji" not found - check your database schema!')
+      }
       return { success: false, error: checkError.message }
     }
 
-    const existing = existingList?.[0]
-    console.log('[addReaction] Existing reaction:', existing)
+    console.log('[addReaction] Existing reactions found:', existingList?.length || 0)
 
-    if (existing) {
-      // Remove existing reaction (toggle off)
-      console.log('[addReaction] Removing existing reaction:', existing.id)
+    // If any exist, remove ALL of them (cleanup any duplicates)
+    if (existingList && existingList.length > 0) {
+      console.log('[addReaction] Removing', existingList.length, 'existing reaction(s)')
       const { error } = await supabase
         .from('message_reactions')
         .delete()
-        .eq('id', existing.id)
+        .eq('message_id', messageId)
+        .eq('user_id', userId)
+        .eq('emoji', emoji)
 
-      if (error) console.error('[addReaction] Delete error:', error)
-      return { success: !error, error: error?.message || null }
+      if (error) {
+        console.error('[addReaction] Delete error:', error)
+        return { success: false, error: error.message }
+      }
+      console.log('[addReaction] Successfully removed reaction')
+      return { success: true, error: null, action: 'removed' }
     }
 
     // Add new reaction
@@ -692,17 +701,22 @@ export async function addReaction(
       .insert({
         message_id: messageId,
         user_id: userId,
-        emoji
+        emoji: emoji
       })
-      .select()
+      .select('id')
 
     if (error) {
       console.error('[addReaction] Insert error:', error)
-    } else {
-      console.log('[addReaction] Inserted:', insertedData)
+      // If duplicate key error, it means it already exists (race condition)
+      if (error.code === '23505') {
+        console.log('[addReaction] Duplicate key - reaction already exists, this is fine')
+        return { success: true, error: null, action: 'added' }
+      }
+      return { success: false, error: error.message }
     }
 
-    return { success: !error, error: error?.message || null }
+    console.log('[addReaction] Successfully added reaction:', insertedData)
+    return { success: true, error: null, action: 'added' }
   } catch (err) {
     console.error('[addReaction] Exception:', err)
     return { success: false, error: (err as Error).message }

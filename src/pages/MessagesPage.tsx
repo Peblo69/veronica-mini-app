@@ -96,6 +96,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastTapRef = useRef<{ time: number; messageId: string } | null>(null)
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const pendingReactionsRef = useRef<Set<string>>(new Set()) // Track pending reaction calls
 
   const trackPreviewUrl = (url: string) => {
     previewUrlsRef.current.add(url)
@@ -612,9 +613,17 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     }
   }, [])
 
-  // Add reaction to message
+  // Add reaction to message - with proper locking to prevent duplicates
   const handleAddReaction = async (messageId: string, emoji: string) => {
-    console.log('[Reaction] Adding reaction:', { messageId, emoji, userId: user.telegram_id })
+    const reactionKey = `${messageId}:${emoji}`
+
+    // Prevent duplicate calls - if this exact reaction is already pending, ignore
+    if (pendingReactionsRef.current.has(reactionKey)) {
+      console.log('[Reaction] Already pending, ignoring:', reactionKey)
+      setShowMessageMenu(false)
+      setSelectedMessage(null)
+      return
+    }
 
     // Don't allow reactions on temp/pending messages
     if (messageId.startsWith('temp-')) {
@@ -624,60 +633,44 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       return
     }
 
-    // Check if already exists for toggle behavior
-    const currentReactions = messageReactions.get(messageId) || []
-    const existingReaction = currentReactions.find(r => r.user_id === user.telegram_id && r.emoji === emoji)
+    // Mark as pending
+    pendingReactionsRef.current.add(reactionKey)
+    console.log('[Reaction] Starting:', { messageId, emoji, userId: user.telegram_id })
 
-    // Optimistic update
-    setMessageReactions(prev => {
-      const newMap = new Map(prev)
-      const reactions = [...(newMap.get(messageId) || [])]
-
-      if (existingReaction) {
-        // Remove existing
-        const idx = reactions.findIndex(r => r.id === existingReaction.id)
-        if (idx >= 0) reactions.splice(idx, 1)
-      } else {
-        // Add new
-        reactions.push({
-          id: `temp-${Date.now()}`,
-          message_id: messageId,
-          user_id: user.telegram_id,
-          emoji,
-          created_at: new Date().toISOString()
-        })
-      }
-
-      newMap.set(messageId, reactions)
-      return newMap
-    })
-
+    // Close menu immediately
     setShowMessageMenu(false)
     setSelectedMessage(null)
 
-    // Call backend and then refresh reactions from server to get real IDs
     try {
+      // Call backend FIRST - let server be source of truth
       const result = await addReaction(messageId, user.telegram_id, emoji)
       console.log('[Reaction] Backend result:', result)
 
-      if (result.success) {
-        // Refresh reactions from server to sync state
+      // Always refresh from server after operation
+      const updatedReactions = await getMessageReactions([messageId])
+      console.log('[Reaction] Server reactions:', updatedReactions.get(messageId))
+
+      setMessageReactions(prev => {
+        const newMap = new Map(prev)
+        newMap.set(messageId, updatedReactions.get(messageId) || [])
+        return newMap
+      })
+    } catch (err) {
+      console.error('[Reaction] Error:', err)
+      // On error, still refresh to get correct state
+      try {
         const updatedReactions = await getMessageReactions([messageId])
         setMessageReactions(prev => {
           const newMap = new Map(prev)
           newMap.set(messageId, updatedReactions.get(messageId) || [])
           return newMap
         })
+      } catch (e) {
+        console.error('[Reaction] Failed to refresh:', e)
       }
-    } catch (err) {
-      console.error('[Reaction] Backend error:', err)
-      // On error, refresh from server to get correct state
-      const updatedReactions = await getMessageReactions([messageId])
-      setMessageReactions(prev => {
-        const newMap = new Map(prev)
-        newMap.set(messageId, updatedReactions.get(messageId) || [])
-        return newMap
-      })
+    } finally {
+      // Release lock
+      pendingReactionsRef.current.delete(reactionKey)
     }
   }
 
