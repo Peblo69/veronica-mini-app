@@ -477,6 +477,125 @@ export async function getGifts(): Promise<Gift[]> {
 }
 
 // ============================================
+// MESSAGE REACTIONS API
+// ============================================
+
+export interface MessageReaction {
+  id: string
+  message_id: string
+  user_id: number
+  emoji: string
+  created_at: string
+}
+
+// Get reactions for messages
+export async function getMessageReactions(messageIds: string[]): Promise<Map<string, MessageReaction[]>> {
+  if (messageIds.length === 0) return new Map()
+
+  const { data } = await supabase
+    .from('message_reactions')
+    .select('*')
+    .in('message_id', messageIds)
+
+  const reactionsMap = new Map<string, MessageReaction[]>()
+
+  if (data) {
+    for (const reaction of data) {
+      const existing = reactionsMap.get(reaction.message_id) || []
+      existing.push(reaction as MessageReaction)
+      reactionsMap.set(reaction.message_id, existing)
+    }
+  }
+
+  return reactionsMap
+}
+
+// Add reaction to message
+export async function addReaction(
+  messageId: string,
+  userId: number,
+  emoji: string
+): Promise<{ success: boolean; error: string | null }> {
+  // Check if reaction already exists
+  const { data: existing } = await supabase
+    .from('message_reactions')
+    .select('id')
+    .eq('message_id', messageId)
+    .eq('user_id', userId)
+    .eq('emoji', emoji)
+    .single()
+
+  if (existing) {
+    // Remove existing reaction (toggle off)
+    const { error } = await supabase
+      .from('message_reactions')
+      .delete()
+      .eq('id', existing.id)
+
+    return { success: !error, error: error?.message || null }
+  }
+
+  // Add new reaction
+  const { error } = await supabase
+    .from('message_reactions')
+    .insert({
+      message_id: messageId,
+      user_id: userId,
+      emoji
+    })
+
+  return { success: !error, error: error?.message || null }
+}
+
+// Remove reaction from message
+export async function removeReaction(
+  messageId: string,
+  userId: number,
+  emoji: string
+): Promise<{ success: boolean; error: string | null }> {
+  const { error } = await supabase
+    .from('message_reactions')
+    .delete()
+    .eq('message_id', messageId)
+    .eq('user_id', userId)
+    .eq('emoji', emoji)
+
+  return { success: !error, error: error?.message || null }
+}
+
+// ============================================
+// DELETE MESSAGE API
+// ============================================
+
+// Soft delete a message
+export async function deleteMessage(
+  messageId: string,
+  userId: number
+): Promise<{ success: boolean; error: string | null }> {
+  // Check if user is the sender
+  const { data: message } = await supabase
+    .from('messages')
+    .select('sender_id')
+    .eq('id', messageId)
+    .single()
+
+  if (!message) {
+    return { success: false, error: 'Message not found' }
+  }
+
+  if (message.sender_id !== userId) {
+    return { success: false, error: 'You can only delete your own messages' }
+  }
+
+  const { error } = await supabase
+    .from('messages')
+    .update({ is_deleted: true })
+    .eq('id', messageId)
+
+  return { success: !error, error: error?.message || null }
+}
+
+// ============================================
 // REALTIME SUBSCRIPTIONS
 // ============================================
 

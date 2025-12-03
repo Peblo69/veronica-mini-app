@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle, Search, ArrowLeft, Send, Image, Gift, DollarSign, Lock, X, Loader2, Plus, Video, CheckCheck, AlertCircle, CornerUpLeft, Forward, Trash2, Flag, MoreHorizontal, Smile } from 'lucide-react'
+import { CheckCircle, Search, ArrowLeft, Send, Image, Gift, DollarSign, Lock, X, Loader2, Plus, Video, CheckCheck, AlertCircle, CornerUpLeft, Forward, Trash2, Flag, Smile } from 'lucide-react'
 import { type User } from '../lib/api'
 import {
   getConversations,
@@ -13,9 +13,13 @@ import {
   markMessagesRead,
   getGifts,
   subscribeToMessages,
+  addReaction,
+  deleteMessage,
+  getMessageReactions,
   type Conversation,
   type Message,
-  type Gift as GiftType
+  type Gift as GiftType,
+  type MessageReaction
 } from '../lib/chatApi'
 import { uploadMessageMedia, uploadVoiceMessage, getMediaType } from '../lib/storage'
 import VoiceRecorder from '../components/VoiceRecorder'
@@ -66,7 +70,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null)
   const [showMessageMenu, setShowMessageMenu] = useState(false)
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
-  const [messageReactions, setMessageReactions] = useState<Map<string, { emoji: string; user_id: number }[]>>(new Map())
+  const [messageReactions, setMessageReactions] = useState<Map<string, MessageReaction[]>>(new Map())
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -264,6 +268,13 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const loadMessages = async (conversationId: string) => {
     const data = await getMessages(conversationId)
     setMessages(data)
+
+    // Load reactions for all messages
+    if (data.length > 0) {
+      const messageIds = data.map(m => m.id)
+      const reactions = await getMessageReactions(messageIds)
+      setMessageReactions(reactions)
+    }
   }
 
   const loadGifts = async () => {
@@ -553,25 +564,43 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   }, [])
 
   // Add reaction to message
-  const handleAddReaction = (messageId: string, emoji: string) => {
+  const handleAddReaction = async (messageId: string, emoji: string) => {
+    // Optimistic update
     setMessageReactions(prev => {
       const newMap = new Map(prev)
-      const reactions = newMap.get(messageId) || []
+      const reactions = [...(newMap.get(messageId) || [])]
       const existingIndex = reactions.findIndex(r => r.user_id === user.telegram_id && r.emoji === emoji)
 
       if (existingIndex >= 0) {
-        // Remove reaction
         reactions.splice(existingIndex, 1)
       } else {
-        // Add reaction
-        reactions.push({ emoji, user_id: user.telegram_id })
+        reactions.push({
+          id: `temp-${Date.now()}`,
+          message_id: messageId,
+          user_id: user.telegram_id,
+          emoji,
+          created_at: new Date().toISOString()
+        })
       }
 
       newMap.set(messageId, reactions)
       return newMap
     })
+
     setShowMessageMenu(false)
     setSelectedMessage(null)
+
+    // Call backend
+    const { error } = await addReaction(messageId, user.telegram_id, emoji)
+    if (error) {
+      console.error('Failed to add reaction:', error)
+      // Reload reactions on error
+      if (activeConversation) {
+        const messageIds = messages.map(m => m.id)
+        const reactions = await getMessageReactions(messageIds)
+        setMessageReactions(reactions)
+      }
+    }
   }
 
   // Reply to message
@@ -580,6 +609,27 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       setReplyTo(selectedMessage)
       setShowMessageMenu(false)
       setSelectedMessage(null)
+    }
+  }
+
+  // Delete message
+  const handleDeleteMessage = async () => {
+    if (!selectedMessage) return
+
+    const messageId = selectedMessage.id
+    setShowMessageMenu(false)
+    setSelectedMessage(null)
+
+    // Optimistic remove from UI
+    setMessages(prev => prev.filter(m => m.id !== messageId))
+
+    const { error } = await deleteMessage(messageId, user.telegram_id)
+    if (error) {
+      console.error('Failed to delete message:', error)
+      // Reload messages on error
+      if (activeConversation) {
+        loadMessages(activeConversation.id)
+      }
     }
   }
 
@@ -796,9 +846,11 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                         ? 'bg-of-blue text-white rounded-[20px] rounded-br-md'
                         : 'bg-white text-gray-800 rounded-[20px] rounded-bl-md shadow-sm border border-gray-100'
                     } ${msg.message_type === 'text' || msg.message_type === 'voice' ? '' : '!p-0 !bg-transparent !shadow-none !border-0 !rounded-2xl'} ${isFailed ? 'ring-2 ring-red-300' : ''}`}
+                    style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
                     onTouchStart={() => handleTouchStart(msg)}
                     onTouchEnd={handleTouchEnd}
                     onTouchCancel={handleTouchEnd}
+                    onContextMenu={e => e.preventDefault()}
                     onClick={() => handleMessageTap(msg)}
                   >
                     {isPending && msg.message_type !== 'text' && (
@@ -975,51 +1027,51 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
                 className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl z-[201] safe-area-bottom overflow-hidden"
+                style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+                onContextMenu={e => e.preventDefault()}
               >
                 {/* Quick Reactions */}
-                <div className="flex justify-center gap-3 py-4 border-b border-gray-100">
+                <div className="flex justify-center gap-3 py-4 border-b border-gray-100" style={{ userSelect: 'none', WebkitUserSelect: 'none' }}>
                   {QUICK_REACTIONS.map(emoji => (
                     <button
                       key={emoji}
                       onClick={() => handleAddReaction(selectedMessage.id, emoji)}
+                      onContextMenu={e => e.preventDefault()}
                       className="w-12 h-12 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-2xl transition-transform active:scale-90"
+                      style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
                     >
                       {emoji}
                     </button>
                   ))}
                   <button
-                    onClick={() => {}}
+                    onClick={() => { setShowMessageMenu(false); setSelectedMessage(null) }}
+                    onContextMenu={e => e.preventDefault()}
                     className="w-12 h-12 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-transform active:scale-90"
+                    style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
                   >
                     <Smile className="w-6 h-6 text-gray-500" />
                   </button>
                 </div>
 
                 {/* Menu Options */}
-                <div className="py-2">
-                  <button onClick={handleReply} className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100">
+                <div className="py-2" style={{ userSelect: 'none', WebkitUserSelect: 'none' }}>
+                  <button onClick={handleReply} onContextMenu={e => e.preventDefault()} className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100" style={{ userSelect: 'none', WebkitUserSelect: 'none' }}>
                     <CornerUpLeft className="w-5 h-5 text-gray-600" />
                     <span className="font-medium text-gray-800">Reply</span>
                   </button>
-                  <button className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100">
-                    <Smile className="w-5 h-5 text-gray-600" />
-                    <span className="font-medium text-gray-800">Add Sticker</span>
-                  </button>
-                  <button className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100">
+                  <button onClick={() => { setShowMessageMenu(false); setSelectedMessage(null) }} onContextMenu={e => e.preventDefault()} className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100" style={{ userSelect: 'none', WebkitUserSelect: 'none' }}>
                     <Forward className="w-5 h-5 text-gray-600" />
                     <span className="font-medium text-gray-800">Forward</span>
                   </button>
-                  <button className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100">
-                    <Trash2 className="w-5 h-5 text-red-500" />
-                    <span className="font-medium text-red-500">Delete</span>
-                  </button>
-                  <button className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100">
+                  {selectedMessage.sender_id === user.telegram_id && (
+                    <button onClick={handleDeleteMessage} onContextMenu={e => e.preventDefault()} className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100" style={{ userSelect: 'none', WebkitUserSelect: 'none' }}>
+                      <Trash2 className="w-5 h-5 text-red-500" />
+                      <span className="font-medium text-red-500">Delete</span>
+                    </button>
+                  )}
+                  <button onClick={() => { setShowMessageMenu(false); setSelectedMessage(null) }} onContextMenu={e => e.preventDefault()} className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100" style={{ userSelect: 'none', WebkitUserSelect: 'none' }}>
                     <Flag className="w-5 h-5 text-gray-600" />
                     <span className="font-medium text-gray-800">Report</span>
-                  </button>
-                  <button className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 active:bg-gray-100">
-                    <MoreHorizontal className="w-5 h-5 text-gray-600" />
-                    <span className="font-medium text-gray-800">More...</span>
                   </button>
                 </div>
 
@@ -1027,7 +1079,9 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 <div className="px-4 pb-4 pt-2">
                   <button
                     onClick={() => { setShowMessageMenu(false); setSelectedMessage(null) }}
+                    onContextMenu={e => e.preventDefault()}
                     className="w-full py-3.5 bg-gray-100 rounded-xl font-semibold text-gray-700"
+                    style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
                   >
                     Cancel
                   </button>

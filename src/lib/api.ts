@@ -28,6 +28,7 @@ export interface Post {
   creator_id: number
   content?: string
   media_url?: string
+  media_thumbnail?: string | null
   media_type: string
   visibility: 'public' | 'followers' | 'subscribers'
   is_nsfw: boolean

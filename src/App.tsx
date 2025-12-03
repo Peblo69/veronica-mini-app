@@ -339,22 +339,25 @@ function App() {
       </AnimatePresence>
 
       {!viewingCreator && !showApplication && !showAdmin && !isChatOpen && !showLivestream && (
-        <nav className="flex-shrink-0 bg-white border-t-2 border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] safe-area-bottom">
-          <div className="flex items-center justify-around px-2 py-2">
+        <nav className="flex-shrink-0 bg-white border-t border-gray-100 safe-area-bottom">
+          <div className="flex items-center justify-around px-4 py-1.5">
             {navItems.map((item) => {
               const isActive = activeNav === item.id
               return (
                 <button
                   key={item.id}
-                  className="flex flex-col items-center justify-center p-2 transition-colors relative w-full active:scale-95"
+                  className="flex flex-col items-center justify-center p-2 transition-transform active:scale-90 relative"
                   onClick={() => navigate(item.path)}
                 >
                   {item.id === 'create' ? (
-                    <div className="w-12 h-12 bg-black rounded-xl flex items-center justify-center shadow-lg">
-                      <PlusSquare className="w-7 h-7 text-white" strokeWidth={2} />
+                    <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center shadow-lg shadow-black/20 hover:shadow-black/30 transition-shadow">
+                      <PlusSquare className="w-5 h-5 text-white" strokeWidth={2.5} />
                     </div>
                   ) : (
-                    <item.icon className={`w-7 h-7 transition-colors ${isActive ? 'text-black fill-black' : 'text-gray-500'}`} strokeWidth={isActive ? 2.5 : 2} />
+                    <item.icon 
+                      className={`w-6 h-6 transition-colors duration-200 ${isActive ? 'text-black fill-black scale-105' : 'text-gray-400 hover:text-gray-600'}`} 
+                      strokeWidth={isActive ? 2 : 2}
+                    />
                   )}
                 </button>
               )

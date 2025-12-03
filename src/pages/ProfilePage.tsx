@@ -89,18 +89,27 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
             className="w-full h-full object-cover"
             playsInline
             muted
-            loop
-            autoPlay
+            loop={false}
+            controls={false}
             preload="metadata"
+            poster={post.media_thumbnail || undefined}
           />
-          <div className="absolute top-1 right-1 bg-black/50 rounded-full p-1">
+          <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/10 to-transparent" />
+          <div className="absolute top-1 right-1 bg-black/60 rounded-full p-1">
             <Video className="w-3.5 h-3.5 text-white" />
           </div>
         </>
       )
     }
 
-    return <img src={post.media_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+    return (
+      <img
+        src={post.media_url}
+        alt=""
+        className="w-full h-full object-cover"
+        loading="lazy"
+      />
+    )
   }
 
   const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>, type: 'profile' | 'story') => {
