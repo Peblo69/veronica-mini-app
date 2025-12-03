@@ -483,38 +483,38 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
       ) : null}
 
       {/* Action Bar - Instagram style */}
-      <div className="px-4 pt-3 pb-2">
+      <div className="px-4 py-3 border-t border-gray-100">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-5">
             <button
-              className="active:scale-90 transition-transform"
+              className="p-1 active:opacity-60"
               onClick={() => handleLike(post)}
             >
               <Heart
-                className={`w-6 h-6 ${post.liked ? 'text-red-500 fill-red-500' : 'text-gray-900 hover:text-gray-600'}`}
-                strokeWidth={1.5}
+                className={`w-7 h-7 ${post.liked ? 'text-red-500 fill-red-500' : 'text-black'}`}
+                strokeWidth={1.8}
               />
             </button>
 
             <button
-              className="active:scale-90 transition-transform"
+              className="p-1 active:opacity-60"
               onClick={() => openPostDetail(post)}
             >
-              <MessageCircle className="w-6 h-6 text-gray-900 hover:text-gray-600" strokeWidth={1.5} />
+              <MessageCircle className="w-7 h-7 text-black" strokeWidth={1.8} />
             </button>
 
-            <button className="active:scale-90 transition-transform">
-              <Share2 className="w-6 h-6 text-gray-900 hover:text-gray-600" strokeWidth={1.5} />
+            <button className="p-1 active:opacity-60">
+              <Share2 className="w-7 h-7 text-black" strokeWidth={1.8} />
             </button>
           </div>
 
           <button
             onClick={() => handleSave(post)}
-            className="active:scale-90 transition-transform"
+            className="p-1 active:opacity-60"
           >
             <Bookmark
-              className={`w-6 h-6 ${post.saved ? 'text-gray-900 fill-gray-900' : 'text-gray-900 hover:text-gray-600'}`}
-              strokeWidth={1.5}
+              className={`w-7 h-7 ${post.saved ? 'text-black fill-black' : 'text-black'}`}
+              strokeWidth={1.8}
             />
           </button>
         </div>
