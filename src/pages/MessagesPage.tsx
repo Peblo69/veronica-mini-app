@@ -565,8 +565,11 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
   // Add reaction to message
   const handleAddReaction = async (messageId: string, emoji: string) => {
+    console.log('[Reaction] Adding reaction:', { messageId, emoji, userId: user.telegram_id })
+
     // Don't allow reactions on temp/pending messages
     if (messageId.startsWith('temp-')) {
+      console.log('[Reaction] Skipping - temp message')
       setShowMessageMenu(false)
       setSelectedMessage(null)
       return
@@ -579,8 +582,10 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       const existingIndex = reactions.findIndex(r => r.user_id === user.telegram_id && r.emoji === emoji)
 
       if (existingIndex >= 0) {
+        console.log('[Reaction] Removing existing reaction')
         reactions.splice(existingIndex, 1)
       } else {
+        console.log('[Reaction] Adding new reaction')
         reactions.push({
           id: `temp-${Date.now()}`,
           message_id: messageId,
@@ -590,6 +595,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         })
       }
 
+      console.log('[Reaction] Updated reactions:', reactions)
       newMap.set(messageId, reactions)
       return newMap
     })
@@ -599,43 +605,53 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
     // Call backend (fire and forget - keep optimistic update)
     try {
-      await addReaction(messageId, user.telegram_id, emoji)
+      const result = await addReaction(messageId, user.telegram_id, emoji)
+      console.log('[Reaction] Backend result:', result)
     } catch (err) {
-      console.error('Failed to add reaction:', err)
+      console.error('[Reaction] Backend error:', err)
     }
   }
 
   // Reply to message
   const handleReply = () => {
+    console.log('[Reply] Replying to:', selectedMessage)
     if (selectedMessage) {
       setReplyTo(selectedMessage)
       setShowMessageMenu(false)
       setSelectedMessage(null)
+      console.log('[Reply] replyTo set, menu closed')
     }
   }
 
   // Delete message
   const handleDeleteMessage = async () => {
+    console.log('[Delete] Deleting message:', selectedMessage)
     if (!selectedMessage) return
 
     const messageId = selectedMessage.id
+    const senderId = selectedMessage.sender_id
+    console.log('[Delete] messageId:', messageId, 'senderId:', senderId, 'userId:', user.telegram_id)
+
     setShowMessageMenu(false)
     setSelectedMessage(null)
 
     // For temp messages, just remove from UI
     if (messageId.startsWith('temp-')) {
+      console.log('[Delete] Removing temp message from UI')
       setMessages(prev => prev.filter(m => m.id !== messageId))
       return
     }
 
     // Optimistic remove from UI - keep it removed even on error
+    console.log('[Delete] Removing message from UI')
     setMessages(prev => prev.filter(m => m.id !== messageId))
 
     // Call backend (fire and forget)
     try {
-      await deleteMessage(messageId, user.telegram_id)
+      const result = await deleteMessage(messageId, user.telegram_id)
+      console.log('[Delete] Backend result:', result)
     } catch (err) {
-      console.error('Failed to delete message:', err)
+      console.error('[Delete] Backend error:', err)
     }
   }
 

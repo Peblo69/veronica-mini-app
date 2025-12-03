@@ -516,35 +516,42 @@ export async function addReaction(
   userId: number,
   emoji: string
 ): Promise<{ success: boolean; error: string | null }> {
-  // Check if reaction already exists
-  const { data: existing } = await supabase
-    .from('message_reactions')
-    .select('id')
-    .eq('message_id', messageId)
-    .eq('user_id', userId)
-    .eq('emoji', emoji)
-    .single()
+  try {
+    // Check if reaction already exists (don't use .single() - it throws on no results)
+    const { data: existingList } = await supabase
+      .from('message_reactions')
+      .select('id')
+      .eq('message_id', messageId)
+      .eq('user_id', userId)
+      .eq('emoji', emoji)
+      .limit(1)
 
-  if (existing) {
-    // Remove existing reaction (toggle off)
+    const existing = existingList?.[0]
+
+    if (existing) {
+      // Remove existing reaction (toggle off)
+      const { error } = await supabase
+        .from('message_reactions')
+        .delete()
+        .eq('id', existing.id)
+
+      return { success: !error, error: error?.message || null }
+    }
+
+    // Add new reaction
     const { error } = await supabase
       .from('message_reactions')
-      .delete()
-      .eq('id', existing.id)
+      .insert({
+        message_id: messageId,
+        user_id: userId,
+        emoji
+      })
 
     return { success: !error, error: error?.message || null }
+  } catch (err) {
+    console.error('addReaction error:', err)
+    return { success: false, error: (err as Error).message }
   }
-
-  // Add new reaction
-  const { error } = await supabase
-    .from('message_reactions')
-    .insert({
-      message_id: messageId,
-      user_id: userId,
-      emoji
-    })
-
-  return { success: !error, error: error?.message || null }
 }
 
 // Remove reaction from message
@@ -572,27 +579,34 @@ export async function deleteMessage(
   messageId: string,
   userId: number
 ): Promise<{ success: boolean; error: string | null }> {
-  // Check if user is the sender
-  const { data: message } = await supabase
-    .from('messages')
-    .select('sender_id')
-    .eq('id', messageId)
-    .single()
+  try {
+    // Check if user is the sender
+    const { data: messageList } = await supabase
+      .from('messages')
+      .select('sender_id')
+      .eq('id', messageId)
+      .limit(1)
 
-  if (!message) {
-    return { success: false, error: 'Message not found' }
+    const message = messageList?.[0]
+
+    if (!message) {
+      return { success: false, error: 'Message not found' }
+    }
+
+    if (message.sender_id !== userId) {
+      return { success: false, error: 'You can only delete your own messages' }
+    }
+
+    const { error } = await supabase
+      .from('messages')
+      .update({ is_deleted: true })
+      .eq('id', messageId)
+
+    return { success: !error, error: error?.message || null }
+  } catch (err) {
+    console.error('deleteMessage error:', err)
+    return { success: false, error: (err as Error).message }
   }
-
-  if (message.sender_id !== userId) {
-    return { success: false, error: 'You can only delete your own messages' }
-  }
-
-  const { error } = await supabase
-    .from('messages')
-    .update({ is_deleted: true })
-    .eq('id', messageId)
-
-  return { success: !error, error: error?.message || null }
 }
 
 // ============================================
