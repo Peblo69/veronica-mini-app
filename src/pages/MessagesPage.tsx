@@ -655,13 +655,32 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     }
   }
 
-  // Scroll to replied message
+  // Scroll to replied message with shake animation
   const scrollToMessage = (messageId: string) => {
     const element = messageRefs.current.get(messageId)
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      element.classList.add('bg-blue-100')
-      setTimeout(() => element.classList.remove('bg-blue-100'), 1500)
+
+      // Add highlight and shake animation
+      element.style.transition = 'transform 0.1s ease-in-out, background-color 0.3s'
+      element.style.backgroundColor = 'rgba(59, 130, 246, 0.2)'
+
+      // Shake animation sequence
+      const shake = async () => {
+        const moves = ['-4px', '4px', '-3px', '3px', '-2px', '2px', '0px']
+        for (const x of moves) {
+          element.style.transform = `translateX(${x})`
+          await new Promise(r => setTimeout(r, 50))
+        }
+      }
+
+      setTimeout(() => shake(), 300) // Start shake after scroll completes
+
+      // Remove highlight after animation
+      setTimeout(() => {
+        element.style.backgroundColor = ''
+        element.style.transform = ''
+      }, 1500)
     }
   }
 
@@ -836,15 +855,21 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 ref={el => { if (el) messageRefs.current.set(msg.id, el) }}
                 className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} transition-colors duration-500 rounded-2xl`}
               >
-                {/* Reply preview */}
+                {/* Reply preview - shows what message this is replying to */}
                 {msg.reply_to && (
                   <button
                     onClick={() => scrollToMessage(msg.reply_to!.id)}
-                    className={`text-xs px-3 py-1.5 rounded-xl mb-1 max-w-[70%] truncate ${
-                      isOwn ? 'bg-blue-400/30 text-blue-100 ml-auto' : 'bg-gray-200 text-gray-600'
+                    className={`flex items-center gap-2 text-xs px-3 py-2 rounded-xl mb-1 max-w-[80%] ${
+                      isOwn ? 'bg-white/20 text-white/90 ml-auto border-l-2 border-white/50' : 'bg-gray-100 text-gray-600 border-l-2 border-gray-400'
                     }`}
                   >
-                    ↩ {msg.reply_to.content?.slice(0, 30) || 'Media'}...
+                    <span className="opacity-70">↩</span>
+                    <div className="flex flex-col items-start min-w-0">
+                      <span className={`text-[10px] font-medium ${isOwn ? 'text-white/70' : 'text-gray-500'}`}>
+                        {msg.reply_to.sender_id === user.telegram_id ? 'You' : activeConversation.other_user?.first_name || 'User'}
+                      </span>
+                      <span className="truncate w-full">{msg.reply_to.content?.slice(0, 40) || '📷 Media'}</span>
+                    </div>
                   </button>
                 )}
 
@@ -1007,9 +1032,9 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                       </div>
                     )}
 
-                    {/* Reactions */}
+                    {/* Reactions - always on bottom right, near page edge */}
                     {reactions.length > 0 && (
-                      <div className={`absolute -bottom-3 ${isOwn ? 'right-2' : 'left-2'} flex gap-0.5 bg-white rounded-full px-1.5 py-0.5 shadow-md border border-gray-100`}>
+                      <div className="absolute -bottom-3 -right-1 flex gap-0.5 bg-white rounded-full px-1.5 py-0.5 shadow-md border border-gray-100 z-10">
                         {reactions.map((r, i) => (
                           <span key={i} className="text-sm">{r.emoji}</span>
                         ))}
