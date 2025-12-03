@@ -36,9 +36,11 @@ export interface Message {
   is_deleted: boolean
   created_at: string
   client_message_id?: string | null
+  reply_to_id?: string | null
   // Joined data
   sender?: User
   gift?: Gift
+  reply_to?: Message | null
 }
 
 export interface Gift {
@@ -131,7 +133,32 @@ export async function getMessages(conversationId: string, limit = 50): Promise<M
     .order('created_at', { ascending: false })
     .limit(limit)
 
-  return (data || []).reverse() as Message[]
+  if (!data) return []
+
+  const messages = data.reverse() as Message[]
+
+  // Fetch reply_to messages for any messages that have reply_to_id
+  const replyToIds = messages
+    .filter(m => m.reply_to_id)
+    .map(m => m.reply_to_id as string)
+
+  if (replyToIds.length > 0) {
+    const { data: replyMessages } = await supabase
+      .from('messages')
+      .select('*, sender:users!sender_id(*)')
+      .in('id', replyToIds)
+
+    if (replyMessages) {
+      const replyMap = new Map(replyMessages.map(m => [m.id, m]))
+      for (const msg of messages) {
+        if (msg.reply_to_id) {
+          msg.reply_to = replyMap.get(msg.reply_to_id) as Message | undefined
+        }
+      }
+    }
+  }
+
+  return messages
 }
 
 // Send a text message
@@ -139,17 +166,25 @@ export async function sendMessage(
   conversationId: string,
   senderId: number,
   content: string,
-  clientMessageId?: string
+  clientMessageId?: string,
+  replyToId?: string
 ): Promise<Message | null> {
+  const insertData: Record<string, unknown> = {
+    conversation_id: conversationId,
+    sender_id: senderId,
+    client_message_id: clientMessageId,
+    content,
+    message_type: 'text'
+  }
+
+  // Only add reply_to_id if provided
+  if (replyToId) {
+    insertData.reply_to_id = replyToId
+  }
+
   const { data, error } = await supabase
     .from('messages')
-    .insert({
-      conversation_id: conversationId,
-      sender_id: senderId,
-      client_message_id: clientMessageId,
-      content,
-      message_type: 'text'
-    })
+    .insert(insertData)
     .select('*, sender:users!sender_id(*)')
     .single()
 

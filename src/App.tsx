@@ -339,25 +339,44 @@ function App() {
       </AnimatePresence>
 
       {!viewingCreator && !showApplication && !showAdmin && !isChatOpen && !showLivestream && (
-        <nav className="flex-shrink-0 bg-white border-t border-gray-100 safe-area-bottom">
-          <div className="flex items-center justify-around px-4 py-1.5">
+        <nav className="flex-shrink-0 bg-white/80 backdrop-blur-xl border-t border-white/20 safe-area-bottom shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)]">
+          <div className="flex items-center justify-around px-4 py-2">
             {navItems.map((item) => {
               const isActive = activeNav === item.id
               return (
                 <button
                   key={item.id}
-                  className="flex flex-col items-center justify-center p-2 transition-transform active:scale-90 relative"
+                  className="flex flex-col items-center justify-center p-2 transition-transform active:scale-90 relative group"
                   onClick={() => navigate(item.path)}
                 >
+                  {isActive && item.id !== 'create' && (
+                    <motion.div
+                      layoutId="nav-glow"
+                      className="absolute inset-0 bg-gradient-to-tr from-blue-500/20 to-purple-500/20 rounded-2xl blur-md"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                    />
+                  )}
+                  
                   {item.id === 'create' ? (
-                    <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center shadow-lg shadow-black/20 hover:shadow-black/30 transition-shadow">
-                      <PlusSquare className="w-5 h-5 text-white" strokeWidth={2.5} />
+                    <div className="relative group-active:scale-95 transition-transform duration-200">
+                      <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl blur-sm opacity-50 group-hover:opacity-75 transition-opacity" />
+                      <div className="relative w-11 h-11 bg-gradient-to-br from-gray-900 to-black rounded-2xl flex items-center justify-center shadow-xl border border-white/10">
+                        <PlusSquare className="w-5 h-5 text-white" strokeWidth={2.5} />
+                      </div>
                     </div>
                   ) : (
-                    <item.icon 
-                      className={`w-6 h-6 transition-colors duration-200 ${isActive ? 'text-black fill-black scale-105' : 'text-gray-400 hover:text-gray-600'}`} 
-                      strokeWidth={isActive ? 2 : 2}
-                    />
+                    <div className="relative z-10">
+                      <item.icon 
+                        className={`w-[26px] h-[26px] transition-all duration-300 ${
+                          isActive 
+                            ? 'text-gray-900 fill-gray-900 drop-shadow-[0_0_8px_rgba(0,0,0,0.15)]' 
+                            : 'text-gray-400 hover:text-gray-600'
+                        }`} 
+                        strokeWidth={isActive ? 2.5 : 2}
+                      />
+                    </div>
                   )}
                 </button>
               )

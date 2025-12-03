@@ -322,6 +322,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
     const text = newMessage.trim()
     const tempId = `temp-text-${Date.now()}`
+    const replyToId = replyTo?.id?.startsWith('temp-') ? undefined : replyTo?.id
     const optimisticMessage: ChatMessage = {
       id: tempId,
       _localId: tempId,
@@ -341,8 +342,10 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       is_deleted: false,
       created_at: new Date().toISOString(),
       client_message_id: tempId,
+      reply_to_id: replyToId,
       reply_to: replyTo,
     }
+    const savedReplyTo = replyTo // Save before clearing
 
     setMessages(prev => [...prev, optimisticMessage])
     setNewMessage('')
@@ -355,8 +358,13 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     setKeyboardInset(0, { force: true })
 
     try {
-      const msg = await sendMessage(activeConversation.id, user.telegram_id, text, tempId)
+      // Pass reply_to_id if replying to a message (use savedReplyTo since replyTo was cleared)
+      const msg = await sendMessage(activeConversation.id, user.telegram_id, text, tempId, replyToId)
       if (msg) {
+        // Add the reply_to data to the returned message
+        if (savedReplyTo && !savedReplyTo.id.startsWith('temp-')) {
+          msg.reply_to = savedReplyTo
+        }
         resolveTempMessage(tempId, msg)
       } else {
         resolveTempMessage(tempId, undefined, 'Failed to send message')
