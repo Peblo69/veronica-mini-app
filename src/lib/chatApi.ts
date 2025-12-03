@@ -125,7 +125,7 @@ export async function getOrCreateConversation(userId1: number, userId2: number):
 
 // Get messages for a conversation
 export async function getMessages(conversationId: string, limit = 50): Promise<Message[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('messages')
     .select('*, sender:users!sender_id(*), gift:gifts(*)')
     .eq('conversation_id', conversationId)
@@ -133,26 +133,40 @@ export async function getMessages(conversationId: string, limit = 50): Promise<M
     .order('created_at', { ascending: false })
     .limit(limit)
 
+  if (error) {
+    console.error('[getMessages] Error:', error)
+    return []
+  }
+
   if (!data) return []
 
   const messages = data.reverse() as Message[]
+  console.log('[getMessages] Loaded', messages.length, 'messages')
 
   // Fetch reply_to messages for any messages that have reply_to_id
   const replyToIds = messages
     .filter(m => m.reply_to_id)
     .map(m => m.reply_to_id as string)
 
+  console.log('[getMessages] Messages with reply_to_id:', replyToIds.length)
+
   if (replyToIds.length > 0) {
-    const { data: replyMessages } = await supabase
+    const { data: replyMessages, error: replyError } = await supabase
       .from('messages')
       .select('*, sender:users!sender_id(*)')
       .in('id', replyToIds)
 
+    if (replyError) {
+      console.error('[getMessages] Reply fetch error:', replyError)
+    }
+
     if (replyMessages) {
+      console.log('[getMessages] Fetched', replyMessages.length, 'reply messages')
       const replyMap = new Map(replyMessages.map(m => [m.id, m]))
       for (const msg of messages) {
         if (msg.reply_to_id) {
           msg.reply_to = replyMap.get(msg.reply_to_id) as Message | undefined
+          console.log('[getMessages] Set reply_to for message', msg.id, ':', msg.reply_to?.content?.slice(0, 20))
         }
       }
     }
@@ -527,10 +541,19 @@ export interface MessageReaction {
 export async function getMessageReactions(messageIds: string[]): Promise<Map<string, MessageReaction[]>> {
   if (messageIds.length === 0) return new Map()
 
-  const { data } = await supabase
+  console.log('[getMessageReactions] Fetching reactions for', messageIds.length, 'messages')
+
+  const { data, error } = await supabase
     .from('message_reactions')
     .select('*')
     .in('message_id', messageIds)
+
+  if (error) {
+    console.error('[getMessageReactions] Error:', error)
+    return new Map()
+  }
+
+  console.log('[getMessageReactions] Found', data?.length || 0, 'reactions')
 
   const reactionsMap = new Map<string, MessageReaction[]>()
 
@@ -551,9 +574,11 @@ export async function addReaction(
   userId: number,
   emoji: string
 ): Promise<{ success: boolean; error: string | null }> {
+  console.log('[addReaction] Adding reaction:', { messageId, userId, emoji })
+
   try {
     // Check if reaction already exists (don't use .single() - it throws on no results)
-    const { data: existingList } = await supabase
+    const { data: existingList, error: checkError } = await supabase
       .from('message_reactions')
       .select('id')
       .eq('message_id', messageId)
@@ -561,30 +586,46 @@ export async function addReaction(
       .eq('emoji', emoji)
       .limit(1)
 
+    if (checkError) {
+      console.error('[addReaction] Check error:', checkError)
+      return { success: false, error: checkError.message }
+    }
+
     const existing = existingList?.[0]
+    console.log('[addReaction] Existing reaction:', existing)
 
     if (existing) {
       // Remove existing reaction (toggle off)
+      console.log('[addReaction] Removing existing reaction:', existing.id)
       const { error } = await supabase
         .from('message_reactions')
         .delete()
         .eq('id', existing.id)
 
+      if (error) console.error('[addReaction] Delete error:', error)
       return { success: !error, error: error?.message || null }
     }
 
     // Add new reaction
-    const { error } = await supabase
+    console.log('[addReaction] Inserting new reaction')
+    const { data: insertedData, error } = await supabase
       .from('message_reactions')
       .insert({
         message_id: messageId,
         user_id: userId,
         emoji
       })
+      .select()
+
+    if (error) {
+      console.error('[addReaction] Insert error:', error)
+    } else {
+      console.log('[addReaction] Inserted:', insertedData)
+    }
 
     return { success: !error, error: error?.message || null }
   } catch (err) {
-    console.error('addReaction error:', err)
+    console.error('[addReaction] Exception:', err)
     return { success: false, error: (err as Error).message }
   }
 }
