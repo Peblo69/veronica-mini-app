@@ -27,12 +27,14 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
 
   const loadData = async () => {
     setLoading(true)
-    const [userPosts, saved] = await Promise.all([
-      user.is_creator ? getCreatorPosts(user.telegram_id, user.telegram_id) : Promise.resolve([]),
+    const [creatorPostsResult, saved] = await Promise.all([
+      user.is_creator ? getCreatorPosts(user.telegram_id, user.telegram_id) : Promise.resolve(null),
       getSavedPosts(user.telegram_id)
     ])
-    setPosts(userPosts.map(p => ({ ...p, can_view: true })))
-    setSavedPosts(saved.map(p => ({ ...p, can_view: true })))
+
+    const ownPosts = creatorPostsResult?.posts ?? []
+    setPosts(ownPosts)
+    setSavedPosts(saved)
     setLoading(false)
   }
 

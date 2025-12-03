@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, MoreHorizontal, CheckCircle, Lock, Grid } from 'lucide-react'
-import { getCreatorPosts, followUser, unfollowUser, getUserRelationship, type User, type Post, canViewPost } from '../lib/api'
+import { getCreatorPosts, followUser, unfollowUser, type User, type Post } from '../lib/api'
 import { getOrCreateConversation } from '../lib/chatApi'
 import { processSubscriptionPayment, processContentPurchase } from '../lib/payments'
 import PostDetail from '../components/PostDetail'
@@ -34,20 +34,8 @@ export default function CreatorProfilePage({ creator, currentUser, onBack, onMes
 
   const loadData = async () => {
     setLoading(true)
-    const [creatorPosts, relationship] = await Promise.all([
-      getCreatorPosts(creator.telegram_id, currentUser.telegram_id),
-      getUserRelationship(currentUser.telegram_id, creator.telegram_id)
-    ])
-
-    // Add visibility info to posts
-    const postsWithVisibility = creatorPosts.map(post => ({
-      ...post,
-      is_following: relationship.is_following,
-      is_subscribed: relationship.is_subscribed,
-      can_view: canViewPost(post, currentUser.telegram_id, relationship.is_following, relationship.is_subscribed, false)
-    }))
-
-    setPosts(postsWithVisibility)
+    const { posts: creatorPosts, relationship } = await getCreatorPosts(creator.telegram_id, currentUser.telegram_id)
+    setPosts(creatorPosts)
     setIsFollowing(relationship.is_following)
     setIsSubscribed(relationship.is_subscribed)
     setLoading(false)

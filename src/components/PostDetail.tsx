@@ -255,12 +255,12 @@ export default function PostDetail({ post, user, onBack, onDeleted, onUpdated }:
             <div className="flex items-center gap-6">
               <button
                 onClick={handleLike}
-                className={`flex items-center gap-2 group transition-colors ${currentPost.liked ? 'text-red-500' : 'text-gray-600'}`}
+                className={`flex items-center gap-2 group transition-colors ${currentPost.liked ? 'text-purple-900' : 'text-gray-600'}`}
               >
-                <div className={`p-2 rounded-full transition-colors ${currentPost.liked ? 'bg-red-50' : 'group-hover:bg-gray-100'}`}>
-                  <Heart className={`w-7 h-7 transition-transform ${currentPost.liked ? 'fill-red-500 scale-110' : 'group-hover:scale-110'}`} />
+                <div className={`p-2 rounded-full transition-colors ${currentPost.liked ? 'bg-purple-50' : 'group-hover:bg-gray-100'}`}>
+                  <Heart className={`w-7 h-7 transition-transform ${currentPost.liked ? 'text-purple-900 fill-purple-900 scale-110' : 'group-hover:scale-110'}`} />
                 </div>
-                <span className={`font-medium ${currentPost.liked ? 'text-red-500' : 'text-gray-500'}`}>{currentPost.likes_count}</span>
+                <span className={`font-medium ${currentPost.liked ? 'text-purple-900' : 'text-gray-500'}`}>{currentPost.likes_count}</span>
               </button>
               
               <button

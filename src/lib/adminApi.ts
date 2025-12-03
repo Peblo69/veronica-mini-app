@@ -1,8 +1,62 @@
-import { supabase } from './supabase'
 import { type User, type Post } from './api'
 
+const ADMIN_API_BASE_URL = import.meta.env.VITE_ADMIN_API_BASE_URL
+const ADMIN_API_TOKEN = import.meta.env.VITE_ADMIN_API_TOKEN
+
+type AdminAction =
+  | 'check_admin'
+  | 'list_users'
+  | 'user_details'
+  | 'update_user'
+  | 'ban_user'
+  | 'unban_user'
+  | 'list_posts'
+  | 'hide_post'
+  | 'delete_post'
+  | 'list_applications'
+  | 'approve_application'
+  | 'reject_application'
+  | 'list_reports'
+  | 'platform_stats'
+  | 'log_activity'
+  | 'user_messages'
+
+interface AdminRequestPayload {
+  action: AdminAction
+  data?: Record<string, unknown>
+}
+
+async function adminRequest<T = any>(payload: AdminRequestPayload): Promise<T> {
+  if (!ADMIN_API_BASE_URL) {
+    throw new Error(
+      'Secure admin backend is not configured. Set VITE_ADMIN_API_BASE_URL to a protected endpoint (worker, API route, etc.).'
+    )
+  }
+
+  const response = await fetch(ADMIN_API_BASE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(ADMIN_API_TOKEN ? { Authorization: `Bearer ${ADMIN_API_TOKEN}` } : {}),
+    },
+    body: JSON.stringify(payload),
+    credentials: 'include',
+  })
+
+  if (response.status === 204) {
+    return null as T
+  }
+
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(`Admin API (${response.status}): ${text || 'Unknown error'}`)
+  }
+
+  return (await response.json()) as T
+}
+
 // ============================================
-// ADMIN API
+// TYPES
 // ============================================
 
 export interface AdminUser {
@@ -69,273 +123,132 @@ export interface PlatformStats {
   revenue_today: number
 }
 
-// Check if user is admin
+// ============================================
+// ACTION WRAPPERS
+// ============================================
+
 export async function checkIsAdmin(telegramId: number): Promise<AdminUser | null> {
-  const { data } = await supabase
-    .from('admin_users')
-    .select('*')
-    .eq('telegram_id', telegramId)
-    .eq('is_active', true)
-    .single()
-
-  if (data) {
-    // Update last login
-    await supabase
-      .from('admin_users')
-      .update({ last_login: new Date().toISOString() })
-      .eq('id', data.id)
-  }
-
-  return data as AdminUser | null
+  return adminRequest<AdminUser | null>({
+    action: 'check_admin',
+    data: { telegramId },
+  })
 }
 
-// Get all users with pagination
 export async function getAllUsers(page = 1, limit = 20, search?: string) {
-  let query = supabase
-    .from('users')
-    .select('*', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range((page - 1) * limit, page * limit - 1)
-
-  if (search) {
-    query = query.or(`username.ilike.%${search}%,first_name.ilike.%${search}%`)
-  }
-
-  const { data, count } = await query
-  return { users: data as User[], total: count || 0 }
+  return adminRequest<{ users: User[]; total: number }>({
+    action: 'list_users',
+    data: { page, limit, search },
+  })
 }
 
-// Get user by ID with full details
 export async function getUserDetails(telegramId: number) {
-  const [userRes, postsRes, followersRes, followingRes] = await Promise.all([
-    supabase.from('users').select('*').eq('telegram_id', telegramId).single(),
-    supabase.from('posts').select('*').eq('creator_id', telegramId).order('created_at', { ascending: false }),
-    supabase.from('follows').select('*, follower:users!follower_id(*)').eq('following_id', telegramId),
-    supabase.from('follows').select('*, following:users!following_id(*)').eq('follower_id', telegramId),
-  ])
-
-  return {
-    user: userRes.data as User,
-    posts: postsRes.data as Post[],
-    followers: followersRes.data,
-    following: followingRes.data,
-  }
+  return adminRequest<{
+    user: User
+    posts: Post[]
+    followers: any[]
+    following: any[]
+  }>({
+    action: 'user_details',
+    data: { telegramId },
+  })
 }
 
-// Update user (admin)
-export async function adminUpdateUser(telegramId: number, updates: Partial<User & { admin_notes?: string, is_banned?: boolean, banned_reason?: string }>) {
-  const { error } = await supabase
-    .from('users')
-    .update(updates)
-    .eq('telegram_id', telegramId)
-  return !error
+export async function adminUpdateUser(
+  telegramId: number,
+  updates: Partial<User & { admin_notes?: string; is_banned?: boolean; banned_reason?: string }>
+) {
+  await adminRequest({
+    action: 'update_user',
+    data: { telegramId, updates },
+  })
+  return true
 }
 
-// Ban user
 export async function banUser(telegramId: number, reason: string, adminId: number) {
-  const { error } = await supabase
-    .from('users')
-    .update({
-      is_banned: true,
-      banned_at: new Date().toISOString(),
-      banned_reason: reason,
-      banned_by: adminId
-    })
-    .eq('telegram_id', telegramId)
-  return !error
+  await adminRequest({
+    action: 'ban_user',
+    data: { telegramId, reason, adminId },
+  })
+  return true
 }
 
-// Unban user
 export async function unbanUser(telegramId: number) {
-  const { error } = await supabase
-    .from('users')
-    .update({
-      is_banned: false,
-      banned_at: null,
-      banned_reason: null,
-      banned_by: null
-    })
-    .eq('telegram_id', telegramId)
-  return !error
+  await adminRequest({
+    action: 'unban_user',
+    data: { telegramId },
+  })
+  return true
 }
 
-// Get all posts with pagination
-export async function getAllPosts(page = 1, limit = 20, filters?: { visibility?: string, is_nsfw?: boolean, is_hidden?: boolean }) {
-  let query = supabase
-    .from('posts')
-    .select('*, creator:users!creator_id(*)', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range((page - 1) * limit, page * limit - 1)
-
-  if (filters?.visibility) query = query.eq('visibility', filters.visibility)
-  if (filters?.is_nsfw !== undefined) query = query.eq('is_nsfw', filters.is_nsfw)
-  if (filters?.is_hidden !== undefined) query = query.eq('is_hidden', filters.is_hidden)
-
-  const { data, count } = await query
-  return { posts: data as Post[], total: count || 0 }
+export async function getAllPosts(page = 1, limit = 20, filters?: { visibility?: string; is_nsfw?: boolean; is_hidden?: boolean }) {
+  return adminRequest<{ posts: Post[]; total: number }>({
+    action: 'list_posts',
+    data: { page, limit, filters },
+  })
 }
 
-// Delete post (hide)
 export async function hidePost(postId: number, reason: string, adminId: number) {
-  const { error } = await supabase
-    .from('posts')
-    .update({
-      is_hidden: true,
-      hidden_reason: reason,
-      hidden_by: adminId,
-      hidden_at: new Date().toISOString()
-    })
-    .eq('id', postId)
-  return !error
+  await adminRequest({
+    action: 'hide_post',
+    data: { postId, reason, adminId },
+  })
+  return true
 }
 
-// Permanently delete post
 export async function deletePost(postId: number) {
-  const { error } = await supabase
-    .from('posts')
-    .delete()
-    .eq('id', postId)
-  return !error
+  await adminRequest({
+    action: 'delete_post',
+    data: { postId },
+  })
+  return true
 }
 
-// Get all creator applications
 export async function getApplications(status?: string) {
-  let query = supabase
-    .from('creator_applications')
-    .select('*, user:users!user_id(*)')
-    .order('created_at', { ascending: false })
-
-  if (status) {
-    query = query.eq('status', status)
-  }
-
-  const { data } = await query
-  return data as CreatorApplication[]
+  return adminRequest<CreatorApplication[]>({
+    action: 'list_applications',
+    data: { status },
+  })
 }
 
-// Approve application
 export async function approveApplication(applicationId: number, userId: number) {
-  // Update application status
-  const { error: appError } = await supabase
-    .from('creator_applications')
-    .update({
-      status: 'approved',
-      reviewed_at: new Date().toISOString()
-    })
-    .eq('id', applicationId)
-
-  if (appError) return false
-
-  // Update user to creator
-  const { error: userError } = await supabase
-    .from('users')
-    .update({
-      is_creator: true,
-      is_verified: true,
-      application_status: 'approved'
-    })
-    .eq('telegram_id', userId)
-
-  return !userError
+  await adminRequest({
+    action: 'approve_application',
+    data: { applicationId, userId },
+  })
+  return true
 }
 
-// Reject application
 export async function rejectApplication(applicationId: number, userId: number, reason: string) {
-  const { error: appError } = await supabase
-    .from('creator_applications')
-    .update({
-      status: 'rejected',
-      rejection_reason: reason,
-      reviewed_at: new Date().toISOString()
-    })
-    .eq('id', applicationId)
-
-  if (appError) return false
-
-  const { error: userError } = await supabase
-    .from('users')
-    .update({ application_status: 'rejected' })
-    .eq('telegram_id', userId)
-
-  return !userError
+  await adminRequest({
+    action: 'reject_application',
+    data: { applicationId, userId, reason },
+  })
+  return true
 }
 
-// Get reports
 export async function getReports(status?: string) {
-  let query = supabase
-    .from('reports')
-    .select('*, reporter:users!reporter_id(*)')
-    .order('created_at', { ascending: false })
-
-  if (status) {
-    query = query.eq('status', status)
-  }
-
-  const { data } = await query
-  return data as Report[]
+  return adminRequest<Report[]>({
+    action: 'list_reports',
+    data: { status },
+  })
 }
 
-// Get platform stats
 export async function getPlatformStats(): Promise<PlatformStats> {
-  const now = new Date()
-  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
-  const endOfDay = new Date(startOfDay)
-  endOfDay.setUTCDate(endOfDay.getUTCDate() + 1)
-  const startIso = startOfDay.toISOString()
-  const endIso = endOfDay.toISOString()
-
-  const [usersRes, creatorsRes, postsRes, applicationsRes, reportsRes, newUsersRes, revenueRes] = await Promise.all([
-    supabase.from('users').select('id', { count: 'exact', head: true }),
-    supabase.from('users').select('id', { count: 'exact', head: true }).eq('is_creator', true),
-    supabase.from('posts').select('id', { count: 'exact', head: true }),
-    supabase.from('creator_applications').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-    supabase.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-    supabase.from('users').select('id', { count: 'exact', head: true }).gte('created_at', startIso),
-    supabase
-      .from('transactions')
-      .select('amount')
-      .gte('created_at', startIso)
-      .lt('created_at', endIso)
-      .eq('status', 'completed'),
-  ])
-
-  const revenueToday = (revenueRes.data || []).reduce((sum: number, row: { amount: number }) => {
-    const amount = typeof row.amount === 'number' ? row.amount : Number(row.amount || 0)
-    return sum + (isNaN(amount) ? 0 : amount)
-  }, 0)
-
-  return {
-    total_users: usersRes.count || 0,
-    total_creators: creatorsRes.count || 0,
-    total_posts: postsRes.count || 0,
-    pending_applications: applicationsRes.count || 0,
-    pending_reports: reportsRes.count || 0,
-    new_users_today: newUsersRes.count || 0,
-    revenue_today: Number(revenueToday.toFixed(2)),
-  }
+  return adminRequest<PlatformStats>({
+    action: 'platform_stats',
+  })
 }
 
-// Log admin activity
 export async function logAdminActivity(adminId: number, action: string, targetType: string, targetId: string, details?: any) {
-  await supabase
-    .from('admin_activity_log')
-    .insert({
-      admin_id: adminId,
-      action,
-      target_type: targetType,
-      target_id: targetId,
-      details,
-    })
+  await adminRequest({
+    action: 'log_activity',
+    data: { adminId, action, targetType, targetId, details },
+  })
 }
 
-// Get messages for a user (admin view)
 export async function getUserMessages(userId: number) {
-  const { data } = await supabase
-    .from('messages')
-    .select('*, sender:users!sender_id(*), receiver:users!receiver_id(*)')
-    .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
-    .order('created_at', { ascending: false })
-    .limit(100)
-
-  return data || []
+  return adminRequest({
+    action: 'user_messages',
+    data: { userId },
+  })
 }

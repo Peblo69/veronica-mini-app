@@ -242,7 +242,6 @@ function App() {
               onCreatorClick={openCreatorProfile}
               onLivestreamClick={(livestreamId) => openLivestream(false, livestreamId)}
               onGoLive={() => openLivestream(true)}
-              scrollElement={scrollElement}
             />
           )}
         />

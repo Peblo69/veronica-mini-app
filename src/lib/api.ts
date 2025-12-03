@@ -47,6 +47,14 @@ export interface Post {
   is_subscribed?: boolean
 }
 
+export interface CreatorPostsResult {
+  posts: Post[]
+  relationship: {
+    is_following: boolean
+    is_subscribed: boolean
+  }
+}
+
 // Get or create user from Telegram data
 export async function getOrCreateUser(telegramUser: any): Promise<User | null> {
   const { data: existing } = await supabase
@@ -165,36 +173,60 @@ export async function getFeed(userId: number, limit = 20): Promise<Post[]> {
 }
 
 // Get creator posts
-export async function getCreatorPosts(creatorId: number, userId: number): Promise<Post[]> {
+export async function getCreatorPosts(creatorId: number, userId: number): Promise<CreatorPostsResult> {
   const { data } = await supabase
     .from('posts')
-    .select('*')
+    .select('*, creator:users!creator_id(*)')
     .eq('creator_id', creatorId)
     .order('created_at', { ascending: false })
 
-  if (!data) return []
+  if (!data) {
+    return {
+      posts: [],
+      relationship: {
+        is_following: false,
+        is_subscribed: false
+      }
+    }
+  }
 
   const postIds = data.map(p => p.id)
 
-  // Get user likes and actual like counts
-  const [userLikesRes, allLikesRes] = await Promise.all([
-    supabase.from('likes').select('post_id').eq('user_id', userId),
-    supabase.from('likes').select('post_id').in('post_id', postIds)
+  const [userLikesRes, allLikesRes, purchasesRes, relationship] = await Promise.all([
+    supabase.from('likes').select('post_id').eq('user_id', userId).in('post_id', postIds),
+    supabase.from('likes').select('post_id').in('post_id', postIds),
+    supabase.from('content_purchases').select('post_id').eq('user_id', userId).in('post_id', postIds),
+    getUserRelationship(userId, creatorId)
   ])
 
   const likedPostIds = new Set(userLikesRes.data?.map(l => l.post_id) || [])
+  const purchasedPostIds = new Set(purchasesRes.data?.map(p => p.post_id) || [])
 
-  // Count actual likes per post
   const actualLikesCount = new Map<number, number>()
-  allLikesRes.data?.forEach(l => {
-    actualLikesCount.set(l.post_id, (actualLikesCount.get(l.post_id) || 0) + 1)
+  allLikesRes.data?.forEach(like => {
+    actualLikesCount.set(like.post_id, (actualLikesCount.get(like.post_id) || 0) + 1)
   })
 
-  return data.map(post => ({
-    ...post,
-    likes_count: actualLikesCount.get(post.id) || 0,
-    liked: likedPostIds.has(post.id)
-  })) as Post[]
+  const posts = data.map(post => {
+    const isPurchased = purchasedPostIds.has(post.id)
+    const isFollowing = relationship.is_following
+    const isSubscribed = relationship.is_subscribed
+
+    return {
+      ...post,
+      likes_count: actualLikesCount.get(post.id) || 0,
+      liked: likedPostIds.has(post.id),
+      is_purchased: isPurchased,
+      is_following: isFollowing,
+      is_subscribed: isSubscribed,
+      can_view: canViewPost(post as Post, userId, isFollowing, isSubscribed, isPurchased)
+    }
+  }) as Post[]
+
+  return {
+    posts,
+    relationship
+  }
 }
 
 // Get suggested creators
@@ -215,14 +247,16 @@ export async function getVideoPosts(userId: number, limit = 50, offset = 0): Pro
     .select('*, creator:users!creator_id(*)')
     .eq('media_type', 'video')
     .eq('visibility', 'public')
+    .eq('unlock_price', 0)
+    .or('is_nsfw.is.null,is_nsfw.eq.false')
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
   if (!data) return []
 
-  const postIds = data.map(p => p.id)
+  const visiblePosts = data.filter(post => !post.is_hidden)
+  const postIds = visiblePosts.map(p => p.id)
 
-  // Get user's likes
   const { data: likesData } = await supabase
     .from('likes')
     .select('post_id')
@@ -231,7 +265,7 @@ export async function getVideoPosts(userId: number, limit = 50, offset = 0): Pro
 
   const likedPostIds = new Set(likesData?.map(l => l.post_id) || [])
 
-  return data.map(post => ({
+  return visiblePosts.map(post => ({
     ...post,
     liked: likedPostIds.has(post.id),
     can_view: true
@@ -403,21 +437,11 @@ export async function deletePost(postId: number, creatorId: number) {
   console.log('Related records cleaned up, deleting post...')
 
   // Delete the post record
-  let { error } = await supabase
+  const { error } = await supabase
     .from('posts')
     .delete()
     .eq('id', pid)
     .eq('creator_id', cid)
-
-  // If that fails, try without creator_id check (for admin or if types mismatch)
-  if (error) {
-    console.warn('Delete with creator_id failed, trying without:', error)
-    const result = await supabase
-      .from('posts')
-      .delete()
-      .eq('id', pid)
-    error = result.error
-  }
 
   if (error) {
     console.error('Delete post error:', error)
@@ -469,6 +493,34 @@ export async function unlikePost(userId: number, postId: number) {
     await supabase.rpc('decrement_likes', { p_post_id: postId })
   }
   return !error
+}
+
+// Get users who liked a post
+export async function getPostLikes(postId: number): Promise<User[]> {
+  const { data, error } = await supabase
+    .from('likes')
+    .select(`
+      user_id,
+      users:user_id (
+        telegram_id,
+        username,
+        first_name,
+        last_name,
+        avatar_url,
+        is_verified,
+        is_creator
+      )
+    `)
+    .eq('post_id', postId)
+    .order('created_at', { ascending: false })
+    .limit(100)
+
+  if (error) {
+    console.error('Error fetching post likes:', error)
+    return []
+  }
+
+  return (data || []).map((item: any) => item.users).filter(Boolean) as User[]
 }
 
 // ============================================
@@ -678,11 +730,47 @@ export async function getSavedPosts(userId: number): Promise<Post[]> {
 
   if (!data) return []
 
-  return data.map((item: any) => ({
-    ...item.posts,
-    saved: true,
-    can_view: true
-  }))
+  const posts = data.map((item: any) => item.posts as Post)
+  const postIds = posts.map(post => post.id)
+  const creatorIds = [...new Set(posts.map(post => post.creator_id))]
+
+  const [purchasesRes, followsRes, subsRes] = await Promise.all([
+    supabase
+      .from('content_purchases')
+      .select('post_id')
+      .eq('user_id', userId)
+      .in('post_id', postIds),
+    supabase
+      .from('follows')
+      .select('following_id')
+      .eq('follower_id', userId)
+      .in('following_id', creatorIds),
+    supabase
+      .from('subscriptions')
+      .select('creator_id')
+      .eq('subscriber_id', userId)
+      .eq('is_active', true)
+      .in('creator_id', creatorIds)
+  ])
+
+  const purchasedPostIds = new Set(purchasesRes.data?.map(p => p.post_id) || [])
+  const followingIds = new Set(followsRes.data?.map(f => f.following_id) || [])
+  const subscribedIds = new Set(subsRes.data?.map(s => s.creator_id) || [])
+
+  return posts.map(post => {
+    const isFollowing = post.creator_id === userId ? true : followingIds.has(post.creator_id)
+    const isSubscribed = post.creator_id === userId ? true : subscribedIds.has(post.creator_id)
+    const isPurchased = purchasedPostIds.has(post.id)
+
+    return {
+      ...post,
+      saved: true,
+      is_following: isFollowing,
+      is_subscribed: isSubscribed,
+      is_purchased: isPurchased,
+      can_view: canViewPost(post, userId, isFollowing, isSubscribed, isPurchased)
+    }
+  })
 }
 
 // Purchase content

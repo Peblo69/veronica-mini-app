@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Heart, MessageCircle, Bookmark, Share2, MoreHorizontal, CheckCircle, Lock, Eye, DollarSign, X, Users, Trash2, EyeOff, Edit3, Flag, Copy, UserX, Volume2, VolumeX, Play } from 'lucide-react'
-import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, purchaseContent, deletePost, type User, type Post } from '../lib/api'
+import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, purchaseContent, deletePost, getPostLikes, type User, type Post } from '../lib/api'
 import { getLivestreams, subscribeToLivestreams, type Livestream } from '../lib/livestreamApi'
 import PostDetail from '../components/PostDetail'
+import BottomSheet from '../components/BottomSheet'
 import { reportPost } from '../lib/reportApi'
 import { blockUser } from '../lib/settingsApi'
 
@@ -13,7 +13,6 @@ interface HomePageProps {
   onCreatorClick: (creator: any) => void
   onLivestreamClick?: (livestreamId: string) => void
   onGoLive?: () => void
-  scrollElement?: HTMLElement | null
 }
 
 const filterLiveStreams = (streams: Livestream[]) =>
@@ -165,7 +164,7 @@ function MediaCarousel({ urls, canView }: { urls: string[]; canView: boolean }) 
   )
 }
 
-export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGoLive, scrollElement }: HomePageProps) {
+export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGoLive }: HomePageProps) {
   const [posts, setPosts] = useState<Post[]>([])
   const [suggestions, setSuggestions] = useState<User[]>([])
   const [livestreams, setLivestreams] = useState<Livestream[]>([])
@@ -174,15 +173,11 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   const [purchasing, setPurchasing] = useState(false)
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
   const [postMenuOpen, setPostMenuOpen] = useState<number | null>(null)
-  const defaultScrollElement = typeof document !== 'undefined' ? (document.querySelector('main') as HTMLElement | null) || document.documentElement : null
-  const fallbackScrollElement = defaultScrollElement ?? (typeof document !== 'undefined' ? document.documentElement : null)
-  const feedVirtualizer = useVirtualizer({
-    count: posts.length,
-    getScrollElement: () => (scrollElement ?? fallbackScrollElement)!,
-    estimateSize: () => 580,
-    overscan: 3,
-    measureElement: element => element?.getBoundingClientRect().height || 0,
-  })
+
+  // Likes sheet state
+  const [likesSheetOpen, setLikesSheetOpen] = useState(false)
+  const [likesSheetUsers, setLikesSheetUsers] = useState<User[]>([])
+  const [likesSheetLoading, setLikesSheetLoading] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -226,6 +221,15 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
       await savePost(user.telegram_id, post.id)
       setPosts(posts.map(p => p.id === post.id ? { ...p, saved: true } : p))
     }
+  }
+
+  const handleViewLikes = async (post: Post) => {
+    if ((post.likes_count || 0) === 0) return
+    setLikesSheetOpen(true)
+    setLikesSheetLoading(true)
+    const users = await getPostLikes(post.id)
+    setLikesSheetUsers(users)
+    setLikesSheetLoading(false)
   }
 
   const handlePurchase = async (post: Post) => {
@@ -483,38 +487,38 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
       ) : null}
 
       {/* Action Bar - Instagram style */}
-      <div className="px-4 py-3 border-t border-gray-100">
+      <div className="px-3 py-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-4">
             <button
-              className="p-1 active:opacity-60"
+              className="active:opacity-50"
               onClick={() => handleLike(post)}
             >
               <Heart
-                className={`w-7 h-7 ${post.liked ? 'text-red-500 fill-red-500' : 'text-black'}`}
-                strokeWidth={1.8}
+                className={`w-5 h-5 ${post.liked ? 'text-red-500 fill-red-500' : 'text-black'}`}
+                strokeWidth={2}
               />
             </button>
 
             <button
-              className="p-1 active:opacity-60"
+              className="active:opacity-50"
               onClick={() => openPostDetail(post)}
             >
-              <MessageCircle className="w-7 h-7 text-black" strokeWidth={1.8} />
+              <MessageCircle className="w-5 h-5 text-black" strokeWidth={2} />
             </button>
 
-            <button className="p-1 active:opacity-60">
-              <Share2 className="w-7 h-7 text-black" strokeWidth={1.8} />
+            <button className="active:opacity-50">
+              <Share2 className="w-5 h-5 text-black" strokeWidth={2} />
             </button>
           </div>
 
           <button
             onClick={() => handleSave(post)}
-            className="p-1 active:opacity-60"
+            className="active:opacity-50"
           >
             <Bookmark
-              className={`w-7 h-7 ${post.saved ? 'text-black fill-black' : 'text-black'}`}
-              strokeWidth={1.8}
+              className={`w-5 h-5 ${post.saved ? 'text-black fill-black' : 'text-black'}`}
+              strokeWidth={2}
             />
           </button>
         </div>
@@ -522,11 +526,14 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
       {/* Likes Count */}
       {(post.likes_count || 0) > 0 && (
-        <div className="px-4 pb-1">
+        <button
+          className="px-4 pb-1 text-left"
+          onClick={() => handleViewLikes(post)}
+        >
           <span className="text-[14px] font-semibold text-gray-900">
             {post.likes_count.toLocaleString()} {post.likes_count === 1 ? 'like' : 'likes'}
           </span>
-        </div>
+        </button>
       )}
 
       {/* Caption */}
@@ -727,16 +734,8 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
             <p className="text-[14px] text-gray-500">Follow creators to see their posts in your feed.</p>
           </div>
         ) : (
-          <div className="relative" style={{ height: feedVirtualizer.getTotalSize() || posts.length * 580 }}>
-            {feedVirtualizer.getVirtualItems().map((virtualRow) => (
-              <div
-                key={virtualRow.key}
-                className="absolute left-0 w-full"
-                style={{ transform: `translateY(${virtualRow.start}px)` }}
-              >
-                {renderPostCard(posts[virtualRow.index])}
-              </div>
-            ))}
+          <div>
+            {posts.map((post) => renderPostCard(post))}
           </div>
         )}
       </div>
@@ -831,6 +830,19 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
           />
         )}
       </AnimatePresence>
+
+      {/* Likes Bottom Sheet */}
+      <BottomSheet
+        isOpen={likesSheetOpen}
+        onClose={() => setLikesSheetOpen(false)}
+        title="Likes"
+        users={likesSheetUsers}
+        loading={likesSheetLoading}
+        onUserClick={(user) => {
+          setLikesSheetOpen(false)
+          onCreatorClick(user)
+        }}
+      />
     </div>
   )
 }
