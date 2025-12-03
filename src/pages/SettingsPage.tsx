@@ -11,7 +11,7 @@ import { type User as UserType } from '../lib/api'
 import {
   getUserSettings, updateUserSettings, type UserSettings, defaultSettings,
   languages, accentColors, getBlockedUsers, unblockUser, requestDataExport,
-  requestAccountDeletion, updateProfile
+  requestAccountDeletion, updateProfile, getActiveSessions, terminateSession
 } from '../lib/settingsApi'
 
 interface SettingsPageProps {
@@ -21,6 +21,7 @@ interface SettingsPageProps {
 }
 
 type SettingsSection = 'main' | 'account' | 'notifications' | 'privacy' | 'content' | 'appearance' | 'language' | 'creator' | 'about' | 'blocked'
+  | 'sessions'
 
 export default function SettingsPage({ user, setUser, onClose }: SettingsPageProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>('main')
@@ -28,6 +29,12 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [blockedUsers, setBlockedUsers] = useState<{ user_id: number; username: string; avatar_url: string }[]>([])
+  const [blockedLoaded, setBlockedLoaded] = useState(false)
+  const [sessions, setSessions] = useState<any[]>([])
+  const [sessionsLoaded, setSessionsLoaded] = useState(false)
+  const [sessionsLoading, setSessionsLoading] = useState(false)
+  const [terminatingSessionId, setTerminatingSessionId] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [editingProfile, setEditingProfile] = useState(false)
   const [profileForm, setProfileForm] = useState({
     first_name: user.first_name || '',
@@ -37,42 +44,99 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
   })
 
   useEffect(() => {
-    loadSettings()
+    void loadSettings()
   }, [user.telegram_id])
+
+  useEffect(() => {
+    if (activeSection === 'blocked' && !blockedLoaded) {
+      void loadBlockedUsers()
+    }
+    if (activeSection === 'sessions' && !sessionsLoaded) {
+      void loadSessions()
+    }
+  }, [activeSection, blockedLoaded, sessionsLoaded])
 
   const loadSettings = async () => {
     setLoading(true)
-    const userSettings = await getUserSettings(user.telegram_id)
-    setSettings(userSettings)
-    setLoading(false)
+    try {
+      const userSettings = await getUserSettings(user.telegram_id)
+      setSettings(userSettings)
+    } catch (err) {
+      console.error('[Settings] Failed to load settings', err)
+      setErrorMessage('Failed to load settings. Showing defaults until connection is restored.')
+      setSettings({ user_id: user.telegram_id, ...defaultSettings })
+    } finally {
+      setLoading(false)
+    }
   }
 
   const updateSetting = async <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
+    const previousValue = settings[key]
     const newSettings = { ...settings, [key]: value }
     setSettings(newSettings)
     setSaving(true)
-    await updateUserSettings(user.telegram_id, { [key]: value })
+    const success = await updateUserSettings(user.telegram_id, { [key]: value })
     setSaving(false)
+    if (!success) {
+      setSettings(prev => ({ ...prev, [key]: previousValue }))
+      setErrorMessage('Could not save your changes. Please try again.')
+    } else {
+      setErrorMessage(null)
+    }
   }
 
   const loadBlockedUsers = async () => {
     const blocked = await getBlockedUsers(user.telegram_id)
     setBlockedUsers(blocked)
+    setBlockedLoaded(true)
+  }
+
+  const loadSessions = async () => {
+    setSessionsLoading(true)
+    try {
+      const data = await getActiveSessions(user.telegram_id)
+      setSessions(data)
+      setSessionsLoaded(true)
+      setErrorMessage(null)
+    } catch (err) {
+      console.error('[Settings] Failed to load sessions', err)
+      setErrorMessage('Unable to load active sessions right now.')
+    } finally {
+      setSessionsLoading(false)
+    }
   }
 
   const handleUnblock = async (blockedUserId: number) => {
-    await unblockUser(user.telegram_id, blockedUserId)
-    setBlockedUsers(blockedUsers.filter(u => u.user_id !== blockedUserId))
+    const success = await unblockUser(user.telegram_id, blockedUserId)
+    if (success) {
+      setBlockedUsers(prev => prev.filter(u => u.user_id !== blockedUserId))
+    } else {
+      setErrorMessage('Failed to unblock this user. Please try again.')
+    }
+  }
+
+  const handleTerminateSession = async (sessionId: string) => {
+    setTerminatingSessionId(sessionId)
+    const success = await terminateSession(sessionId)
+    setTerminatingSessionId(null)
+    if (success) {
+      setSessions(prev => prev.filter(session => session.id !== sessionId))
+    } else {
+      setErrorMessage('Unable to terminate the selected session.')
+    }
   }
 
   const handleSaveProfile = async () => {
     setSaving(true)
     const success = await updateProfile(user.telegram_id, profileForm)
+    setSaving(false)
     if (success) {
       setUser({ ...user, ...profileForm })
       setEditingProfile(false)
+      setErrorMessage(null)
+    } else {
+      setErrorMessage('Unable to update your profile right now. Please try again later.')
     }
-    setSaving(false)
   }
 
   const handleExportData = async () => {
@@ -180,6 +244,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
           <SettingItem icon={User} label="Account" onClick={() => setActiveSection('account')} />
           <SettingItem icon={Bell} label="Notifications" onClick={() => setActiveSection('notifications')} />
           <SettingItem icon={Shield} label="Privacy & Security" onClick={() => setActiveSection('privacy')} />
+          <SettingItem icon={Smartphone} label="Devices & Sessions" description="Manage logged-in devices" onClick={() => setActiveSection('sessions')} />
           <SettingItem icon={Eye} label="Content Preferences" onClick={() => setActiveSection('content')} />
           <SettingItem icon={Palette} label="Appearance" onClick={() => setActiveSection('appearance')} />
           <SettingItem icon={Globe} label="Language" description={languages.find(l => l.code === settings.language)?.name} onClick={() => setActiveSection('language')} />
@@ -743,6 +808,55 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
     </div>
   )
 
+  const renderSessionsSection = () => (
+    <div style={{ backgroundColor: '#FFFFFF', minHeight: '100%' }}>
+      <SectionHeader title="Devices & Sessions" onBack={() => setActiveSection('main')} />
+
+      <div className="p-4 space-y-4">
+        {sessionsLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin text-of-blue" />
+          </div>
+        ) : sessions.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Smartphone className="w-8 h-8 text-gray-400" />
+            </div>
+            <div className="text-gray-500 text-sm">No active sessions</div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {sessions.map((session) => (
+              <div
+                key={session.id}
+                className="p-4 bg-white rounded-2xl border border-gray-100 flex items-center justify-between gap-3"
+              >
+                <div>
+                  <div className="font-semibold text-gray-900">{session.device_name || 'Unknown device'}</div>
+                  <div className="text-sm text-gray-500">
+                    {session.location || 'Location unavailable'} · Last active{' '}
+                    {session.last_active ? new Date(session.last_active).toLocaleString() : 'unknown'}
+                  </div>
+                  {session.ip_address && (
+                    <div className="text-xs text-gray-400 mt-1">IP {session.ip_address}</div>
+                  )}
+                </div>
+                <motion.button
+                  onClick={() => handleTerminateSession(session.id)}
+                  whileTap={{ scale: 0.95 }}
+                  className="px-3 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700"
+                  disabled={terminatingSessionId === session.id}
+                >
+                  {terminatingSessionId === session.id ? 'Ending...' : 'Log out'}
+                </motion.button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
   // About Section
   const renderAboutSection = () => (
     <div style={{ backgroundColor: '#FFFFFF', minHeight: '100%' }}>
@@ -793,6 +907,7 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
       case 'creator': return renderCreatorSection()
       case 'blocked': return renderBlockedSection()
       case 'about': return renderAboutSection()
+      case 'sessions': return renderSessionsSection()
       default: return (
         <>
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 z-10 safe-area-top" style={{ backgroundColor: '#FFFFFF' }}>
@@ -826,6 +941,11 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
       className="fixed inset-0 z-[9999] flex flex-col"
       style={{ backgroundColor: '#FFFFFF', height: '100vh', width: '100vw' }}
     >
+      {errorMessage && (
+        <div className="bg-red-50 text-red-700 text-sm px-4 py-2 text-center border-b border-red-100">
+          {errorMessage}
+        </div>
+      )}
       <div
         className="flex-1 overflow-y-auto"
         style={{ backgroundColor: '#FFFFFF' }}

@@ -1,8 +1,9 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Image, Video, Lock, Globe, Users, Send, Loader2, DollarSign, X, Play, Star } from 'lucide-react'
 import { createPost, type User } from '../lib/api'
 import { uploadPostMedia, getMediaType, compressImage } from '../lib/storage'
+import { getUserSettings } from '../lib/settingsApi'
 
 interface CreatePageProps {
   user: User
@@ -32,6 +33,23 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
   const videoInputRef = useRef<HTMLInputElement>(null)
 
   const isCreator = user.is_creator
+
+  useEffect(() => {
+    let mounted = true
+    getUserSettings(user.telegram_id)
+      .then((userSettings) => {
+        if (!mounted) return
+        if (userSettings?.default_post_visibility) {
+          setVisibility(userSettings.default_post_visibility as Visibility)
+        }
+      })
+      .catch(() => {
+        // Ignore; defaults already applied
+      })
+    return () => {
+      mounted = false
+    }
+  }, [user.telegram_id])
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>, _type: 'image' | 'video') => {
     const files = e.target.files
@@ -72,33 +90,36 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
     setUploadProgress('Preparing...')
 
     try {
-      let mediaUrl = ''
+      const mediaUrls: string[] = []
 
-      // Upload media files
+      // Upload all media files
       if (mediaFiles.length > 0) {
-        setUploadProgress(`Uploading media...`)
+        for (let i = 0; i < mediaFiles.length; i++) {
+          const mediaFile = mediaFiles[i]
+          setUploadProgress(`Uploading ${i + 1}/${mediaFiles.length}...`)
 
-        // For now, upload first file (we can extend to multiple later)
-        const firstFile = mediaFiles[0]
-        let fileToUpload = firstFile.file
+          let fileToUpload = mediaFile.file
 
-        // Compress if image
-        if (firstFile.type === 'image') {
-          setUploadProgress('Compressing image...')
-          fileToUpload = await compressImage(firstFile.file)
+          // Compress if image
+          if (mediaFile.type === 'image') {
+            setUploadProgress(`Compressing ${i + 1}/${mediaFiles.length}...`)
+            fileToUpload = await compressImage(mediaFile.file)
+          }
+
+          setUploadProgress(`Uploading ${i + 1}/${mediaFiles.length}...`)
+          const result = await uploadPostMedia(fileToUpload, user.telegram_id)
+
+          if (result.error) {
+            alert('Upload failed: ' + result.error)
+            setPosting(false)
+            setUploadProgress('')
+            return
+          }
+
+          if (result.url) {
+            mediaUrls.push(result.url)
+          }
         }
-
-        setUploadProgress('Uploading...')
-        const result = await uploadPostMedia(fileToUpload, user.telegram_id)
-
-        if (result.error) {
-          alert('Upload failed: ' + result.error)
-          setPosting(false)
-          setUploadProgress('')
-          return
-        }
-
-        mediaUrl = result.url || ''
       }
 
       setUploadProgress('Creating post...')
@@ -110,7 +131,8 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
 
       const { error } = await createPost(user.telegram_id, {
         content,
-        media_url: mediaUrl,
+        media_url: mediaUrls[0] || '', // First image as main
+        media_urls: mediaUrls.length > 0 ? mediaUrls : undefined,
         visibility: finalVisibility,
         is_nsfw: finalNsfw,
         unlock_price: finalPrice,

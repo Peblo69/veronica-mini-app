@@ -97,6 +97,80 @@ function FeedVideoPlayer({ src }: { src: string }) {
   )
 }
 
+// Instagram-style carousel for multiple images
+function MediaCarousel({ urls, canView }: { urls: string[]; canView: boolean }) {
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const handleScroll = () => {
+    if (!containerRef.current) return
+    const scrollLeft = containerRef.current.scrollLeft
+    const width = containerRef.current.offsetWidth
+    const newIndex = Math.round(scrollLeft / width)
+    if (newIndex !== currentIndex) {
+      setCurrentIndex(newIndex)
+    }
+  }
+
+  if (!canView || urls.length === 0) return null
+
+  // Single image - just show it
+  if (urls.length === 1) {
+    const url = urls[0]
+    if (url.match(/\.(mp4|webm)$/i)) {
+      return <FeedVideoPlayer src={url} />
+    }
+    return <img src={url} alt="" loading="lazy" className="w-full max-h-[520px] object-cover" />
+  }
+
+  // Multiple images - show carousel
+  return (
+    <div className="relative">
+      {/* Scrollable container */}
+      <div
+        ref={containerRef}
+        className="flex overflow-x-auto snap-x snap-mandatory scrollbar-hide"
+        onScroll={handleScroll}
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      >
+        {urls.map((url, index) => (
+          <div key={index} className="flex-none w-full snap-center">
+            {url.match(/\.(mp4|webm)$/i) ? (
+              <FeedVideoPlayer src={url} />
+            ) : (
+              <img
+                src={url}
+                alt=""
+                loading="lazy"
+                className="w-full max-h-[520px] object-cover"
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Dot indicators */}
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+        {urls.map((_, index) => (
+          <div
+            key={index}
+            className={`w-1.5 h-1.5 rounded-full transition-all ${
+              index === currentIndex
+                ? 'bg-white w-2.5'
+                : 'bg-white/50'
+            }`}
+          />
+        ))}
+      </div>
+
+      {/* Image counter */}
+      <div className="absolute top-3 right-3 bg-black/60 text-white text-xs px-2 py-1 rounded-full z-10">
+        {currentIndex + 1}/{urls.length}
+      </div>
+    </div>
+  )
+}
+
 export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGoLive, scrollElement }: HomePageProps) {
   const [posts, setPosts] = useState<Post[]>([])
   const [suggestions, setSuggestions] = useState<User[]>([])
@@ -402,14 +476,11 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
       </div>
 
       {post.media_url && post.can_view ? (
-        <div className="relative">
-          {post.media_url.match(/\.(mp4|webm)$/i) ? (
-            <FeedVideoPlayer src={post.media_url} />
-          ) : (
-            <img src={post.media_url} alt="" loading="lazy" className="w-full max-h-[520px] object-cover" />
-          )}
-        </div>
-      ) : (
+        <MediaCarousel
+          urls={post.media_urls && post.media_urls.length > 0 ? post.media_urls : [post.media_url]}
+          canView={post.can_view}
+        />
+      ) : post.media_url ? (
         <div className="relative bg-gradient-to-br from-gray-900 to-gray-800 text-white p-10 text-center overflow-hidden">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent)]" />
           <div className="relative z-10">
@@ -444,7 +515,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
             )}
           </div>
         </div>
-      )}
+      ) : null}
 
       {post.content && (
         <div className="px-5 py-4 bg-gray-50/50 border-t border-gray-100">

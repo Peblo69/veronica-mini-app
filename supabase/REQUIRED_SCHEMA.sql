@@ -143,7 +143,16 @@ CREATE TRIGGER on_comment_like_update
 -- Trigger: Create notification when someone follows
 CREATE OR REPLACE FUNCTION create_follow_notification()
 RETURNS TRIGGER AS $func$
+DECLARE
+  should_notify BOOLEAN := COALESCE(
+    (SELECT notifications_follows FROM user_settings WHERE user_id = NEW.following_id),
+    TRUE
+  );
 BEGIN
+  IF NOT should_notify THEN
+    RETURN NEW;
+  END IF;
+
   INSERT INTO notifications (user_id, from_user_id, type, content)
   VALUES (NEW.following_id, NEW.follower_id, 'follow', 'started following you');
   RETURN NEW;
@@ -161,12 +170,24 @@ CREATE OR REPLACE FUNCTION create_like_notification()
 RETURNS TRIGGER AS $func$
 DECLARE
   v_post_creator_id BIGINT;
+  should_notify BOOLEAN;
 BEGIN
   SELECT creator_id INTO v_post_creator_id FROM posts WHERE id = NEW.post_id;
-  IF v_post_creator_id != NEW.user_id THEN
+
+  IF v_post_creator_id IS NULL OR v_post_creator_id = NEW.user_id THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT COALESCE(notifications_likes, TRUE)
+    INTO should_notify
+    FROM user_settings
+    WHERE user_id = v_post_creator_id;
+
+  IF should_notify IS NOT FALSE THEN
     INSERT INTO notifications (user_id, from_user_id, type, content, reference_id, reference_type)
     VALUES (v_post_creator_id, NEW.user_id, 'like', 'liked your post', NEW.post_id::TEXT, 'post');
   END IF;
+
   RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;

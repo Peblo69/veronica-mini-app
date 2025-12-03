@@ -99,26 +99,60 @@ ALTER TABLE account_deletion_requests ENABLE ROW LEVEL SECURITY;
 
 -- Allow users to manage their own settings
 CREATE POLICY "Users can view own settings" ON user_settings
-  FOR SELECT USING (true);
+  FOR SELECT USING (
+    auth.role() = 'service_role'
+    OR COALESCE((current_setting('request.jwt.claims', true)::jsonb ->> 'telegram_id')::BIGINT, -1) = user_id
+  );
 
 CREATE POLICY "Users can update own settings" ON user_settings
-  FOR ALL USING (true);
+  FOR ALL USING (
+    auth.role() = 'service_role'
+    OR COALESCE((current_setting('request.jwt.claims', true)::jsonb ->> 'telegram_id')::BIGINT, -1) = user_id
+  )
+  WITH CHECK (
+    auth.role() = 'service_role'
+    OR COALESCE((current_setting('request.jwt.claims', true)::jsonb ->> 'telegram_id')::BIGINT, -1) = user_id
+  );
 
--- Allow users to manage blocked users
 CREATE POLICY "Users can manage blocked users" ON blocked_users
-  FOR ALL USING (true);
+  FOR ALL USING (
+    auth.role() = 'service_role'
+    OR COALESCE((current_setting('request.jwt.claims', true)::jsonb ->> 'telegram_id')::BIGINT, -1) = user_id
+  )
+  WITH CHECK (
+    auth.role() = 'service_role'
+    OR COALESCE((current_setting('request.jwt.claims', true)::jsonb ->> 'telegram_id')::BIGINT, -1) = user_id
+  );
 
--- Allow users to view their sessions
 CREATE POLICY "Users can manage sessions" ON user_sessions
-  FOR ALL USING (true);
+  FOR ALL USING (
+    auth.role() = 'service_role'
+    OR COALESCE((current_setting('request.jwt.claims', true)::jsonb ->> 'telegram_id')::BIGINT, -1) = user_id
+  )
+  WITH CHECK (
+    auth.role() = 'service_role'
+    OR COALESCE((current_setting('request.jwt.claims', true)::jsonb ->> 'telegram_id')::BIGINT, -1) = user_id
+  );
 
--- Allow users to request data exports
 CREATE POLICY "Users can request exports" ON data_export_requests
-  FOR ALL USING (true);
+  FOR ALL USING (
+    auth.role() = 'service_role'
+    OR COALESCE((current_setting('request.jwt.claims', true)::jsonb ->> 'telegram_id')::BIGINT, -1) = user_id
+  )
+  WITH CHECK (
+    auth.role() = 'service_role'
+    OR COALESCE((current_setting('request.jwt.claims', true)::jsonb ->> 'telegram_id')::BIGINT, -1) = user_id
+  );
 
--- Allow users to request account deletion
 CREATE POLICY "Users can request deletion" ON account_deletion_requests
-  FOR ALL USING (true);
+  FOR ALL USING (
+    auth.role() = 'service_role'
+    OR COALESCE((current_setting('request.jwt.claims', true)::jsonb ->> 'telegram_id')::BIGINT, -1) = user_id
+  )
+  WITH CHECK (
+    auth.role() = 'service_role'
+    OR COALESCE((current_setting('request.jwt.claims', true)::jsonb ->> 'telegram_id')::BIGINT, -1) = user_id
+  );
 
 -- Function to auto-update updated_at
 CREATE OR REPLACE FUNCTION update_settings_timestamp()

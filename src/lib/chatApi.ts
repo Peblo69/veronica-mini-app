@@ -54,6 +54,67 @@ export interface Gift {
   is_animated: boolean
 }
 
+async function ensureMessagingAllowed(conversationId: string, senderId: number): Promise<void> {
+  const { data: conversation } = await supabase
+    .from('conversations')
+    .select('participant_1, participant_2')
+    .eq('id', conversationId)
+    .single()
+
+  if (!conversation) return
+
+  const receiverId =
+    conversation.participant_1 === senderId ? conversation.participant_2 : conversation.participant_1
+
+  if (!receiverId || receiverId === senderId) {
+    return
+  }
+
+  const { data: settings } = await supabase
+    .from('user_settings')
+    .select('allow_messages_from')
+    .eq('user_id', receiverId)
+    .single()
+
+  const preference = (settings?.allow_messages_from || 'everyone') as
+    | 'everyone'
+    | 'followers'
+    | 'subscribers'
+    | 'nobody'
+
+  let allowed = true
+  if (preference === 'nobody') {
+    allowed = false
+  } else if (preference === 'followers') {
+    const { data } = await supabase
+      .from('follows')
+      .select('id')
+      .eq('follower_id', senderId)
+      .eq('following_id', receiverId)
+      .limit(1)
+    allowed = Boolean(data && data.length)
+  } else if (preference === 'subscribers') {
+    const { data } = await supabase
+      .from('subscriptions')
+      .select('id')
+      .eq('subscriber_id', senderId)
+      .eq('creator_id', receiverId)
+      .eq('is_active', true)
+      .limit(1)
+    allowed = Boolean(data && data.length)
+  }
+
+  if (!allowed) {
+    let reason = 'This user is not accepting new messages.'
+    if (preference === 'followers') {
+      reason = 'This user only allows messages from followers.'
+    } else if (preference === 'subscribers') {
+      reason = 'This user only allows messages from subscribers.'
+    }
+    throw new Error(reason)
+  }
+}
+
 // ============================================
 // CONVERSATIONS API
 // ============================================
@@ -183,6 +244,8 @@ export async function sendMessage(
   clientMessageId?: string,
   replyToId?: string
 ): Promise<Message | null> {
+  await ensureMessagingAllowed(conversationId, senderId)
+
   const insertData: Record<string, unknown> = {
     conversation_id: conversationId,
     sender_id: senderId,
@@ -221,6 +284,8 @@ export async function sendMediaMessage(
   thumbnailUrl?: string,
   _clientMessageId?: string
 ): Promise<Message | null> {
+  await ensureMessagingAllowed(conversationId, senderId)
+
   console.log('[ChatApi] sendMediaMessage:', { conversationId, senderId, mediaUrl, type })
 
   const { data, error } = await supabase
@@ -258,6 +323,8 @@ export async function sendPPVMessage(
   thumbnailUrl?: string,
   _clientMessageId?: string
 ): Promise<Message | null> {
+  await ensureMessagingAllowed(conversationId, senderId)
+
   const { data, error } = await supabase
     .from('messages')
     .insert({
@@ -287,6 +354,12 @@ export async function sendGift(
   giftId: string,
   giftPrice: number
 ): Promise<{ message: Message | null, error: string | null }> {
+  try {
+    await ensureMessagingAllowed(conversationId, senderId)
+  } catch (err) {
+    return { message: null, error: (err as Error).message || 'Messaging not allowed' }
+  }
+
   // Check balance
   const { data: user } = await supabase
     .from('users')
@@ -351,6 +424,12 @@ export async function sendTip(
   senderId: number,
   amount: number
 ): Promise<{ message: Message | null, error: string | null }> {
+  try {
+    await ensureMessagingAllowed(conversationId, senderId)
+  } catch (err) {
+    return { message: null, error: (err as Error).message || 'Messaging not allowed' }
+  }
+
   // Check balance
   const { data: user } = await supabase
     .from('users')

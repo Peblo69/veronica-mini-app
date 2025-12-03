@@ -1,6 +1,26 @@
 import { supabase } from './supabase'
 import type { User } from './api'
 
+type NotificationPreferenceField =
+  | 'notifications_likes'
+  | 'notifications_comments'
+  | 'notifications_follows'
+  | 'notifications_messages'
+  | 'notifications_subscriptions'
+  | 'notifications_tips'
+
+const notificationPreferenceMap: Partial<Record<NotificationType, NotificationPreferenceField>> = {
+  like: 'notifications_likes',
+  comment: 'notifications_comments',
+  follow: 'notifications_follows',
+  subscription: 'notifications_subscriptions',
+  message: 'notifications_messages',
+  tip: 'notifications_tips',
+  gift: 'notifications_tips',
+  livestream: 'notifications_subscriptions',
+  system: undefined
+}
+
 // ============================================
 // NOTIFICATION TYPES
 // ============================================
@@ -27,6 +47,28 @@ export interface Notification {
   is_read: boolean
   created_at: string
   from_user?: User
+}
+
+async function shouldSendNotification(userId: number, type: NotificationType): Promise<boolean> {
+  const field = notificationPreferenceMap[type]
+  if (!field) return true
+
+  const { data, error } = await supabase
+    .from('user_settings')
+    .select(field)
+    .eq('user_id', userId)
+    .single()
+
+  if (error || !data) {
+    return true
+  }
+
+  const row = data as Record<string, boolean | null>
+  if (typeof row[field] === 'undefined') {
+    return true
+  }
+
+  return row[field] !== false
 }
 
 // ============================================
@@ -105,6 +147,11 @@ export async function createNotification(
     referenceType?: string
   }
 ): Promise<Notification | null> {
+  const allowed = await shouldSendNotification(userId, type)
+  if (!allowed) {
+    return null
+  }
+
   const { data, error } = await supabase
     .from('notifications')
     .insert({

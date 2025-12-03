@@ -28,6 +28,7 @@ export interface Post {
   creator_id: number
   content?: string
   media_url?: string
+  media_urls?: string[]  // Array for multiple images/videos
   media_thumbnail?: string | null
   media_type: string
   visibility: 'public' | 'followers' | 'subscribers'
@@ -244,6 +245,7 @@ export async function getVideoPosts(userId: number, limit = 50, offset = 0): Pro
 export interface CreatePostData {
   content: string
   media_url?: string
+  media_urls?: string[]  // For multiple images
   media_type?: 'image' | 'video' | 'text'
   visibility?: 'public' | 'followers' | 'subscribers'
   is_nsfw?: boolean
@@ -253,25 +255,35 @@ export interface CreatePostData {
 export async function createPost(creatorId: number, postData: CreatePostData) {
   // Determine media type from URL if not provided
   let mediaType = postData.media_type || 'text'
-  if (postData.media_url && !postData.media_type) {
-    if (postData.media_url.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+  const firstUrl = postData.media_urls?.[0] || postData.media_url
+
+  if (firstUrl && !postData.media_type) {
+    if (firstUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
       mediaType = 'image'
-    } else if (postData.media_url.match(/\.(mp4|webm|mov)$/i)) {
+    } else if (firstUrl.match(/\.(mp4|webm|mov)$/i)) {
       mediaType = 'video'
     }
   }
 
+  // Build insert data
+  const insertData: Record<string, unknown> = {
+    creator_id: creatorId,
+    content: postData.content,
+    media_url: firstUrl || postData.media_url, // First image as main/thumbnail
+    media_type: mediaType,
+    visibility: postData.visibility || 'public',
+    is_nsfw: postData.is_nsfw || false,
+    unlock_price: postData.unlock_price || 0,
+  }
+
+  // Add media_urls array if multiple images
+  if (postData.media_urls && postData.media_urls.length > 0) {
+    insertData.media_urls = postData.media_urls
+  }
+
   const { data, error } = await supabase
     .from('posts')
-    .insert({
-      creator_id: creatorId,
-      content: postData.content,
-      media_url: postData.media_url,
-      media_type: mediaType,
-      visibility: postData.visibility || 'public',
-      is_nsfw: postData.is_nsfw || false,
-      unlock_price: postData.unlock_price || 0,
-    })
+    .insert(insertData)
     .select()
     .single()
 

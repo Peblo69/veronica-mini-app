@@ -311,7 +311,9 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       pendingMediaRef.current.delete(tempId)
     } catch (err) {
       console.error('[Chat] Media upload error:', err)
-      resolveTempMessage(tempId, undefined, (err as Error).message)
+      const message = err instanceof Error ? err.message : 'Failed to send media'
+      resolveTempMessage(tempId, undefined, message)
+      alert(message)
     } finally {
       setUploadingCount(prev => Math.max(0, prev - 1))
     }
@@ -371,7 +373,9 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       }
     } catch (err) {
       console.error('[Chat] Send message error:', err)
-      resolveTempMessage(tempId, undefined, (err as Error).message || 'Failed to send message')
+      const message = err instanceof Error ? err.message : 'Failed to send message'
+      resolveTempMessage(tempId, undefined, message)
+      alert(message)
     }
     setSending(false)
   }
@@ -526,7 +530,9 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
           resolveTempMessage(tempId, undefined, 'Failed to send message')
         }
       } catch (err) {
-        resolveTempMessage(tempId, undefined, (err as Error).message)
+        const message = err instanceof Error ? err.message : 'Failed to send message'
+        resolveTempMessage(tempId, undefined, message)
+        alert(message)
       }
       setSending(false)
       return

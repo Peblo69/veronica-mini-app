@@ -74,8 +74,8 @@ export async function getUserSettings(userId: number): Promise<UserSettings> {
     .single()
 
   if (error || !data) {
-    // Return defaults if no settings exist
-    return { user_id: userId, ...defaultSettings }
+    console.warn('[settingsApi] Missing settings row, initializing defaults for', userId, error)
+    return initializeUserSettings(userId)
   }
 
   return data as UserSettings
@@ -90,7 +90,12 @@ export async function updateUserSettings(userId: number, updates: Partial<UserSe
       updated_at: new Date().toISOString()
     }, { onConflict: 'user_id' })
 
-  return !error
+  if (error) {
+    console.error('[settingsApi] Failed to update settings:', error)
+    return false
+  }
+
+  return true
 }
 
 export async function initializeUserSettings(userId: number): Promise<UserSettings> {
@@ -102,6 +107,7 @@ export async function initializeUserSettings(userId: number): Promise<UserSettin
 
   if (error) {
     console.error('Failed to initialize settings:', error)
+    throw error
   }
 
   return settings
