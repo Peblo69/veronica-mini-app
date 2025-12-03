@@ -239,30 +239,65 @@ export async function uploadVoiceMessage(
 }
 
 // Generate video thumbnail
-export async function generateVideoThumbnail(file: File): Promise<string | null> {
+export async function generateVideoThumbnailFile(file: File): Promise<File | null> {
   return new Promise((resolve) => {
-    const video = document.createElement('video')
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')!
-
-    video.onloadeddata = () => {
-      video.currentTime = 1 // Seek to 1 second
-    }
-
-    video.onseeked = () => {
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      ctx.drawImage(video, 0, 0)
-      resolve(canvas.toDataURL('image/jpeg', 0.7))
-      URL.revokeObjectURL(video.src)
-    }
-
-    video.onerror = () => {
+    if (typeof document === 'undefined') {
       resolve(null)
-      URL.revokeObjectURL(video.src)
+      return
+    }
+
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.muted = true
+    video.playsInline = true
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+
+    if (!ctx) {
+      resolve(null)
+      return
+    }
+
+    const revoke = () => {
+      if (video.src) {
+        URL.revokeObjectURL(video.src)
+      }
+    }
+
+    const captureFrame = () => {
+      canvas.width = video.videoWidth || 1280
+      canvas.height = video.videoHeight || 720
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+      canvas.toBlob(
+        (blob) => {
+          revoke()
+          if (blob) {
+            const thumbFile = new File([blob], `${file.name.split('.')[0]}-thumb.jpg`, { type: 'image/jpeg' })
+            resolve(thumbFile)
+          } else {
+            resolve(null)
+          }
+        },
+        'image/jpeg',
+        0.78
+      )
+    }
+
+    video.onloadedmetadata = () => {
+      const targetTime = Math.min(1, Math.max(0.1, video.duration ? video.duration * 0.1 : 0.1))
+      video.currentTime = targetTime
+    }
+
+    video.onseeked = captureFrame
+    video.onerror = () => {
+      revoke()
+      resolve(null)
     }
 
     video.src = URL.createObjectURL(file)
-    video.load()
   })
+}
+
+export async function uploadVideoThumbnail(file: File, userId: number): Promise<UploadResult> {
+  return uploadFile('posts', file, userId)
 }

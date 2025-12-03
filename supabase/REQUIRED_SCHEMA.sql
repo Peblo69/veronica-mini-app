@@ -198,12 +198,82 @@ CREATE TRIGGER on_like_notification
   FOR EACH ROW
   EXECUTE FUNCTION create_like_notification();
 
+-- Enforce DM privacy preferences
+CREATE OR REPLACE FUNCTION enforce_message_privacy()
+RETURNS TRIGGER AS $func$
+DECLARE
+  conv RECORD;
+  target_user BIGINT;
+  preference TEXT;
+  allowed BOOLEAN;
+BEGIN
+  SELECT participant_1, participant_2 INTO conv
+  FROM conversations
+  WHERE id = NEW.conversation_id;
+
+  IF NOT FOUND THEN
+    RETURN NEW;
+  END IF;
+
+  IF conv.participant_1 = NEW.sender_id THEN
+    target_user := conv.participant_2;
+  ELSE
+    target_user := conv.participant_1;
+  END IF;
+
+  IF target_user IS NULL OR target_user = NEW.sender_id THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT allow_messages_from INTO preference
+  FROM user_settings
+  WHERE user_id = target_user;
+
+  IF preference IS NULL OR preference = 'everyone' THEN
+    RETURN NEW;
+  ELSIF preference = 'nobody' THEN
+    RAISE EXCEPTION 'User is not accepting messages at this time.';
+  ELSIF preference = 'followers' THEN
+    SELECT EXISTS (
+      SELECT 1 FROM follows
+      WHERE follower_id = NEW.sender_id
+        AND following_id = target_user
+    ) INTO allowed;
+
+    IF NOT allowed THEN
+      RAISE EXCEPTION 'User only accepts messages from followers.';
+    END IF;
+  ELSIF preference = 'subscribers' THEN
+    SELECT EXISTS (
+      SELECT 1 FROM subscriptions
+      WHERE subscriber_id = NEW.sender_id
+        AND creator_id = target_user
+        AND is_active = TRUE
+    ) INTO allowed;
+
+    IF NOT allowed THEN
+      RAISE EXCEPTION 'User only accepts messages from subscribers.';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS enforce_message_privacy ON messages;
+CREATE TRIGGER enforce_message_privacy
+  BEFORE INSERT ON messages
+  FOR EACH ROW
+  EXECUTE FUNCTION enforce_message_privacy();
+
 -- ============================================
 -- 3. TABLE UPDATES - ADD MISSING COLUMNS
 -- ============================================
 
 -- Posts table: add updated_at if missing
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_thumbnail TEXT;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_thumbnail_urls TEXT[];
 
 -- Messages table: add voice_duration if missing
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS voice_duration INTEGER DEFAULT 0;

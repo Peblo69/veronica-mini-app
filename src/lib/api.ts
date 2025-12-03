@@ -30,6 +30,7 @@ export interface Post {
   media_url?: string
   media_urls?: string[]  // Array for multiple images/videos
   media_thumbnail?: string | null
+  media_thumbnail_urls?: (string | null)[] | null
   media_type: string
   visibility: 'public' | 'followers' | 'subscribers'
   is_nsfw: boolean
@@ -246,6 +247,8 @@ export interface CreatePostData {
   content: string
   media_url?: string
   media_urls?: string[]  // For multiple images
+  media_thumbnail_url?: string
+  media_thumbnail_urls?: (string | null)[]
   media_type?: 'image' | 'video' | 'text'
   visibility?: 'public' | 'followers' | 'subscribers'
   is_nsfw?: boolean
@@ -276,9 +279,17 @@ export async function createPost(creatorId: number, postData: CreatePostData) {
     unlock_price: postData.unlock_price || 0,
   }
 
+  if (postData.media_thumbnail_url) {
+    insertData.media_thumbnail = postData.media_thumbnail_url
+  }
+
   // Add media_urls array if multiple images
   if (postData.media_urls && postData.media_urls.length > 0) {
     insertData.media_urls = postData.media_urls
+  }
+
+  if (postData.media_thumbnail_urls && postData.media_thumbnail_urls.length > 0) {
+    insertData.media_thumbnail_urls = postData.media_thumbnail_urls
   }
 
   const { data, error } = await supabase
@@ -304,6 +315,8 @@ export async function editPost(postId: number, creatorId: number, updates: Parti
       visibility: updates.visibility,
       is_nsfw: updates.is_nsfw,
       unlock_price: updates.unlock_price,
+      media_thumbnail: updates.media_thumbnail_url,
+      media_thumbnail_urls: updates.media_thumbnail_urls,
       updated_at: new Date().toISOString()
     })
     .eq('id', postId)

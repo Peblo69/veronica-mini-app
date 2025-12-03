@@ -197,6 +197,9 @@ export default function PostDetail({ post, user, onBack, onDeleted, onUpdated }:
                 <video
                   src={currentPost.media_url}
                   controls
+                  playsInline
+                  preload="metadata"
+                  poster={currentPost.media_thumbnail || undefined}
                   className="w-full max-h-[70vh] object-contain bg-black"
                 />
               ) : (

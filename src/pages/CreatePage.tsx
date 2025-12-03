@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Image, Video, Lock, Globe, Users, Send, Loader2, DollarSign, X, Play, Star } from 'lucide-react'
-import { createPost, type User } from '../lib/api'
-import { uploadPostMedia, getMediaType, compressImage } from '../lib/storage'
+import { createPost, type User, type CreatePostData } from '../lib/api'
+import { uploadPostMedia, getMediaType, compressImage, generateVideoThumbnailFile, uploadVideoThumbnail } from '../lib/storage'
 import { getUserSettings } from '../lib/settingsApi'
 
 interface CreatePageProps {
@@ -16,11 +16,16 @@ interface MediaFile {
   file: File
   preview: string
   type: 'image' | 'video'
+  thumbnail?: {
+    file: File | null
+    preview?: string
+  }
 }
 
 export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
   const [content, setContent] = useState('')
   const [visibility, setVisibility] = useState<Visibility>('public')
+  const [defaultVisibility, setDefaultVisibility] = useState<Visibility>('public')
   const [isNsfw, setIsNsfw] = useState(false)
   const [unlockPrice, setUnlockPrice] = useState('')
   const [showPriceInput, setShowPriceInput] = useState(false)
@@ -36,20 +41,30 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
 
   useEffect(() => {
     let mounted = true
+
+    if (!isCreator) {
+      setDefaultVisibility('public')
+      setVisibility('public')
+      return
+    }
+
     getUserSettings(user.telegram_id)
       .then((userSettings) => {
-        if (!mounted) return
-        if (userSettings?.default_post_visibility) {
-          setVisibility(userSettings.default_post_visibility as Visibility)
-        }
+        if (!mounted || !userSettings) return
+        const pref = (userSettings.default_post_visibility as Visibility) || 'public'
+        setDefaultVisibility(pref)
+        setVisibility(pref)
       })
       .catch(() => {
-        // Ignore; defaults already applied
+        if (!mounted) return
+        setDefaultVisibility('public')
+        setVisibility('public')
       })
+
     return () => {
       mounted = false
     }
-  }, [user.telegram_id])
+  }, [user.telegram_id, isCreator])
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>, _type: 'image' | 'video') => {
     const files = e.target.files
@@ -63,10 +78,23 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
 
       // Create preview
       const preview = URL.createObjectURL(file)
+      let thumbnail: MediaFile['thumbnail']
+
+      if (mediaType === 'video') {
+        const thumbFile = await generateVideoThumbnailFile(file)
+        if (thumbFile) {
+          thumbnail = {
+            file: thumbFile,
+            preview: URL.createObjectURL(thumbFile)
+          }
+        }
+      }
+
       newFiles.push({
         file,
         preview,
-        type: mediaType as 'image' | 'video'
+        type: mediaType as 'image' | 'video',
+        thumbnail
       })
     }
 
@@ -78,6 +106,9 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
     setMediaFiles(prev => {
       const newFiles = [...prev]
       URL.revokeObjectURL(newFiles[index].preview)
+      if (newFiles[index].thumbnail?.preview) {
+        URL.revokeObjectURL(newFiles[index].thumbnail.preview)
+      }
       newFiles.splice(index, 1)
       return newFiles
     })
@@ -91,6 +122,7 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
 
     try {
       const mediaUrls: string[] = []
+      const thumbnailUrls: (string | null)[] = []
 
       // Upload all media files
       if (mediaFiles.length > 0) {
@@ -119,6 +151,26 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
           if (result.url) {
             mediaUrls.push(result.url)
           }
+
+          if (mediaFile.type === 'video') {
+            let thumbnailFile = mediaFile.thumbnail?.file
+            if (!thumbnailFile) {
+              thumbnailFile = await generateVideoThumbnailFile(mediaFile.file)
+            }
+
+            let thumbnailUrl: string | null = null
+            if (thumbnailFile) {
+              const thumbUpload = await uploadVideoThumbnail(thumbnailFile, user.telegram_id)
+              if (thumbUpload.error) {
+                console.warn('Thumbnail upload failed:', thumbUpload.error)
+              } else {
+                thumbnailUrl = thumbUpload.url
+              }
+            }
+            thumbnailUrls.push(thumbnailUrl)
+          } else {
+            thumbnailUrls.push(null)
+          }
         }
       }
 
@@ -129,14 +181,23 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
       const finalNsfw = isCreator ? isNsfw : false
       const finalPrice = isCreator && showPriceInput ? parseFloat(unlockPrice) || 0 : 0
 
-      const { error } = await createPost(user.telegram_id, {
+      const postPayload: CreatePostData = {
         content,
         media_url: mediaUrls[0] || '', // First image as main
         media_urls: mediaUrls.length > 0 ? mediaUrls : undefined,
         visibility: finalVisibility,
         is_nsfw: finalNsfw,
         unlock_price: finalPrice,
-      })
+      }
+
+      const normalizedThumbnailUrls = thumbnailUrls.map(url => url || null)
+      const firstVideoThumbnail = normalizedThumbnailUrls.find(url => !!url)
+      if (firstVideoThumbnail) {
+        postPayload.media_thumbnail_url = firstVideoThumbnail
+        postPayload.media_thumbnail_urls = normalizedThumbnailUrls
+      }
+
+      const { error } = await createPost(user.telegram_id, postPayload)
 
       if (error) {
         alert('Failed to create post')
@@ -147,8 +208,14 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
         setIsNsfw(false)
         setUnlockPrice('')
         setShowPriceInput(false)
+        setVisibility(defaultVisibility)
         // Clean up previews
-        mediaFiles.forEach(m => URL.revokeObjectURL(m.preview))
+        mediaFiles.forEach(m => {
+          URL.revokeObjectURL(m.preview)
+          if (m.thumbnail?.preview) {
+            URL.revokeObjectURL(m.thumbnail.preview)
+          }
+        })
         setMediaFiles([])
         setTimeout(() => setSuccess(false), 2000)
       }
@@ -221,8 +288,9 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
                     />
                   ) : (
                     <div className="relative">
-                      <video
-                        src={media.preview}
+                      <img
+                        src={media.thumbnail?.preview || media.preview}
+                        alt=""
                         className="w-full h-48 object-cover"
                       />
                       <div className="absolute inset-0 flex items-center justify-center bg-black/30">

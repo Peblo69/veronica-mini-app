@@ -6,6 +6,7 @@ import './index.css'
 
 import { useViewport } from './hooks/useViewport'
 import { getOrCreateUser, getUser, type User as UserType } from './lib/api'
+import { registerSession } from './lib/settingsApi'
 
 const HomePage = lazy(() => import('./pages/HomePage'))
 const ExplorePage = lazy(() => import('./pages/ExplorePage'))
@@ -54,6 +55,30 @@ function App() {
   useEffect(() => {
     initUser()
   }, [])
+
+  useEffect(() => {
+    if (!user) return
+    let interval: ReturnType<typeof setInterval> | null = null
+
+    const touchSession = async () => {
+      try {
+        await registerSession(user.telegram_id)
+      } catch (err) {
+        console.warn('Failed to refresh session', err)
+      }
+    }
+
+    void touchSession()
+    interval = window.setInterval(() => {
+      void touchSession()
+    }, 60 * 1000)
+
+    return () => {
+      if (interval) {
+        clearInterval(interval)
+      }
+    }
+  }, [user?.telegram_id])
 
   useEffect(() => {
     if (!user || user.telegram_id !== ADMIN_TELEGRAM_ID) return

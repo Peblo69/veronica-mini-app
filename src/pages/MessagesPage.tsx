@@ -73,6 +73,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const [messageReactions, setMessageReactions] = useState<Map<string, MessageReaction[]>>(new Map())
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const previewUrlsRef = useRef<Set<string>>(new Set())
   const pendingMediaRef = useRef<Map<string, PendingMedia>>(new Map())
@@ -81,6 +82,8 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const keyboardHeightRef = useRef(0)
   const viewportKeyboardRef = useRef(0)
   const composerFocusedRef = useRef(false)
+  const initialScrollDoneRef = useRef(false)
+  const isSendingRef = useRef(false)
   const setKeyboardInset = useCallback((value: number, options?: { force?: boolean }) => {
     const nextValue = Math.max(0, Math.round(value || 0))
     viewportKeyboardRef.current = nextValue
@@ -248,15 +251,20 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     }
   }, [activeConversation, setKeyboardInset])
 
-  // Scroll to bottom on new messages
+  // Scroll to bottom on new messages (only after initial load is done)
   useEffect(() => {
-    if (messages.length > 0) {
-      // Use setTimeout to ensure DOM has updated
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'instant', block: 'end' })
-      }, 50)
+    if (messages.length > 0 && initialScrollDoneRef.current) {
+      // Only smooth scroll for new messages after initial load
+      requestAnimationFrame(() => {
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTo({
+            top: messagesContainerRef.current.scrollHeight,
+            behavior: 'smooth'
+          })
+        }
+      })
     }
-  }, [messages])
+  }, [messages.length])
 
   const loadConversations = async () => {
     setLoading(true)
@@ -266,6 +274,9 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   }
 
   const loadMessages = async (conversationId: string) => {
+    // Reset scroll flag when loading new conversation
+    initialScrollDoneRef.current = false
+
     const data = await getMessages(conversationId)
     setMessages(data)
 
@@ -275,6 +286,16 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       const reactions = await getMessageReactions(messageIds)
       setMessageReactions(reactions)
     }
+
+    // Scroll to bottom after messages load
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+        }
+        initialScrollDoneRef.current = true
+      }, 100)
+    })
   }
 
   const loadGifts = async () => {
@@ -320,11 +341,17 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   }
 
   const handleSendMessage = async () => {
+    // Use ref to prevent double-sends on iOS
+    if (isSendingRef.current) return
     if (!newMessage.trim() || !activeConversation || sending) return
+
+    isSendingRef.current = true
 
     const text = newMessage.trim()
     const tempId = `temp-text-${Date.now()}`
     const replyToId = replyTo?.id?.startsWith('temp-') ? undefined : replyTo?.id
+    const savedReplyTo = replyTo // Save before clearing
+
     const optimisticMessage: ChatMessage = {
       id: tempId,
       _localId: tempId,
@@ -345,22 +372,28 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       created_at: new Date().toISOString(),
       client_message_id: tempId,
       reply_to_id: replyToId,
-      reply_to: replyTo,
+      reply_to: savedReplyTo,
     }
-    const savedReplyTo = replyTo // Save before clearing
 
-    setMessages(prev => [...prev, optimisticMessage])
+    // Clear input FIRST before any async work
     setNewMessage('')
     setReplyTo(null)
     setSending(true)
-    if (inputRef.current) {
-      inputRef.current.blur()
-    }
-    composerFocusedRef.current = false
-    setKeyboardInset(0, { force: true })
+
+    // Add optimistic message
+    setMessages(prev => [...prev, optimisticMessage])
+
+    // Blur after a micro delay to let iOS finish the touch event
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.blur()
+      }
+      composerFocusedRef.current = false
+      setKeyboardInset(0, { force: true })
+    }, 50)
 
     try {
-      // Pass reply_to_id if replying to a message (use savedReplyTo since replyTo was cleared)
+      // Pass reply_to_id if replying to a message
       const msg = await sendMessage(activeConversation.id, user.telegram_id, text, tempId, replyToId)
       if (msg) {
         // Add the reply_to data to the returned message
@@ -377,7 +410,9 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       resolveTempMessage(tempId, undefined, message)
       alert(message)
     }
+
     setSending(false)
+    isSendingRef.current = false
   }
 
   const handleSendGift = async (gift: GiftType) => {
@@ -589,17 +624,21 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       return
     }
 
-    // Optimistic update - keep it even on error
+    // Check if already exists for toggle behavior
+    const currentReactions = messageReactions.get(messageId) || []
+    const existingReaction = currentReactions.find(r => r.user_id === user.telegram_id && r.emoji === emoji)
+
+    // Optimistic update
     setMessageReactions(prev => {
       const newMap = new Map(prev)
       const reactions = [...(newMap.get(messageId) || [])]
-      const existingIndex = reactions.findIndex(r => r.user_id === user.telegram_id && r.emoji === emoji)
 
-      if (existingIndex >= 0) {
-        console.log('[Reaction] Removing existing reaction')
-        reactions.splice(existingIndex, 1)
+      if (existingReaction) {
+        // Remove existing
+        const idx = reactions.findIndex(r => r.id === existingReaction.id)
+        if (idx >= 0) reactions.splice(idx, 1)
       } else {
-        console.log('[Reaction] Adding new reaction')
+        // Add new
         reactions.push({
           id: `temp-${Date.now()}`,
           message_id: messageId,
@@ -609,7 +648,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         })
       }
 
-      console.log('[Reaction] Updated reactions:', reactions)
       newMap.set(messageId, reactions)
       return newMap
     })
@@ -617,12 +655,29 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     setShowMessageMenu(false)
     setSelectedMessage(null)
 
-    // Call backend (fire and forget - keep optimistic update)
+    // Call backend and then refresh reactions from server to get real IDs
     try {
       const result = await addReaction(messageId, user.telegram_id, emoji)
       console.log('[Reaction] Backend result:', result)
+
+      if (result.success) {
+        // Refresh reactions from server to sync state
+        const updatedReactions = await getMessageReactions([messageId])
+        setMessageReactions(prev => {
+          const newMap = new Map(prev)
+          newMap.set(messageId, updatedReactions.get(messageId) || [])
+          return newMap
+        })
+      }
     } catch (err) {
       console.error('[Reaction] Backend error:', err)
+      // On error, refresh from server to get correct state
+      const updatedReactions = await getMessageReactions([messageId])
+      setMessageReactions(prev => {
+        const newMap = new Map(prev)
+        newMap.set(messageId, updatedReactions.get(messageId) || [])
+        return newMap
+      })
     }
   }
 
@@ -669,34 +724,40 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     }
   }
 
-  // Scroll to replied message with shake animation
-  const scrollToMessage = (messageId: string) => {
+  // Scroll to replied message with highlight animation
+  const scrollToMessage = useCallback((messageId: string) => {
     const element = messageRefs.current.get(messageId)
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (!element) return
 
-      // Add highlight and shake animation
-      element.style.transition = 'transform 0.1s ease-in-out, background-color 0.3s'
-      element.style.backgroundColor = 'rgba(59, 130, 246, 0.2)'
+    // Scroll to the message
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' })
 
-      // Shake animation sequence
-      const shake = async () => {
-        const moves = ['-4px', '4px', '-3px', '3px', '-2px', '2px', '0px']
-        for (const x of moves) {
-          element.style.transform = `translateX(${x})`
-          await new Promise(r => setTimeout(r, 50))
-        }
-      }
+    // Add highlight with pulse animation
+    setTimeout(() => {
+      element.classList.add('animate-pulse')
+      element.style.backgroundColor = 'rgba(59, 130, 246, 0.25)'
+      element.style.borderRadius = '16px'
+      element.style.transition = 'background-color 0.3s ease-out'
 
-      setTimeout(() => shake(), 300) // Start shake after scroll completes
-
-      // Remove highlight after animation
+      // Flash effect - pulse twice
       setTimeout(() => {
+        element.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'
+      }, 200)
+      setTimeout(() => {
+        element.style.backgroundColor = 'rgba(59, 130, 246, 0.25)'
+      }, 400)
+      setTimeout(() => {
+        element.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'
+      }, 600)
+
+      // Remove all effects
+      setTimeout(() => {
+        element.classList.remove('animate-pulse')
         element.style.backgroundColor = ''
-        element.style.transform = ''
+        element.style.borderRadius = ''
       }, 1500)
-    }
-  }
+    }, 300)
+  }, [])
 
   const formatTime = (date: string) => {
     const d = new Date(date)
@@ -840,7 +901,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         </div>
 
         {/* Messages - Scrollable area */}
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2 overscroll-none">
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-2 overscroll-none">
           {messages.map((msg, index) => {
             const isOwn = msg.sender_id === user.telegram_id
             const isPPVLocked = msg.is_ppv && !msg.ppv_unlocked_by?.includes(user.telegram_id) && !isOwn
@@ -872,17 +933,30 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 {/* Reply preview - shows what message this is replying to */}
                 {msg.reply_to && (
                   <button
-                    onClick={() => scrollToMessage(msg.reply_to!.id)}
-                    className={`flex items-center gap-2 text-xs px-3 py-2 rounded-xl mb-1 max-w-[80%] ${
-                      isOwn ? 'bg-white/20 text-white/90 ml-auto border-l-2 border-white/50' : 'bg-gray-100 text-gray-600 border-l-2 border-gray-400'
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      scrollToMessage(msg.reply_to!.id)
+                    }}
+                    className={`flex items-start gap-2 text-xs px-3 py-2 rounded-xl mb-1.5 max-w-[85%] ${
+                      isOwn
+                        ? 'bg-blue-400/30 text-white ml-auto border-l-2 border-white/70'
+                        : 'bg-gray-100 text-gray-700 border-l-2 border-of-blue'
                     }`}
                   >
-                    <span className="opacity-70">↩</span>
-                    <div className="flex flex-col items-start min-w-0">
-                      <span className={`text-[10px] font-medium ${isOwn ? 'text-white/70' : 'text-gray-500'}`}>
+                    <div className="flex flex-col items-start min-w-0 flex-1">
+                      <span className={`text-[11px] font-semibold mb-0.5 ${isOwn ? 'text-white/90' : 'text-of-blue'}`}>
                         {msg.reply_to.sender_id === user.telegram_id ? 'You' : activeConversation.other_user?.first_name || 'User'}
                       </span>
-                      <span className="truncate w-full">{msg.reply_to.content?.slice(0, 40) || '📷 Media'}</span>
+                      <span className={`truncate w-full text-[13px] ${isOwn ? 'text-white/80' : 'text-gray-600'}`}>
+                        {msg.reply_to.content
+                          ? msg.reply_to.content.slice(0, 50) + (msg.reply_to.content.length > 50 ? '...' : '')
+                          : msg.reply_to.message_type === 'image' ? '📷 Photo'
+                          : msg.reply_to.message_type === 'video' ? '🎥 Video'
+                          : msg.reply_to.message_type === 'voice' ? '🎤 Voice message'
+                          : msg.reply_to.message_type === 'gift' ? '🎁 Gift'
+                          : '📎 Media'
+                        }
+                      </span>
                     </div>
                   </button>
                 )}
@@ -1284,15 +1358,29 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 10 }}
-              className="shrink-0 bg-gray-100 border-t border-gray-200 px-4 py-2 flex items-center gap-3"
+              className="shrink-0 bg-white border-t border-gray-200 px-4 py-2.5 flex items-center gap-3"
             >
-              <div className="w-1 h-10 bg-of-blue rounded-full" />
+              <div className="w-1 h-12 bg-of-blue rounded-full" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-of-blue">Replying to</p>
-                <p className="text-sm text-gray-600 truncate">{replyTo.content?.slice(0, 50) || 'Media'}</p>
+                <p className="text-xs font-bold text-of-blue mb-0.5">
+                  Replying to {replyTo.sender_id === user.telegram_id ? 'yourself' : activeConversation?.other_user?.first_name || 'user'}
+                </p>
+                <p className="text-sm text-gray-600 truncate">
+                  {replyTo.content
+                    ? replyTo.content.slice(0, 60) + (replyTo.content.length > 60 ? '...' : '')
+                    : replyTo.message_type === 'image' ? '📷 Photo'
+                    : replyTo.message_type === 'video' ? '🎥 Video'
+                    : replyTo.message_type === 'voice' ? '🎤 Voice message'
+                    : replyTo.message_type === 'gift' ? '🎁 Gift'
+                    : '📎 Media'
+                  }
+                </p>
               </div>
-              <button onClick={() => setReplyTo(null)} className="p-1.5 hover:bg-gray-200 rounded-full">
-                <X className="w-4 h-4 text-gray-500" />
+              <button
+                onClick={() => setReplyTo(null)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
               </button>
             </motion.div>
           )}
@@ -1358,9 +1446,16 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
             <div className="shrink-0 flex items-center justify-center">
               {newMessage.trim() ? (
                 <button
-                  onClick={handleSendMessage}
-                  disabled={sending}
-                  className="w-10 h-10 bg-of-blue rounded-full text-white flex items-center justify-center disabled:opacity-50"
+                  onTouchEnd={(e) => {
+                    e.preventDefault()
+                    handleSendMessage()
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    handleSendMessage()
+                  }}
+                  disabled={sending || isSendingRef.current}
+                  className="w-10 h-10 bg-of-blue rounded-full text-white flex items-center justify-center disabled:opacity-50 active:scale-95 transition-transform"
                 >
                   {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 ml-0.5" />}
                 </button>

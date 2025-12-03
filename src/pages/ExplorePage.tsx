@@ -50,6 +50,7 @@ function VideoThumbnail({ video, onClick }: { video: Post; onClick: () => void }
         muted
         playsInline
         preload="metadata"
+        poster={video.media_thumbnail || undefined}
       />
 
       {/* Play Icon Overlay - only show when loaded */}
@@ -395,6 +396,7 @@ function ReelsViewer({ videos, initialIndex, onClose, onLike, onCreatorClick }: 
                 muted={isMuted}
                 autoPlay={index === currentIndex}
                 preload={Math.abs(index - currentIndex) <= 1 ? 'auto' : 'none'}
+                poster={video.media_thumbnail || undefined}
                 onLoadedData={() => handleVideoLoaded(index)}
                 onCanPlay={() => handleVideoLoaded(index)}
               />

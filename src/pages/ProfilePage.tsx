@@ -84,15 +84,11 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
     if (isVideoPost(post)) {
       return (
         <>
-          <video
-            src={post.media_url}
+          <img
+            src={post.media_thumbnail || post.media_url}
             className="w-full h-full object-cover"
-            playsInline
-            muted
-            loop={false}
-            controls={false}
-            preload="metadata"
-            poster={post.media_thumbnail || undefined}
+            alt=""
+            loading="lazy"
           />
           <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/10 to-transparent" />
           <div className="absolute top-1 right-1 bg-black/60 rounded-full p-1">

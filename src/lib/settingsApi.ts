@@ -230,3 +230,64 @@ export const accentColors = [
   { name: 'Teal', value: '#14b8a6' },
   { name: 'Cyan', value: '#06b6d4' }
 ]
+
+const SESSION_STORAGE_KEY = 'veronica_session_id'
+
+function getDeviceInfo() {
+  if (typeof window === 'undefined') {
+    return {
+      device_name: 'Unknown device',
+      device_type: 'web',
+      platform: 'unknown'
+    }
+  }
+
+  const tgPlatform = (window as any).Telegram?.WebApp?.platform
+  const ua = navigator.userAgent || 'Unknown'
+  const platform = navigator.platform || 'unknown'
+
+  return {
+    device_name: tgPlatform ? `Telegram ${tgPlatform}` : ua.split('(')[0]?.trim() || 'Web Client',
+    device_type: tgPlatform || 'web',
+    platform
+  }
+}
+
+export async function registerSession(userId: number): Promise<string | null> {
+  try {
+    if (typeof window === 'undefined') return null
+
+    const storageKey = `${SESSION_STORAGE_KEY}_${userId}`
+    let sessionId = window.localStorage.getItem(storageKey)
+    if (!sessionId) {
+      sessionId = crypto.randomUUID()
+      window.localStorage.setItem(storageKey, sessionId)
+    }
+
+    const info = getDeviceInfo()
+    const { error } = await supabase
+      .from('user_sessions')
+      .upsert(
+        {
+          id: sessionId,
+          user_id: userId,
+          device_name: info.device_name,
+          device_type: info.device_type,
+          location: null,
+          ip_address: null,
+          last_active: new Date().toISOString()
+        },
+        { onConflict: 'id' }
+      )
+
+    if (error) {
+      console.error('[settingsApi] Failed to register session', error)
+      return null
+    }
+
+    return sessionId
+  } catch (err) {
+    console.error('[settingsApi] Session registration error', err)
+    return null
+  }
+}
