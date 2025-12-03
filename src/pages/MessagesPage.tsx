@@ -565,7 +565,14 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
   // Add reaction to message
   const handleAddReaction = async (messageId: string, emoji: string) => {
-    // Optimistic update
+    // Don't allow reactions on temp/pending messages
+    if (messageId.startsWith('temp-')) {
+      setShowMessageMenu(false)
+      setSelectedMessage(null)
+      return
+    }
+
+    // Optimistic update - keep it even on error
     setMessageReactions(prev => {
       const newMap = new Map(prev)
       const reactions = [...(newMap.get(messageId) || [])]
@@ -590,16 +597,11 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     setShowMessageMenu(false)
     setSelectedMessage(null)
 
-    // Call backend
-    const { error } = await addReaction(messageId, user.telegram_id, emoji)
-    if (error) {
-      console.error('Failed to add reaction:', error)
-      // Reload reactions on error
-      if (activeConversation) {
-        const messageIds = messages.map(m => m.id)
-        const reactions = await getMessageReactions(messageIds)
-        setMessageReactions(reactions)
-      }
+    // Call backend (fire and forget - keep optimistic update)
+    try {
+      await addReaction(messageId, user.telegram_id, emoji)
+    } catch (err) {
+      console.error('Failed to add reaction:', err)
     }
   }
 
@@ -620,16 +622,20 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     setShowMessageMenu(false)
     setSelectedMessage(null)
 
-    // Optimistic remove from UI
+    // For temp messages, just remove from UI
+    if (messageId.startsWith('temp-')) {
+      setMessages(prev => prev.filter(m => m.id !== messageId))
+      return
+    }
+
+    // Optimistic remove from UI - keep it removed even on error
     setMessages(prev => prev.filter(m => m.id !== messageId))
 
-    const { error } = await deleteMessage(messageId, user.telegram_id)
-    if (error) {
-      console.error('Failed to delete message:', error)
-      // Reload messages on error
-      if (activeConversation) {
-        loadMessages(activeConversation.id)
-      }
+    // Call backend (fire and forget)
+    try {
+      await deleteMessage(messageId, user.telegram_id)
+    } catch (err) {
+      console.error('Failed to delete message:', err)
     }
   }
 
