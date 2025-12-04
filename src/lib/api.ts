@@ -478,11 +478,12 @@ export async function getPost(postId: number): Promise<Post | null> {
   return data as Post | null
 }
 
-// Like post
+// Like post (atomic)
 export async function likePost(userId: number, postId: number) {
-  const { error } = await supabase
-    .from('likes')
-    .insert({ user_id: userId, post_id: postId })
+  const { data, error } = await supabase.rpc('atomic_like_post', {
+    p_user_id: userId,
+    p_post_id: postId
+  })
 
   if (error) {
     console.error('Like post error:', error)
@@ -490,17 +491,20 @@ export async function likePost(userId: number, postId: number) {
     return false
   }
 
-  await supabase.rpc('increment_likes', { p_post_id: postId })
+  if (!data) {
+    // Already liked
+    return false
+  }
+
   return true
 }
 
-// Unlike post
+// Unlike post (atomic)
 export async function unlikePost(userId: number, postId: number) {
-  const { error } = await supabase
-    .from('likes')
-    .delete()
-    .eq('user_id', userId)
-    .eq('post_id', postId)
+  const { data, error } = await supabase.rpc('atomic_unlike_post', {
+    p_user_id: userId,
+    p_post_id: postId
+  })
 
   if (error) {
     console.error('Unlike post error:', error)
@@ -508,8 +512,7 @@ export async function unlikePost(userId: number, postId: number) {
     return false
   }
 
-  await supabase.rpc('decrement_likes', { p_post_id: postId })
-  return true
+  return data === true
 }
 
 // Get users who liked a post
@@ -582,11 +585,12 @@ export async function getPostCommenters(postId: number): Promise<User[]> {
 // FOLLOWS / SUBSCRIPTIONS API
 // ============================================
 
-// Follow user
+// Follow user (atomic)
 export async function followUser(followerId: number, followingId: number) {
-  const { error } = await supabase
-    .from('follows')
-    .insert({ follower_id: followerId, following_id: followingId })
+  const { data, error } = await supabase.rpc('atomic_follow_user', {
+    p_follower_id: followerId,
+    p_following_id: followingId
+  })
 
   if (error) {
     console.error('Follow user error:', error)
@@ -594,21 +598,21 @@ export async function followUser(followerId: number, followingId: number) {
     return false
   }
 
-  // Update follower's following_count
-  await supabase.rpc('increment_following', { user_id: followerId })
-  // Update followed user's followers_count
-  await supabase.rpc('increment_followers', { user_id: followingId })
+  if (!data) {
+    // Already following or trying to follow self
+    return false
+  }
+
   toast.success('Following!')
   return true
 }
 
-// Unfollow user
+// Unfollow user (atomic)
 export async function unfollowUser(followerId: number, followingId: number) {
-  const { error } = await supabase
-    .from('follows')
-    .delete()
-    .eq('follower_id', followerId)
-    .eq('following_id', followingId)
+  const { data, error } = await supabase.rpc('atomic_unfollow_user', {
+    p_follower_id: followerId,
+    p_following_id: followingId
+  })
 
   if (error) {
     console.error('Unfollow user error:', error)
@@ -616,11 +620,7 @@ export async function unfollowUser(followerId: number, followingId: number) {
     return false
   }
 
-  // Update follower's following_count
-  await supabase.rpc('decrement_following', { user_id: followerId })
-  // Update followed user's followers_count
-  await supabase.rpc('decrement_followers', { user_id: followingId })
-  return true
+  return data === true
 }
 
 // Check if following
@@ -768,22 +768,36 @@ export function canViewPost(
   return true
 }
 
-// Save/bookmark post
+// Save/bookmark post (atomic)
 export async function savePost(userId: number, postId: number) {
-  const { error } = await supabase
-    .from('saved_posts')
-    .insert({ user_id: userId, post_id: postId })
-  return !error
+  const { data, error } = await supabase.rpc('atomic_save_post', {
+    p_user_id: userId,
+    p_post_id: postId
+  })
+
+  if (error) {
+    console.error('Save post error:', error)
+    toast.error('Failed to save post')
+    return false
+  }
+
+  return data === true
 }
 
-// Unsave post
+// Unsave post (atomic)
 export async function unsavePost(userId: number, postId: number) {
-  const { error } = await supabase
-    .from('saved_posts')
-    .delete()
-    .eq('user_id', userId)
-    .eq('post_id', postId)
-  return !error
+  const { data, error } = await supabase.rpc('atomic_unsave_post', {
+    p_user_id: userId,
+    p_post_id: postId
+  })
+
+  if (error) {
+    console.error('Unsave post error:', error)
+    toast.error('Failed to unsave post')
+    return false
+  }
+
+  return data === true
 }
 
 // Get saved posts

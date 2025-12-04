@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { toast } from './toast'
 import type { User } from './api'
 
 // ============================================
@@ -103,6 +104,7 @@ export async function addComment(
 
   if (error) {
     console.error('Add comment error:', error)
+    toast.error('Failed to add comment')
     return null
   }
 

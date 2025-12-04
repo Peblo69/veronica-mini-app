@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Image, Video, Lock, Globe, Send, Loader2, DollarSign, X, Play, Star, ArrowRight, ArrowLeft, Plus, Sparkles, Megaphone, Sliders, Wand2 } from 'lucide-react'
+import { Image, Video, Lock, Globe, Send, Loader2, DollarSign, X, Play, Star, ArrowLeft, Plus, Megaphone, Sliders } from 'lucide-react'
 import { createPost, type User, type CreatePostData } from '../lib/api'
 import { uploadPostMedia, getMediaType, compressImage, generateVideoThumbnailFile, uploadVideoThumbnail } from '../lib/storage'
 import { getUserSettings } from '../lib/settingsApi'
@@ -29,14 +29,15 @@ interface MediaFile {
   }
 }
 
-const SphereAnimation = ({ onClick }: { onClick: () => void }) => {
+// Premium Monochrome Sphere
+const MercurySphere = ({ onClick }: { onClick: () => void }) => {
   return (
-    <div className="relative w-64 h-64 flex items-center justify-center cursor-pointer" onClick={onClick}>
-      {/* Animated Orbits */}
+    <div className="relative w-72 h-72 flex items-center justify-center cursor-pointer group" onClick={onClick}>
+      {/* Outer Rings */}
       {[...Array(3)].map((_, i) => (
         <motion.div
           key={i}
-          className="absolute inset-0 rounded-full border border-blue-500/30"
+          className="absolute inset-0 rounded-full border border-white/10"
           style={{
             borderWidth: '1px',
             rotateX: 60 + i * 10,
@@ -44,56 +45,59 @@ const SphereAnimation = ({ onClick }: { onClick: () => void }) => {
           }}
           animate={{
             rotateZ: [0, 360],
-            scale: [1, 1.1, 1],
+            scale: [1, 1.05, 1],
+            opacity: [0.3, 0.6, 0.3]
           }}
           transition={{
-            rotateZ: { duration: 8 + i * 2, repeat: Infinity, ease: "linear" },
-            scale: { duration: 4, repeat: Infinity, ease: "easeInOut" }
+            rotateZ: { duration: 15 + i * 5, repeat: Infinity, ease: "linear" },
+            scale: { duration: 8, repeat: Infinity, ease: "easeInOut" },
+            opacity: { duration: 4, repeat: Infinity, ease: "easeInOut" }
           }}
         />
       ))}
       
-      {/* Core Sphere */}
+      {/* Core Liquid Metal Sphere */}
       <motion.div
-        className="absolute w-32 h-32 rounded-full bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 blur-md"
+        className="absolute w-32 h-32 rounded-full bg-gradient-to-b from-white/20 via-white/5 to-black backdrop-blur-md border border-white/10 shadow-[inset_0_0_20px_rgba(255,255,255,0.1)]"
         animate={{
-          scale: [1, 1.2, 1],
-          opacity: [0.6, 0.8, 0.6],
+          y: [0, -10, 0],
         }}
         transition={{
-          duration: 3,
+          duration: 4,
           repeat: Infinity,
           ease: "easeInOut"
         }}
-      />
+      >
+        {/* Inner Glow */}
+        <div className="absolute inset-0 rounded-full bg-white/5 blur-xl" />
+      </motion.div>
       
-      {/* Floating Particles */}
-      {[...Array(6)].map((_, i) => (
+      {/* Floating Particles - White/Grey */}
+      {[...Array(8)].map((_, i) => (
         <motion.div
           key={`p-${i}`}
-          className="absolute w-2 h-2 bg-white rounded-full blur-[1px]"
-          initial={{ x: 0, y: 0 }}
+          className="absolute w-1 h-1 bg-white/40 rounded-full"
+          initial={{ x: 0, y: 0, opacity: 0 }}
           animate={{
-            x: Math.cos(i * 60) * 80,
-            y: Math.sin(i * 60) * 80,
-            opacity: [0, 1, 0],
+            x: Math.cos(i * 45) * 100,
+            y: Math.sin(i * 45) * 100,
+            opacity: [0, 0.8, 0],
+            scale: [0, 1, 0]
           }}
           transition={{
-            duration: 3,
+            duration: 4,
             repeat: Infinity,
-            delay: i * 0.5,
-            ease: "easeInOut"
+            delay: i * 0.3,
+            ease: "easeOut"
           }}
         />
       ))}
 
-      {/* Plus Button */}
+      {/* Center Plus */}
       <motion.div
-        className="relative z-10 w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.5)]"
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.9 }}
+        className="relative z-10 w-16 h-16 bg-white text-black rounded-full flex items-center justify-center shadow-[0_0_40px_rgba(255,255,255,0.2)] group-hover:scale-110 transition-transform duration-500"
       >
-        <Plus className="w-8 h-8 text-black" strokeWidth={3} />
+        <Plus className="w-6 h-6" strokeWidth={2} />
       </motion.div>
     </div>
   )
@@ -110,7 +114,7 @@ export default function CreatePage({ user }: CreatePageProps) {
   const [isAdvertisement, setIsAdvertisement] = useState(false)
   const [posting, setPosting] = useState(false)
   const [success, setSuccess] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState('')
+  const [_uploadProgress, setUploadProgress] = useState('')
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([])
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0)
 
@@ -290,7 +294,7 @@ export default function CreatePage({ user }: CreatePageProps) {
         }
       }
 
-      setUploadProgress('Creating post...')
+      setUploadProgress('Publishing...')
       const finalVisibility = isCreator ? visibility : 'public'
       const finalNsfw = isCreator ? isNsfw : false
       const finalPrice = isCreator && isLocked ? parseFloat(unlockPrice) || 0 : 0
@@ -358,30 +362,39 @@ export default function CreatePage({ user }: CreatePageProps) {
   }
 
   const FilterSlider = ({ label, value, onChange, min = 0, max = 200 }: { label: string, value: number, onChange: (val: number) => void, min?: number, max?: number }) => (
-    <div className="space-y-2">
-      <div className="flex justify-between text-xs font-medium text-gray-400 uppercase tracking-wider">
+    <div className="space-y-3">
+      <div className="flex justify-between text-[11px] font-bold text-white/40 uppercase tracking-widest">
         <span>{label}</span>
         <span>{Math.round(value)}%</span>
       </div>
-      <div className="relative h-8 flex items-center">
+      <div className="relative h-6 flex items-center group">
+        <div className="absolute inset-0 bg-white/5 rounded-full h-1" />
+        <div 
+          className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-white/40 rounded-full transition-all duration-150" 
+          style={{ width: `${((value - min) / (max - min)) * 100}%` }}
+        />
         <input
           type="range"
           min={min}
           max={max}
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-white hover:accent-blue-400 transition-all"
+          className="relative w-full h-6 opacity-0 cursor-pointer z-10"
+        />
+        <div 
+          className="absolute h-4 w-4 bg-white rounded-full shadow-lg top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-150 group-hover:scale-110"
+          style={{ left: `calc(${((value - min) / (max - min)) * 100}% - 8px)` }}
         />
       </div>
     </div>
   )
 
   return (
-    <div className="relative min-h-screen bg-black text-white overflow-hidden flex flex-col font-sans">
-      {/* Space Background */}
-      <div className="fixed inset-0 pointer-events-none">
-         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-[#121212] via-[#000] to-[#000]" />
-         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 mix-blend-overlay" />
+    <div className="relative min-h-screen bg-black text-white overflow-hidden flex flex-col font-sans selection:bg-white/20">
+      {/* Premium Noise Texture */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+         <div className="absolute inset-0 bg-[#050505]" />
+         <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }} />
       </div>
 
       {/* Header */}
@@ -392,60 +405,65 @@ export default function CreatePage({ user }: CreatePageProps) {
                if (step === 'details') setStep('edit')
                else if (step === 'edit') setStep('select')
              }}
-             className="p-2.5 bg-white/5 rounded-full hover:bg-white/10 transition-colors backdrop-blur-md border border-white/5"
+             className="group p-3 rounded-full hover:bg-white/10 transition-all duration-300 border border-transparent hover:border-white/10"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="w-5 h-5 text-white/70 group-hover:text-white transition-colors" />
           </button>
-        ) : <div className="w-10" />}
+        ) : <div className="w-11" />}
         
         <AnimatePresence mode="wait">
           <motion.h2 
             key={step}
-            initial={{ opacity: 0, y: -10 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            className="text-lg font-bold tracking-widest uppercase text-white/90"
+            exit={{ opacity: 0, y: -10 }}
+            className="text-xs font-bold tracking-[0.3em] uppercase text-white/60"
           >
-            {step === 'select' ? 'Create' : step === 'edit' ? 'Enhance' : 'Publish'}
+            {step === 'select' ? 'Create Post' : step === 'edit' ? 'Studio' : 'Publish'}
           </motion.h2>
         </AnimatePresence>
 
-        <div className="w-10" />
+        <div className="w-11" />
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 relative z-10 flex flex-col overflow-y-auto">
+      <div className="flex-1 relative z-10 flex flex-col overflow-y-auto scrollbar-none">
         <AnimatePresence mode="wait">
           {step === 'select' && (
             <motion.div 
               key="select"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex-1 flex flex-col items-center justify-center p-6 gap-12 relative"
+              exit={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
+              className="flex-1 flex flex-col items-center justify-center p-6 gap-16"
             >
-               {/* 3D Sphere Animation Trigger */}
-               <SphereAnimation onClick={() => imageInputRef.current?.click()} />
+               {/* Mercury Sphere Trigger */}
+               <div className="relative">
+                 <MercurySphere onClick={() => imageInputRef.current?.click()} />
+                 <p className="absolute -bottom-12 left-1/2 -translate-x-1/2 text-white/30 text-xs tracking-[0.2em] uppercase font-medium whitespace-nowrap">
+                   Tap to Upload
+                 </p>
+               </div>
 
-               <div className="flex gap-6 mt-8">
+               <div className="flex gap-4 w-full max-w-xs">
                  <button 
                    onClick={() => imageInputRef.current?.click()}
-                   className="group flex flex-col items-center gap-3 px-6 py-4 bg-white/5 border border-white/5 rounded-3xl hover:bg-white/10 transition-all active:scale-95 w-32 backdrop-blur-sm"
+                   className="flex-1 group relative overflow-hidden bg-white/5 border border-white/10 rounded-2xl p-4 hover:bg-white/10 transition-all duration-500"
                  >
-                   <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center group-hover:from-blue-500/30 group-hover:to-cyan-500/30 transition-colors">
-                     <Image className="w-6 h-6 text-blue-400" />
+                   <div className="flex flex-col items-center gap-3 relative z-10">
+                     <Image className="w-6 h-6 text-white/60 group-hover:text-white transition-colors" strokeWidth={1.5} />
+                     <span className="text-xs font-bold text-white/40 group-hover:text-white tracking-widest uppercase transition-colors">Photo</span>
                    </div>
-                   <span className="text-sm font-medium text-white/70 group-hover:text-white">Photo</span>
                  </button>
 
                  <button 
                    onClick={() => videoInputRef.current?.click()}
-                   className="group flex flex-col items-center gap-3 px-6 py-4 bg-white/5 border border-white/5 rounded-3xl hover:bg-white/10 transition-all active:scale-95 w-32 backdrop-blur-sm"
+                   className="flex-1 group relative overflow-hidden bg-white/5 border border-white/10 rounded-2xl p-4 hover:bg-white/10 transition-all duration-500"
                  >
-                   <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center group-hover:from-purple-500/30 group-hover:to-pink-500/30 transition-colors">
-                     <Video className="w-6 h-6 text-purple-400" />
+                   <div className="flex flex-col items-center gap-3 relative z-10">
+                     <Video className="w-6 h-6 text-white/60 group-hover:text-white transition-colors" strokeWidth={1.5} />
+                     <span className="text-xs font-bold text-white/40 group-hover:text-white tracking-widest uppercase transition-colors">Video</span>
                    </div>
-                   <span className="text-sm font-medium text-white/70 group-hover:text-white">Video</span>
                  </button>
                </div>
             </motion.div>
@@ -454,102 +472,83 @@ export default function CreatePage({ user }: CreatePageProps) {
           {step === 'edit' && mediaFiles.length > 0 && (
             <motion.div
               key="edit"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.05 }}
-              className="flex-1 flex flex-col p-5 gap-6"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="flex-1 flex flex-col h-full"
             >
-              {/* Media Preview - Cinematic */}
-              <div className="relative flex-1 rounded-[2rem] overflow-hidden bg-[#0a0a0a] shadow-2xl border border-white/5">
+              {/* Media Preview Area */}
+              <div className="flex-1 relative w-full bg-[#080808] flex items-center justify-center overflow-hidden group">
+                 <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-black/40 via-transparent to-black/40 z-10" />
+                 
                  {mediaFiles[currentMediaIndex].type === 'image' ? (
                    <img 
                      src={mediaFiles[currentMediaIndex].preview} 
-                     className="w-full h-full object-contain transition-all duration-200" 
+                     className="max-w-full max-h-full object-contain transition-all duration-300" 
                      style={{ 
                        filter: `brightness(${filters.brightness}%) contrast(${filters.contrast}%) saturate(${filters.saturation}%) blur(${filters.blur}px)` 
                      }}
                      alt="preview" 
                    />
                  ) : (
-                   <div className="relative w-full h-full flex items-center justify-center bg-black/40">
+                   <div className="relative w-full h-full flex items-center justify-center">
                      <img 
                        src={mediaFiles[currentMediaIndex].thumbnail?.preview || mediaFiles[currentMediaIndex].preview} 
-                       className="w-full h-full object-contain opacity-60" 
+                       className="max-w-full max-h-full object-contain opacity-50" 
                        alt="video preview"
                      />
-                     <div className="absolute w-20 h-20 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-md border border-white/20">
-                        <Play className="w-8 h-8 text-white fill-white" />
+                     <div className="absolute w-16 h-16 rounded-full border border-white/20 flex items-center justify-center backdrop-blur-sm">
+                        <Play className="w-6 h-6 text-white ml-1" fill="white" />
                      </div>
                    </div>
                  )}
                  
-                 {/* Indicators */}
+                 {/* Pagination */}
                  {mediaFiles.length > 1 && (
-                   <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-2 z-20">
+                   <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-2 z-20">
                      {mediaFiles.map((_, idx) => (
-                       <motion.div 
+                       <div 
                          key={idx}
-                         animate={{ 
-                           width: idx === currentMediaIndex ? 24 : 8,
-                           backgroundColor: idx === currentMediaIndex ? '#fff' : 'rgba(255,255,255,0.3)'
-                         }}
-                         className="h-2 rounded-full"
+                         className={`h-1 transition-all duration-300 rounded-full ${idx === currentMediaIndex ? 'w-6 bg-white' : 'w-1.5 bg-white/20'}`}
                        />
                      ))}
                    </div>
                  )}
               </div>
 
-              {/* Advanced Controls */}
-              <div className="bg-[#111] rounded-[2rem] p-6 border border-white/5 shadow-lg">
+              {/* Editor Panel - Slide Up */}
+              <div className="bg-black border-t border-white/10 px-6 py-8 pb-10 space-y-8">
                  {mediaFiles[currentMediaIndex].type === 'image' ? (
                    <div className="space-y-6">
-                     <div className="flex items-center gap-2 text-white/50 text-sm mb-4">
-                       <Sliders className="w-4 h-4" />
-                       <span className="uppercase tracking-wider font-bold">Adjustments</span>
+                     <div className="flex items-center gap-2 mb-2">
+                       <Sliders className="w-4 h-4 text-white" />
+                       <span className="text-xs font-bold uppercase tracking-widest text-white">Adjustments</span>
                      </div>
                      
-                     <FilterSlider 
-                       label="Brightness" 
-                       value={filters.brightness} 
-                       onChange={(v) => setFilters(p => ({ ...p, brightness: v }))} 
-                     />
-                     <FilterSlider 
-                       label="Contrast" 
-                       value={filters.contrast} 
-                       onChange={(v) => setFilters(p => ({ ...p, contrast: v }))} 
-                     />
-                     <FilterSlider 
-                       label="Saturation" 
-                       value={filters.saturation} 
-                       onChange={(v) => setFilters(p => ({ ...p, saturation: v }))} 
-                     />
-                     <FilterSlider 
-                       label="Blur" 
-                       value={filters.blur} 
-                       max={20}
-                       onChange={(v) => setFilters(p => ({ ...p, blur: v }))} 
-                     />
+                     <div className="grid grid-cols-1 gap-6">
+                        <FilterSlider label="Brightness" value={filters.brightness} onChange={(v) => setFilters(p => ({ ...p, brightness: v }))} />
+                        <FilterSlider label="Contrast" value={filters.contrast} onChange={(v) => setFilters(p => ({ ...p, contrast: v }))} />
+                        <FilterSlider label="Saturation" value={filters.saturation} onChange={(v) => setFilters(p => ({ ...p, saturation: v }))} />
+                     </div>
                    </div>
                  ) : (
-                   <div className="text-center text-gray-500 py-12 flex flex-col items-center gap-3">
-                     <Wand2 className="w-8 h-8 opacity-50" />
-                     <p>Video enhancements coming soon.</p>
+                   <div className="py-8 text-center">
+                     <p className="text-white/30 text-sm font-medium uppercase tracking-widest">Video editing unavailable</p>
                    </div>
                  )}
 
-                 <div className="flex items-center gap-4 mt-8 pt-6 border-t border-white/5">
+                 <div className="flex items-center gap-4 pt-2">
                    <button 
                      onClick={() => removeMedia(currentMediaIndex)} 
-                     className="p-4 rounded-2xl bg-white/5 text-white/60 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+                     className="w-14 h-14 flex items-center justify-center rounded-full border border-white/10 text-white/40 hover:text-white hover:border-white/30 transition-all"
                    >
                      <X className="w-6 h-6" />
                    </button>
                    <button 
                      onClick={handleNext} 
-                     className="flex-1 py-4 bg-white text-black rounded-2xl font-bold text-lg shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:shadow-[0_0_30px_rgba(255,255,255,0.5)] transition-all active:scale-95 flex items-center justify-center gap-2"
+                     className="flex-1 h-14 bg-white text-black rounded-full font-bold text-sm uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all shadow-[0_0_30px_rgba(255,255,255,0.1)]"
                    >
-                     Next Step <ArrowRight className="w-5 h-5" />
+                     Continue
                    </button>
                  </div>
               </div>
@@ -559,125 +558,129 @@ export default function CreatePage({ user }: CreatePageProps) {
           {step === 'details' && (
             <motion.div
               key="details"
-              initial={{ opacity: 0, y: 50 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 50 }}
-              className="flex-1 flex flex-col p-6 gap-6"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex-1 flex flex-col px-6 pt-4 pb-8"
             >
-               {/* Caption Input */}
-               <div className="bg-[#111] border border-white/5 rounded-[2rem] p-1 focus-within:border-white/20 transition-colors">
+               {/* Clean Input */}
+               <div className="mb-8">
                  <textarea 
                    value={content}
                    onChange={(e) => setContent(e.target.value)}
-                   placeholder="Write a stellar caption..."
-                   className="w-full bg-transparent border-none text-white p-5 min-h-[140px] focus:ring-0 resize-none placeholder:text-white/30 text-lg leading-relaxed"
+                   placeholder="Write a caption..."
+                   className="w-full bg-transparent border-none text-white text-lg font-medium placeholder:text-white/20 focus:ring-0 resize-none min-h-[100px] p-0 leading-relaxed"
                  />
                </div>
 
-               {/* Audience Selection */}
-               <div className="space-y-3">
-                 <p className="text-xs font-bold text-white/40 uppercase tracking-widest ml-2">Audience</p>
-                 <div className="grid grid-cols-2 gap-3">
-                   <button 
-                     onClick={() => setVisibility('public')}
-                     className={`p-4 rounded-2xl border flex flex-col items-center gap-3 transition-all duration-300 ${visibility === 'public' ? 'bg-blue-600 border-blue-500 text-white shadow-[0_0_20px_rgba(37,99,235,0.3)]' : 'bg-[#111] border-white/5 text-white/40 hover:bg-white/5'}`}
-                   >
-                     <Globe className="w-6 h-6" />
-                     <span className="font-medium">Everyone</span>
-                   </button>
-                   <button 
-                     onClick={() => setVisibility('subscribers')}
-                     className={`p-4 rounded-2xl border flex flex-col items-center gap-3 transition-all duration-300 ${visibility === 'subscribers' ? 'bg-purple-600 border-purple-500 text-white shadow-[0_0_20px_rgba(147,51,234,0.3)]' : 'bg-[#111] border-white/5 text-white/40 hover:bg-white/5'}`}
-                   >
-                     <Star className="w-6 h-6" />
-                     <span className="font-medium">Fans Only</span>
-                   </button>
+               {/* Options Grid */}
+               <div className="space-y-8">
+                 {/* Visibility */}
+                 <div className="space-y-4">
+                   <p className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">Audience</p>
+                   <div className="grid grid-cols-2 gap-3">
+                     <button 
+                       onClick={() => setVisibility('public')}
+                       className={`group p-4 rounded-2xl border transition-all duration-300 text-left ${
+                         visibility === 'public' 
+                           ? 'bg-white text-black border-white' 
+                           : 'bg-white/5 border-white/5 text-white/40 hover:border-white/20 hover:text-white/60'
+                       }`}
+                     >
+                       <Globe className={`w-5 h-5 mb-3 ${visibility === 'public' ? 'text-black' : 'text-white/40'}`} />
+                       <p className="text-sm font-bold">Everyone</p>
+                     </button>
+                     <button 
+                       onClick={() => setVisibility('subscribers')}
+                       className={`group p-4 rounded-2xl border transition-all duration-300 text-left ${
+                         visibility === 'subscribers' 
+                           ? 'bg-white text-black border-white' 
+                           : 'bg-white/5 border-white/5 text-white/40 hover:border-white/20 hover:text-white/60'
+                       }`}
+                     >
+                       <Star className={`w-5 h-5 mb-3 ${visibility === 'subscribers' ? 'text-black' : 'text-white/40'}`} />
+                       <p className="text-sm font-bold">Subscribers</p>
+                     </button>
+                   </div>
+                 </div>
+
+                 {/* Toggles */}
+                 <div className="space-y-6">
+                    {/* Locked Content */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between group cursor-pointer" onClick={() => setIsLocked(!isLocked)}>
+                        <div className="flex items-center gap-4">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isLocked ? 'bg-white text-black' : 'bg-white/5 text-white/40'}`}>
+                            <Lock className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <p className={`text-sm font-bold transition-colors ${isLocked ? 'text-white' : 'text-white/60'}`}>Locked Post</p>
+                            <p className="text-xs text-white/30">Blur content in feed</p>
+                          </div>
+                        </div>
+                        <div className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ${isLocked ? 'bg-white' : 'bg-white/10'}`}>
+                          <div className={`w-5 h-5 rounded-full bg-black shadow-sm transition-transform duration-300 ${isLocked ? 'translate-x-5' : 'translate-x-0'}`} />
+                        </div>
+                      </div>
+
+                      <AnimatePresence>
+                        {isLocked && (
+                          <motion.div 
+                            initial={{ opacity: 0, height: 0 }} 
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="relative">
+                              <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-white w-4 h-4" />
+                              <input 
+                                type="number" 
+                                value={unlockPrice}
+                                onChange={(e) => setUnlockPrice(e.target.value)}
+                                placeholder="Price (e.g. 5.00)"
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-10 pr-4 text-white focus:border-white/40 focus:outline-none text-sm font-medium placeholder:text-white/20 transition-all"
+                              />
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+
+                    {/* Advertisement */}
+                    <div className="flex items-center justify-between group cursor-pointer" onClick={() => setIsAdvertisement(!isAdvertisement)}>
+                      <div className="flex items-center gap-4">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isAdvertisement ? 'bg-white text-black' : 'bg-white/5 text-white/40'}`}>
+                          <Megaphone className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className={`text-sm font-bold transition-colors ${isAdvertisement ? 'text-white' : 'text-white/60'}`}>Advertisement</p>
+                          <p className="text-xs text-white/30">Promote this post</p>
+                        </div>
+                      </div>
+                      <div className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ${isAdvertisement ? 'bg-white' : 'bg-white/10'}`}>
+                        <div className={`w-5 h-5 rounded-full bg-black shadow-sm transition-transform duration-300 ${isAdvertisement ? 'translate-x-5' : 'translate-x-0'}`} />
+                      </div>
+                    </div>
                  </div>
                </div>
 
-               {/* Toggles Section */}
-               <div className="bg-[#111] border border-white/5 rounded-[2rem] p-6 space-y-8">
-                  {/* Locked Content Toggle */}
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
-                          <Lock className="w-6 h-6 text-emerald-400" />
-                        </div>
-                        <div>
-                          <p className="font-bold text-white text-lg">Locked Content</p>
-                          <p className="text-xs text-white/40">Blur feed preview</p>
-                        </div>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" checked={isLocked} onChange={(e) => setIsLocked(e.target.checked)} className="sr-only peer" />
-                        <div className="w-14 h-8 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-6 peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-emerald-500 transition-colors duration-300"></div>
-                      </label>
-                    </div>
-
-                    <AnimatePresence>
-                      {isLocked && (
-                        <motion.div 
-                          initial={{ opacity: 0, height: 0 }} 
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="overflow-hidden"
-                        >
-                          <div className="relative">
-                            <DollarSign className="absolute left-5 top-1/2 -translate-y-1/2 text-white/70 w-5 h-5" />
-                            <input 
-                              type="number" 
-                              value={unlockPrice}
-                              onChange={(e) => setUnlockPrice(e.target.value)}
-                              placeholder="Unlock price"
-                              className="w-full bg-black/30 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white focus:border-emerald-500 focus:outline-none text-lg font-medium placeholder:text-white/20 transition-all"
-                            />
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-
-                  <div className="h-px bg-white/5 w-full" />
-
-                  {/* Advertisement Toggle */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-2xl bg-pink-500/10 flex items-center justify-center border border-pink-500/20">
-                        <Megaphone className="w-6 h-6 text-pink-400" />
-                      </div>
-                      <div>
-                        <p className="font-bold text-white text-lg">Advertisement</p>
-                        <p className="text-xs text-white/40">Promote post</p>
-                      </div>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" checked={isAdvertisement} onChange={(e) => setIsAdvertisement(e.target.checked)} className="sr-only peer" />
-                      <div className="w-14 h-8 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-6 peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-pink-500 transition-colors duration-300"></div>
-                    </label>
-                  </div>
-               </div>
-
-               <div className="mt-auto pt-4 pb-6">
+               <div className="mt-auto pt-8">
                  <button 
                    onClick={handlePost}
                    disabled={posting}
-                   className="relative w-full py-5 rounded-3xl bg-white text-black font-bold text-xl shadow-[0_0_40px_rgba(255,255,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden group"
+                   className="w-full py-4 rounded-full bg-white text-black font-bold text-sm uppercase tracking-widest shadow-[0_0_40px_rgba(255,255,255,0.15)] hover:shadow-[0_0_60px_rgba(255,255,255,0.25)] disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
                  >
-                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full group-hover:animate-shimmer" />
-                   <span className="relative flex items-center justify-center gap-3">
-                     {posting ? (
-                       <>
-                         <Loader2 className="w-6 h-6 animate-spin" />
-                         <span>{uploadProgress || 'Publishing...'}</span>
-                       </>
-                     ) : (
-                       <>
-                         <Send className="w-6 h-6" />
-                         <span>Post Now</span>
-                       </>
-                     )}
-                   </span>
+                   {posting ? (
+                     <div className="flex items-center justify-center gap-2">
+                       <Loader2 className="w-4 h-4 animate-spin" />
+                       <span>Publishing...</span>
+                     </div>
+                   ) : (
+                     <div className="flex items-center justify-center gap-2">
+                       <Send className="w-4 h-4" />
+                       <span>Post Now</span>
+                     </div>
+                   )}
                  </button>
                </div>
             </motion.div>
@@ -696,10 +699,12 @@ export default function CreatePage({ user }: CreatePageProps) {
             initial={{ opacity: 0, y: 100 }} 
             animate={{ opacity: 1, y: 0 }} 
             exit={{ opacity: 0, y: 100 }}
-            className="fixed bottom-12 left-6 right-6 bg-white text-black p-4 rounded-3xl flex items-center justify-center shadow-[0_0_50px_rgba(255,255,255,0.3)] z-50 border-4 border-black/10"
+            className="fixed bottom-12 left-6 right-6 bg-white text-black p-4 rounded-2xl flex items-center justify-center shadow-2xl z-50"
           >
-            <Sparkles className="w-6 h-6 mr-3 text-yellow-500 fill-yellow-500" />
-            <span className="font-bold text-lg">Posted Successfully!</span>
+            <div className="w-6 h-6 border-2 border-black rounded-full flex items-center justify-center mr-3">
+               <div className="w-3 h-3 bg-black rounded-full" />
+            </div>
+            <span className="font-bold text-sm uppercase tracking-wider">Posted Successfully</span>
           </motion.div>
         )}
       </AnimatePresence>
