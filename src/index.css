@@ -32,8 +32,8 @@ body {
   overflow: hidden;
   overscroll-behavior: none;
   font-family: 'Inter', 'SF Pro Display', 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, sans-serif;
-  background: #F2F2F7;
-  color: #000000;
+  background: #000000;
+  color: #ffffff;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-overflow-scrolling: touch;

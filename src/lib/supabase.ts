@@ -1,7 +1,13 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, RealtimeChannel } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://eigfbxjheuwxmtdfnvqc.supabase.co'
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVpZ2ZieGpoZXV3eG10ZGZudnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0NDQ4NjEsImV4cCI6MjA4MDAyMDg2MX0.ilFCYkPxz8qJ3Yaw9Lt14JvdFlUsENKLYWXLYrHO8vA'
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error(
+    'Missing Supabase environment variables. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.'
+  )
+}
 
 // Custom storage that handles restricted contexts (like Telegram WebApp)
 const customStorage = {
@@ -35,4 +41,19 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
     persistSession: false,
     detectSessionInUrl: false,
   },
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
+    },
+  },
 })
+
+// Export RealtimeChannel type for use in other modules
+export type { RealtimeChannel }
+
+// Helper to clean up a realtime channel
+export function removeChannel(channel: RealtimeChannel | null) {
+  if (channel) {
+    supabase.removeChannel(channel)
+  }
+}

@@ -6,10 +6,19 @@ import { supabase } from './supabase'
 
 export type BucketName = 'avatars' | 'posts' | 'messages' | 'stories' | 'livestreams'
 
+export interface MediaMetadata {
+  width?: number
+  height?: number
+  duration?: number  // For videos, in seconds
+  sizeBytes: number
+  mimeType: string
+}
+
 export interface UploadResult {
   url: string | null
   error: string | null
   path: string | null
+  metadata?: MediaMetadata
 }
 
 // Generate unique filename
@@ -20,15 +29,93 @@ function generateFilename(file: File, userId: number): string {
   return `${userId}/${timestamp}-${random}.${ext}`
 }
 
+// Extract metadata from image
+async function getImageMetadata(file: File): Promise<Partial<MediaMetadata>> {
+  return new Promise((resolve) => {
+    if (typeof document === 'undefined') {
+      resolve({ sizeBytes: file.size, mimeType: file.type })
+      return
+    }
+
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(img.src)
+      resolve({
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+        sizeBytes: file.size,
+        mimeType: file.type,
+      })
+    }
+    img.onerror = () => {
+      resolve({ sizeBytes: file.size, mimeType: file.type })
+    }
+    img.src = URL.createObjectURL(file)
+  })
+}
+
+// Extract metadata from video
+async function getVideoMetadata(file: File): Promise<Partial<MediaMetadata>> {
+  return new Promise((resolve) => {
+    if (typeof document === 'undefined') {
+      resolve({ sizeBytes: file.size, mimeType: file.type })
+      return
+    }
+
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.muted = true
+
+    video.onloadedmetadata = () => {
+      URL.revokeObjectURL(video.src)
+      resolve({
+        width: video.videoWidth,
+        height: video.videoHeight,
+        duration: Math.round(video.duration),
+        sizeBytes: file.size,
+        mimeType: file.type,
+      })
+    }
+    video.onerror = () => {
+      resolve({ sizeBytes: file.size, mimeType: file.type })
+    }
+    video.src = URL.createObjectURL(file)
+  })
+}
+
+// Get media metadata based on file type
+async function extractMediaMetadata(file: File): Promise<MediaMetadata> {
+  const baseMetadata: MediaMetadata = {
+    sizeBytes: file.size,
+    mimeType: file.type,
+  }
+
+  if (file.type.startsWith('image/')) {
+    const imgMeta = await getImageMetadata(file)
+    return { ...baseMetadata, ...imgMeta }
+  }
+
+  if (file.type.startsWith('video/')) {
+    const vidMeta = await getVideoMetadata(file)
+    return { ...baseMetadata, ...vidMeta }
+  }
+
+  return baseMetadata
+}
+
 // Upload file to bucket
 export async function uploadFile(
   bucket: BucketName,
   file: File,
-  userId: number
+  userId: number,
+  extractMetadata = true
 ): Promise<UploadResult> {
   try {
     const filename = generateFilename(file, userId)
     console.log(`[Storage] Uploading to ${bucket}:`, { filename, size: file.size, type: file.type })
+
+    // Extract metadata before upload
+    const metadata = extractMetadata ? await extractMediaMetadata(file) : undefined
 
     const { data, error } = await supabase.storage
       .from(bucket)
@@ -72,11 +159,15 @@ export async function uploadFile(
     }
 
     console.log(`[Storage] Final URL:`, url)
+    if (metadata) {
+      console.log(`[Storage] Media metadata:`, metadata)
+    }
 
     return {
       url,
       error: null,
-      path: filename
+      path: filename,
+      metadata,
     }
   } catch (err: any) {
     console.error(`[Storage] Exception:`, err)

@@ -5,8 +5,9 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import './index.css'
 
 import { useViewport } from './hooks/useViewport'
-import { getOrCreateUser, getUser, type User as UserType } from './lib/api'
+import { getOrCreateUser, getUser, subscribeToUserUpdates, type User as UserType } from './lib/api'
 import { registerSession } from './lib/settingsApi'
+import ToastContainer from './components/Toast'
 
 const HomePage = lazy(() => import('./pages/HomePage'))
 const ExplorePage = lazy(() => import('./pages/ExplorePage'))
@@ -125,6 +126,17 @@ function App() {
         clearInterval(interval)
       }
     }
+  }, [user?.telegram_id])
+
+  // Subscribe to realtime user profile updates
+  useEffect(() => {
+    if (!user) return
+
+    const unsubscribe = subscribeToUserUpdates(user.telegram_id, (updatedUser) => {
+      setUser(prev => prev ? { ...prev, ...updatedUser } : null)
+    })
+
+    return () => unsubscribe()
   }, [user?.telegram_id])
 
   useEffect(() => {
@@ -387,6 +399,9 @@ function App() {
 
   return (
     <div className="h-full w-full bg-black relative overflow-hidden flex flex-col">
+      {/* Global toast notifications */}
+      <ToastContainer />
+
       {/* Main content area */}
       <main className="flex-1 overflow-y-auto overflow-x-hidden overscroll-none">
         <AnimatePresence mode="wait">

@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Heart, MessageCircle, Bookmark, Share2, MoreHorizontal, CheckCircle, Lock, Eye, DollarSign, X, Users, Trash2, EyeOff, Edit3, Flag, Copy, UserX, Volume2, VolumeX, Play } from 'lucide-react'
-import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, purchaseContent, deletePost, getPostLikes, type User, type Post } from '../lib/api'
+import { Heart, MessageCircle, Bookmark, Share2, MoreHorizontal, CheckCircle, Lock, Eye, X, Users, Trash2, EyeOff, Edit3, Flag, Copy, UserX, Volume2, VolumeX, Play, Star } from 'lucide-react'
+import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, deletePost, getPostLikes, subscribeToFeedUpdates, type User, type Post } from '../lib/api'
+import { unlockPostWithPayment } from '../lib/paymentsApi'
 import { getLivestreams, subscribeToLivestreams, type Livestream } from '../lib/livestreamApi'
 import PostDetail from '../components/PostDetail'
 import BottomSheet from '../components/BottomSheet'
@@ -350,6 +351,45 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
     loadData()
   }, [])
 
+  // Subscribe to realtime feed updates
+  useEffect(() => {
+    const unsubscribe = subscribeToFeedUpdates({
+      onNewPost: (newPost) => {
+        // Add new post to top of feed
+        setPosts(prev => [{ ...newPost, liked: false, saved: false, can_view: true }, ...prev])
+        setVisibleCount(prev => prev + 1)
+      },
+      onPostUpdated: (updatedPost) => {
+        setPosts(prev => prev.map(p => p.id === updatedPost.id ? { ...p, ...updatedPost } : p))
+      },
+      onPostDeleted: (postId) => {
+        setPosts(prev => prev.filter(p => p.id !== postId))
+      },
+      onLikeAdded: (postId, likerId) => {
+        // Only update count if it wasn't our own like (we already have optimistic update)
+        if (likerId !== user.telegram_id) {
+          setPosts(prev => prev.map(p =>
+            p.id === postId ? { ...p, likes_count: (p.likes_count || 0) + 1 } : p
+          ))
+        }
+      },
+      onLikeRemoved: (postId, likerId) => {
+        if (likerId !== user.telegram_id) {
+          setPosts(prev => prev.map(p =>
+            p.id === postId ? { ...p, likes_count: Math.max(0, (p.likes_count || 0) - 1) } : p
+          ))
+        }
+      },
+      onCommentAdded: (postId, commentCount) => {
+        setPosts(prev => prev.map(p =>
+          p.id === postId ? { ...p, comments_count: commentCount } : p
+        ))
+      },
+    })
+
+    return () => unsubscribe()
+  }, [user.telegram_id])
+
   useEffect(() => {
     const unsubscribe = subscribeToLivestreams((streams) => setLivestreams(filterLiveStreams(streams)))
     return () => {
@@ -462,15 +502,23 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
   const handlePurchase = async (post: Post) => {
     setPurchasing(true)
-    const result = await purchaseContent(user.telegram_id, post.id, post.unlock_price)
-    setPurchasing(false)
 
-    if (result.success) {
-      setPosts(posts.map(p => p.id === post.id ? { ...p, can_view: true, is_purchased: true } : p))
-      setPurchaseModal(null)
-    } else {
-      alert(result.error || 'Purchase failed')
-    }
+    // Use Telegram Stars payment
+    await unlockPostWithPayment(
+      user.telegram_id,
+      post.id,
+      () => {
+        // Success callback - payment completed
+        setPosts(posts.map(p => p.id === post.id ? { ...p, can_view: true, is_purchased: true } : p))
+        setPurchaseModal(null)
+        setPurchasing(false)
+      },
+      (error) => {
+        // Failed callback
+        console.error('Payment failed:', error)
+        setPurchasing(false)
+      }
+    )
   }
 
   const handlePostDeleted = () => {
@@ -764,13 +812,13 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
             
             {post.unlock_price > 0 ? (
               <motion.button
-                className="w-full py-4 bg-white text-white rounded-2xl font-bold text-[15px] shadow-[0_0_30px_-5px_rgba(255,255,255,0.3)] flex items-center justify-center gap-2 hover:bg-gray-900 transition-colors relative overflow-hidden group"
+                className="w-full py-4 bg-gradient-to-r from-yellow-400 to-orange-500 text-black rounded-2xl font-bold text-[15px] shadow-[0_0_30px_-5px_rgba(251,191,36,0.4)] flex items-center justify-center gap-2 hover:opacity-90 transition-opacity relative overflow-hidden group"
                 whileTap={{ scale: 0.98 }}
                 onClick={() => setPurchaseModal(post)}
               >
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-black/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-                <DollarSign className="w-4 h-4" />
-                Unlock for ${post.unlock_price.toFixed(2)}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                <Star className="w-5 h-5 fill-current" />
+                Unlock for {Math.ceil(post.unlock_price)} Stars
               </motion.button>
             ) : (
               <motion.button
@@ -848,7 +896,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
   const getLockReason = (post: Post) => {
     if (post.unlock_price > 0 && !post.is_purchased) {
-      return `Pay $${post.unlock_price.toFixed(2)} to unlock`
+      return `Unlock for ${Math.ceil(post.unlock_price)} Stars`
     }
     if (post.is_nsfw && !post.is_subscribed) {
       return 'Subscribe to see NSFW content'
@@ -1044,18 +1092,18 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
         )}
       </div>
 
-      {/* Purchase Modal */}
+      {/* Purchase Modal - Telegram Stars */}
       <AnimatePresence>
         {purchaseModal && (
           <motion.div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4"
+            className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[60] p-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={() => setPurchaseModal(null)}
+            onClick={() => !purchasing && setPurchaseModal(null)}
           >
             <motion.div
-              className="bg-white/90 backdrop-blur-xl rounded-[2rem] p-6 max-w-sm w-full shadow-2xl border border-white/50"
+              className="bg-[#1c1c1e] rounded-[2rem] p-6 max-w-sm w-full shadow-2xl border border-white/10"
               initial={{ scale: 0.9, y: 30, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.9, y: 30, opacity: 0 }}
@@ -1064,59 +1112,57 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
             >
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-xl font-bold text-white">Unlock Content</h3>
-                <button onClick={() => setPurchaseModal(null)} className="p-1 rounded-full hover:bg-gray-100 transition-colors">
-                  <X className="w-6 h-6 text-gray-500" />
+                <button onClick={() => !purchasing && setPurchaseModal(null)} className="p-1 rounded-full hover:bg-white/10 transition-colors">
+                  <X className="w-6 h-6 text-gray-400" />
                 </button>
               </div>
 
               <div className="text-center mb-8 relative">
-                <div className="absolute inset-0 bg-green-400/20 blur-3xl rounded-full" />
-                <div className="relative w-20 h-20 bg-gradient-to-br from-green-100 to-green-50 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner border border-white/50">
-                  <DollarSign className="w-10 h-10 text-green-600" />
+                <div className="absolute inset-0 bg-yellow-500/20 blur-3xl rounded-full" />
+                <div className="relative w-20 h-20 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
+                  <Star className="w-10 h-10 text-white fill-white" />
                 </div>
-                <p className="text-gray-500 text-sm font-medium mb-1">One-time purchase</p>
-                <p className="text-4xl font-bold text-green-600 tracking-tight">${purchaseModal.unlock_price.toFixed(2)}</p>
+                <p className="text-gray-400 text-sm font-medium mb-2">Pay with Telegram Stars</p>
+                <div className="flex items-center justify-center gap-2">
+                  <Star className="w-6 h-6 text-yellow-400 fill-yellow-400" />
+                  <span className="text-4xl font-bold text-white tracking-tight">{Math.ceil(purchaseModal.unlock_price)}</span>
+                </div>
               </div>
 
-              <div className="bg-gray-900/80 rounded-2xl p-4 mb-6 border border-gray-800">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-500">Your balance</span>
-                  <span className="font-bold text-gray-800">{user.balance} tokens</span>
-                </div>
-                <div className="w-full h-[1px] bg-gray-800 my-2" />
-                <div className="flex justify-between text-sm items-center">
-                  <span className="text-gray-500">Remaining</span>
-                  <span className={`font-bold ${user.balance >= purchaseModal.unlock_price ? 'text-gray-800' : 'text-red-500'}`}>
-                    {(user.balance - purchaseModal.unlock_price).toFixed(2)} tokens
-                  </span>
+              <div className="bg-white/5 rounded-2xl p-4 mb-6 border border-white/10">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={purchaseModal.creator?.avatar_url || `https://i.pravatar.cc/150?u=${purchaseModal.creator_id}`}
+                    className="w-10 h-10 rounded-full object-cover"
+                    alt=""
+                  />
+                  <div className="flex-1">
+                    <p className="text-white font-medium">{purchaseModal.creator?.first_name || purchaseModal.creator?.username}</p>
+                    <p className="text-gray-500 text-sm">Creator receives 85%</p>
+                  </div>
                 </div>
               </div>
 
               <motion.button
-                className={`w-full py-3.5 rounded-xl font-bold text-[15px] flex items-center justify-center gap-2 shadow-lg transition-all
-                  ${user.balance >= purchaseModal.unlock_price 
-                    ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-green-500/25' 
-                    : 'bg-gray-800 text-gray-400 cursor-not-allowed'}`}
-                whileHover={user.balance >= purchaseModal.unlock_price ? { scale: 1.02, y: -1 } : {}}
-                whileTap={user.balance >= purchaseModal.unlock_price ? { scale: 0.98 } : {}}
+                className="w-full py-4 rounded-2xl font-bold text-[15px] flex items-center justify-center gap-2 shadow-lg transition-all bg-gradient-to-r from-yellow-400 to-orange-500 text-black"
+                whileHover={{ scale: 1.02, y: -1 }}
+                whileTap={{ scale: 0.98 }}
                 onClick={() => handlePurchase(purchaseModal)}
-                disabled={purchasing || user.balance < purchaseModal.unlock_price}
+                disabled={purchasing}
               >
                 {purchasing ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
                 ) : (
                   <>
-                    <Lock className="w-4 h-4" />
-                    {user.balance >= purchaseModal.unlock_price ? 'Confirm Payment' : 'Insufficient Balance'}
+                    <Star className="w-5 h-5 fill-current" />
+                    Pay {Math.ceil(purchaseModal.unlock_price)} Stars
                   </>
                 )}
               </motion.button>
 
-              {user.balance < purchaseModal.unlock_price && (
-                <button className="w-full mt-3 py-2 text-sm text-of-blue font-semibold hover:bg-blue-50 rounded-xl transition-colors">
-                  Top up wallet
-                </button>
-              )}
+              <p className="text-center text-gray-500 text-xs mt-4">
+                Payment powered by Telegram Stars
+              </p>
             </motion.div>
           </motion.div>
         )}

@@ -1,5 +1,6 @@
-import { supabase } from './supabase'
+import { supabase, removeChannel, type RealtimeChannel } from './supabase'
 import { deleteFile } from './storage'
+import { toast } from './toast'
 
 // ============================================
 // USER API
@@ -482,11 +483,15 @@ export async function likePost(userId: number, postId: number) {
   const { error } = await supabase
     .from('likes')
     .insert({ user_id: userId, post_id: postId })
-  
-  if (!error) {
-    await supabase.rpc('increment_likes', { p_post_id: postId })
+
+  if (error) {
+    console.error('Like post error:', error)
+    toast.error('Failed to like post')
+    return false
   }
-  return !error
+
+  await supabase.rpc('increment_likes', { p_post_id: postId })
+  return true
 }
 
 // Unlike post
@@ -497,10 +502,14 @@ export async function unlikePost(userId: number, postId: number) {
     .eq('user_id', userId)
     .eq('post_id', postId)
 
-  if (!error) {
-    await supabase.rpc('decrement_likes', { p_post_id: postId })
+  if (error) {
+    console.error('Unlike post error:', error)
+    toast.error('Failed to unlike post')
+    return false
   }
-  return !error
+
+  await supabase.rpc('decrement_likes', { p_post_id: postId })
+  return true
 }
 
 // Get users who liked a post
@@ -579,13 +588,18 @@ export async function followUser(followerId: number, followingId: number) {
     .from('follows')
     .insert({ follower_id: followerId, following_id: followingId })
 
-  if (!error) {
-    // Update follower's following_count
-    await supabase.rpc('increment_following', { user_id: followerId })
-    // Update followed user's followers_count
-    await supabase.rpc('increment_followers', { user_id: followingId })
+  if (error) {
+    console.error('Follow user error:', error)
+    toast.error('Failed to follow user')
+    return false
   }
-  return !error
+
+  // Update follower's following_count
+  await supabase.rpc('increment_following', { user_id: followerId })
+  // Update followed user's followers_count
+  await supabase.rpc('increment_followers', { user_id: followingId })
+  toast.success('Following!')
+  return true
 }
 
 // Unfollow user
@@ -596,13 +610,17 @@ export async function unfollowUser(followerId: number, followingId: number) {
     .eq('follower_id', followerId)
     .eq('following_id', followingId)
 
-  if (!error) {
-    // Update follower's following_count
-    await supabase.rpc('decrement_following', { user_id: followerId })
-    // Update followed user's followers_count
-    await supabase.rpc('decrement_followers', { user_id: followingId })
+  if (error) {
+    console.error('Unfollow user error:', error)
+    toast.error('Failed to unfollow user')
+    return false
   }
-  return !error
+
+  // Update follower's following_count
+  await supabase.rpc('decrement_following', { user_id: followerId })
+  // Update followed user's followers_count
+  await supabase.rpc('decrement_followers', { user_id: followingId })
+  return true
 }
 
 // Check if following
@@ -923,4 +941,210 @@ export async function getActualLikesCount(postId: number): Promise<number> {
     .select('*', { count: 'exact', head: true })
     .eq('post_id', postId)
   return count || 0
+}
+
+// ============================================
+// REALTIME SUBSCRIPTIONS
+// ============================================
+
+export interface FeedRealtimeCallbacks {
+  onNewPost?: (post: Post) => void
+  onPostUpdated?: (post: Post) => void
+  onPostDeleted?: (postId: number) => void
+  onLikeAdded?: (postId: number, userId: number) => void
+  onLikeRemoved?: (postId: number, userId: number) => void
+  onCommentAdded?: (postId: number, commentCount: number) => void
+}
+
+/**
+ * Subscribe to realtime feed updates (new posts, likes, comments)
+ * Returns an unsubscribe function to clean up
+ */
+export function subscribeToFeedUpdates(
+  callbacks: FeedRealtimeCallbacks
+): () => void {
+  const channels: RealtimeChannel[] = []
+
+  // Subscribe to new posts
+  const postsChannel = supabase
+    .channel('feed-posts')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'posts',
+      },
+      async (payload) => {
+        // Fetch full post with creator data
+        const { data } = await supabase
+          .from('posts')
+          .select('*, creator:users!creator_id(*)')
+          .eq('id', payload.new.id)
+          .single()
+
+        if (data && callbacks.onNewPost) {
+          callbacks.onNewPost(data as Post)
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'posts',
+      },
+      async (payload) => {
+        const { data } = await supabase
+          .from('posts')
+          .select('*, creator:users!creator_id(*)')
+          .eq('id', payload.new.id)
+          .single()
+
+        if (data && callbacks.onPostUpdated) {
+          callbacks.onPostUpdated(data as Post)
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'posts',
+      },
+      (payload) => {
+        if (callbacks.onPostDeleted) {
+          callbacks.onPostDeleted(payload.old.id)
+        }
+      }
+    )
+    .subscribe()
+
+  channels.push(postsChannel)
+
+  // Subscribe to likes
+  const likesChannel = supabase
+    .channel('feed-likes')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'likes',
+      },
+      (payload) => {
+        if (callbacks.onLikeAdded) {
+          callbacks.onLikeAdded(payload.new.post_id, payload.new.user_id)
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'likes',
+      },
+      (payload) => {
+        if (callbacks.onLikeRemoved) {
+          callbacks.onLikeRemoved(payload.old.post_id, payload.old.user_id)
+        }
+      }
+    )
+    .subscribe()
+
+  channels.push(likesChannel)
+
+  // Subscribe to comments (just count changes)
+  const commentsChannel = supabase
+    .channel('feed-comments')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'comments',
+      },
+      async (payload) => {
+        // Get updated comment count
+        const { count } = await supabase
+          .from('comments')
+          .select('*', { count: 'exact', head: true })
+          .eq('post_id', payload.new.post_id)
+
+        if (callbacks.onCommentAdded) {
+          callbacks.onCommentAdded(payload.new.post_id, count || 0)
+        }
+      }
+    )
+    .subscribe()
+
+  channels.push(commentsChannel)
+
+  // Return cleanup function
+  return () => {
+    channels.forEach(channel => removeChannel(channel))
+  }
+}
+
+/**
+ * Subscribe to updates for a specific post
+ */
+export function subscribeToPost(
+  postId: number,
+  onUpdate: (post: Post) => void
+): () => void {
+  const channel = supabase
+    .channel(`post-${postId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'posts',
+        filter: `id=eq.${postId}`,
+      },
+      async () => {
+        const { data } = await supabase
+          .from('posts')
+          .select('*, creator:users!creator_id(*)')
+          .eq('id', postId)
+          .single()
+
+        if (data) {
+          onUpdate(data as Post)
+        }
+      }
+    )
+    .subscribe()
+
+  return () => removeChannel(channel)
+}
+
+/**
+ * Subscribe to user profile updates
+ */
+export function subscribeToUserUpdates(
+  telegramId: number,
+  onUpdate: (user: User) => void
+): () => void {
+  const channel = supabase
+    .channel(`user-${telegramId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'users',
+        filter: `telegram_id=eq.${telegramId}`,
+      },
+      (payload) => {
+        onUpdate(payload.new as User)
+      }
+    )
+    .subscribe()
+
+  return () => removeChannel(channel)
 }

@@ -811,42 +811,58 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const renderConversationCard = (conv: Conversation) => (
     <motion.button
       key={conv.id}
-      className="p-4 flex items-center gap-4 w-full text-left rounded-2xl bg-[#0f0f0f]/50 backdrop-blur-md border border-white/5 hover:bg-white/10 transition-colors shadow-[0_10px_30px_rgba(0,0,0,0.35)] relative z-10"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.15 }}
+      className="group w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 transition-all duration-300 border border-transparent hover:border-white/5 relative overflow-hidden"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
       onClick={() => setActiveConversation(conv)}
     >
-      <div className="relative">
-        <img
-          src={conv.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${conv.other_user?.telegram_id}`}
-          alt=""
-          loading="lazy"
-          className="w-14 h-14 rounded-full object-cover border border-white/10"
-        />
+      {/* Hover Glow Effect */}
+      <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-blue-500/0 to-blue-500/0 group-hover:from-blue-500/5 group-hover:via-purple-500/5 group-hover:to-pink-500/5 transition-all duration-500" />
+      
+      <div className="relative shrink-0">
+        <div className="w-12 h-12 rounded-full p-[2px] bg-gradient-to-br from-white/10 to-white/5 group-hover:from-blue-500 group-hover:to-purple-500 transition-all duration-500">
+          <img
+            src={conv.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${conv.other_user?.telegram_id}`}
+            alt=""
+            loading="lazy"
+            className="w-full h-full rounded-full object-cover bg-black"
+          />
+        </div>
         {(conv.unread_count || 0) > 0 && (
-          <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-of-blue text-[10px] text-white flex items-center justify-center shadow-lg">
-            {conv.unread_count}
+          <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-gradient-to-r from-red-500 to-rose-600 border-2 border-black flex items-center justify-center shadow-[0_0_10px_rgba(244,63,94,0.5)]">
+            <span className="text-[10px] font-bold text-white leading-none">{conv.unread_count}</span>
           </div>
         )}
+        {/* Online Indicator (Simulated) */}
+        <div className="absolute bottom-0.5 right-0.5 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-black" />
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1">
-          <span className="font-semibold text-[15px] text-white truncate">
-            {conv.other_user?.first_name || conv.other_user?.username || 'User'}
+
+      <div className="flex-1 min-w-0 flex flex-col gap-0.5 text-left relative z-10">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-[15px] text-white/90 group-hover:text-white transition-colors truncate">
+              {conv.other_user?.first_name || conv.other_user?.username || 'User'}
+            </span>
+            {conv.other_user?.is_verified && (
+              <CheckCircle className="w-3.5 h-3.5 text-blue-400 fill-blue-400/20" />
+            )}
+          </div>
+          <span className="text-[11px] text-white/30 font-medium whitespace-nowrap">
+            {formatTime(conv.last_message_at)}
           </span>
-          {conv.other_user?.is_verified && (
-            <CheckCircle className="w-4 h-4 text-of-blue fill-of-blue" />
+        </div>
+        
+        <div className="flex items-center justify-between gap-2">
+          <p className={`text-[13px] truncate leading-snug ${
+            (conv.unread_count || 0) > 0 ? 'text-white/90 font-medium' : 'text-white/40 group-hover:text-white/60'
+          }`}>
+            {conv.last_message_preview || 'Start a conversation'}
+          </p>
+          {(conv.unread_count || 0) > 0 && (
+             <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
           )}
         </div>
-        <p className="text-sm text-gray-400 truncate mt-0.5">
-          {conv.last_message_preview || 'Start a conversation'}
-        </p>
-      </div>
-      <div className="text-right shrink-0">
-        <span className="text-xs text-gray-500">
-          {formatTime(conv.last_message_at)}
-        </span>
       </div>
     </motion.button>
   )
@@ -1515,56 +1531,71 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
   // Conversations list
   return (
-    <div className="min-h-full text-white relative" style={{ background: 'radial-gradient(ellipse at bottom, #1B2735 0%, #090A0F 100%)' }}>
+    <div className="min-h-full text-white relative" style={{ background: 'black' }}>
       <StarsBackground />
       
       {/* Header */}
-      <div className="sticky top-0 z-40 bg-black/40 border-b border-white/5 px-4 pt-4 pb-3 backdrop-blur-xl">
-        <h2 className="text-2xl font-bold mb-4">Messages</h2>
+      <div className="sticky top-0 z-40 px-5 pt-6 pb-2 bg-gradient-to-b from-black/80 to-transparent backdrop-blur-sm">
+        <div className="flex items-center justify-between mb-6">
+           <h2 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-white/60">
+             Messages
+           </h2>
+           <div className="p-2 rounded-full bg-white/5 border border-white/5 backdrop-blur-md">
+             <div className="w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)] animate-pulse" />
+           </div>
+        </div>
 
-        {/* Category Tabs */}
-        <div className="flex gap-2 mb-4">
+        {/* Search - Ultra modern */}
+        <div className="relative mb-6 group">
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-2xl blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+          <div className="relative bg-white/5 border border-white/5 rounded-2xl flex items-center px-4 py-3 focus-within:bg-white/10 focus-within:border-white/10 transition-all duration-300">
+             <Search className="w-5 h-5 text-white/40 mr-3 group-focus-within:text-white/80 transition-colors" />
+             <input
+               type="text"
+               value={searchQuery}
+               onChange={(e) => setSearchQuery(e.target.value)}
+               placeholder="Search conversations..."
+               className="w-full bg-transparent text-[15px] text-white placeholder:text-white/30 focus:outline-none"
+             />
+          </div>
+        </div>
+
+        {/* Category Tabs - Minimalist pills */}
+        <div className="flex gap-2 mb-2 overflow-x-auto no-scrollbar pb-2">
           {categories.map(cat => (
             <button
               key={cat.id}
               onClick={() => setActiveCategory(cat.id)}
-              className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${
+              className={`px-4 py-1.5 rounded-full text-[13px] font-medium transition-all duration-300 border ${
                 activeCategory === cat.id
-                  ? 'bg-white text-black'
-                  : 'bg-white/10 text-gray-300 hover:bg-white/15'
+                  ? 'bg-white text-black border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]'
+                  : 'bg-transparent text-white/50 border-transparent hover:bg-white/5 hover:text-white/80'
               }`}
             >
               {cat.label}
             </button>
           ))}
         </div>
-
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search messages..."
-            className="w-full pl-11 pr-4 py-3 rounded-xl bg-white/5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/10 backdrop-blur-sm transition-all focus:bg-black/50"
-          />
-        </div>
       </div>
 
       {/* Conversations */}
-      <div className="px-4 py-2 relative z-10">
+      <div className="px-2 pb-24 relative z-10">
         {loading ? (
-          <div className="text-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-500" />
+          <div className="text-center py-20">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto text-white/20" />
           </div>
         ) : filteredConversations.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">
-            <p className="font-medium">No messages</p>
-            <p className="text-sm mt-1">Start a conversation from a creator's profile</p>
+          <div className="text-center py-20">
+            <div className="w-20 h-20 mx-auto bg-gradient-to-br from-white/5 to-transparent rounded-full flex items-center justify-center mb-4 border border-white/5">
+              <div className="w-12 h-12 text-white/20" >
+                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              </div>
+            </div>
+            <p className="font-medium text-white/60 text-lg">No messages yet</p>
+            <p className="text-sm text-white/30 mt-2">Start chatting with your favorite creators</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1">
             {filteredConversations.map((conv) => renderConversationCard(conv))}
           </div>
         )}
