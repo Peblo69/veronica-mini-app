@@ -24,7 +24,6 @@ html {
   width: 100%;
   overflow: hidden;
   overscroll-behavior: none;
-  background: #000000;
 }
 
 body {
@@ -33,8 +32,8 @@ body {
   overflow: hidden;
   overscroll-behavior: none;
   font-family: 'Inter', 'SF Pro Display', 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, sans-serif;
-  background: #000000;
-  color: #ffffff;
+  background: #F2F2F7;
+  color: #000000;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-overflow-scrolling: touch;
@@ -47,7 +46,6 @@ body {
   position: relative;
   display: flex;
   flex-direction: column;
-  background: #000000;
 }
 
 .safe-area-top {
@@ -61,6 +59,33 @@ body {
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(0, 175, 240, 0.3); border-radius: 4px; }
+
+/* Star Animation */
+.stars-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at bottom, #1B2735 0%, #090A0F 100%);
+}
+
+.star {
+  position: absolute;
+  background: white;
+  border-radius: 50%;
+  animation: twinkle var(--duration) ease-in-out infinite;
+  opacity: var(--opacity);
+}
+
+@keyframes twinkle {
+  0% { transform: scale(1); opacity: var(--opacity); }
+  50% { transform: scale(1.5); opacity: 1; box-shadow: 0 0 10px 2px rgba(255, 255, 255, 0.4); }
+  100% { transform: scale(1); opacity: var(--opacity); }
+}
 
 @layer components {
   .btn-subscribe {

@@ -187,8 +187,8 @@ function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, 
         </div>
       )}
 
-      {/* Mute/Unmute button - positioned for overlay mode */}
-      {isLoaded && aspectRatio === 'square' && (
+      {/* Mute/Unmute button - Instagram style bottom right corner */}
+      {isLoaded && (
         <button
           onClick={toggleMute}
           className="absolute bottom-3 right-3 p-2 bg-black/60 rounded-full z-20 hover:bg-black/80 transition-colors"
