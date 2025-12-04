@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Heart, MessageCircle, Bookmark, Share2, MoreHorizontal, CheckCircle, Lock, Eye, DollarSign, X, Users, Trash2, EyeOff, Edit3, Flag, Copy, UserX, Volume2, VolumeX, Play } from 'lucide-react'
 import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, purchaseContent, deletePost, getPostLikes, type User, type Post } from '../lib/api'
@@ -17,6 +18,7 @@ interface HomePageProps {
   onCreatorClick: (creator: any) => void
   onLivestreamClick?: (livestreamId: string) => void
   onGoLive?: () => void
+  onSheetStateChange?: (isOpen: boolean) => void
 }
 
 const filterLiveStreams = (streams: Livestream[]) =>
@@ -31,10 +33,11 @@ interface FeedVideoPlayerProps {
   aspectRatio?: 'square' | 'full'
   videoId?: string
   muted?: boolean
+  shouldPlay?: boolean
   onMuteChange?: (muted: boolean) => void
 }
 
-function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, onMuteChange }: FeedVideoPlayerProps) {
+function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, shouldPlay = false, onMuteChange }: FeedVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const isInViewport = useInViewport(videoRef, { minimumRatio: aspectRatio === 'full' ? 0.5 : 0.35 })
   const { isSlow, isDataSaver } = useConnectionQuality()
@@ -88,6 +91,13 @@ function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, 
     const video = videoRef.current
     if (!video) return
 
+    // Force pause if not the designated active video
+    if (!shouldPlay) {
+      if (!video.paused) video.pause()
+      setIsPaused(true)
+      return
+    }
+
     if (!isInViewport) {
       if (!video.paused) video.pause()
       return
@@ -105,11 +115,11 @@ function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, 
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
-    if (!isActive && !video.paused) {
+    if ((!isActive || !shouldPlay) && !video.paused) {
       video.pause()
       setIsPaused(true)
     }
-  }, [isActive])
+  }, [isActive, shouldPlay])
 
   // Auto-claim active when conditions are right
   useEffect(() => {
@@ -201,9 +211,11 @@ function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, 
 }
 
 // Instagram-style carousel for multiple images/videos
-function MediaCarousel({ urls, canView, videoIdPrefix, muted, onMuteChange }: { urls: string[]; canView: boolean; videoIdPrefix?: string; muted?: boolean; onMuteChange?: (muted: boolean) => void }) {
+function MediaCarousel({ urls, canView, videoIdPrefix, muted, onMuteChange, shouldPlay, onDoubleTap }: { urls: string[]; canView: boolean; videoIdPrefix?: string; muted?: boolean; onMuteChange?: (muted: boolean) => void; shouldPlay?: boolean; onDoubleTap?: () => void }) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
+  const [showHeart, setShowHeart] = useState(false)
+  const lastTap = useRef<number>(0)
 
   const handleScroll = () => {
     if (!containerRef.current) return
@@ -213,6 +225,16 @@ function MediaCarousel({ urls, canView, videoIdPrefix, muted, onMuteChange }: { 
     if (newIndex !== currentIndex) {
       setCurrentIndex(newIndex)
     }
+  }
+
+  const handleTap = () => {
+    const now = Date.now()
+    if (now - lastTap.current < 300) {
+      onDoubleTap?.()
+      setShowHeart(true)
+      setTimeout(() => setShowHeart(false), 650)
+    }
+    lastTap.current = now
   }
 
   if (!canView || urls.length === 0) return null
@@ -225,6 +247,7 @@ function MediaCarousel({ urls, canView, videoIdPrefix, muted, onMuteChange }: { 
         className="flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-hide"
         onScroll={handleScroll}
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        onClick={handleTap}
       >
         {urls.map((url, index) => (
           <div key={index} className="flex-none w-full snap-center">
@@ -236,6 +259,7 @@ function MediaCarousel({ urls, canView, videoIdPrefix, muted, onMuteChange }: { 
                   videoId={`${videoIdPrefix || 'carousel'}-${index}-${url}`}
                   muted={muted}
                   onMuteChange={onMuteChange}
+                  shouldPlay={shouldPlay}
                 />
               </div>
             ) : (
@@ -243,12 +267,27 @@ function MediaCarousel({ urls, canView, videoIdPrefix, muted, onMuteChange }: { 
                 src={url}
                 alt=""
                 loading="lazy"
-                className="w-full h-full object-contain bg-black"
+                className="w-full h-full object-contain bg-black select-none"
               />
             )}
           </div>
         ))}
       </div>
+
+      {/* Double-tap heart overlay */}
+      <AnimatePresence>
+        {showHeart && (
+          <motion.div
+            className="absolute inset-0 flex items-center justify-center pointer-events-none"
+            initial={{ scale: 0.6, opacity: 0 }}
+            animate={{ scale: 1.1, opacity: 0.9 }}
+            exit={{ scale: 0.8, opacity: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <Heart className="w-24 h-24 text-white fill-white drop-shadow-[0_8px_24px_rgba(0,0,0,0.35)]" />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Dot indicators - only show if multiple items */}
       {urls.length > 1 && (
@@ -276,18 +315,21 @@ function MediaCarousel({ urls, canView, videoIdPrefix, muted, onMuteChange }: { 
   )
 }
 
-export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGoLive }: HomePageProps) {
+export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGoLive, onSheetStateChange }: HomePageProps) {
   const [posts, setPosts] = useState<Post[]>([])
   const [suggestions, setSuggestions] = useState<User[]>([])
   const [livestreams, setLivestreams] = useState<Livestream[]>([])
   const [loading, setLoading] = useState(true)
   const [feedMuted, setFeedMuted] = useState(false)
+  const [activePostId, setActivePostId] = useState<number | null>(null)
   const [purchaseModal, setPurchaseModal] = useState<Post | null>(null)
   const [purchasing, setPurchasing] = useState(false)
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
   const [postMenuOpen, setPostMenuOpen] = useState<number | null>(null)
   const [visibleCount, setVisibleCount] = useState(INITIAL_POST_BATCH)
   const loadMoreRef = useRef<HTMLDivElement | null>(null)
+  const mediaRefs = useRef<Map<number, Element>>(new Map())
+  const mediaObserver = useRef<IntersectionObserver | null>(null)
 
   // Likes sheet state
   const [likesSheetOpen, setLikesSheetOpen] = useState(false)
@@ -298,6 +340,12 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   const [commentsSheetOpen, setCommentsSheetOpen] = useState(false)
   const [commentsSheetPost, setCommentsSheetPost] = useState<number | null>(null)
 
+  // Notify parent when any bottom sheet is open
+  useEffect(() => {
+    const anySheetOpen = commentsSheetOpen || likesSheetOpen || !!purchaseModal || postMenuOpen !== null
+    onSheetStateChange?.(anySheetOpen)
+  }, [commentsSheetOpen, likesSheetOpen, purchaseModal, postMenuOpen, onSheetStateChange])
+
   useEffect(() => {
     loadData()
   }, [])
@@ -307,6 +355,11 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
     return () => {
       unsubscribe()
     }
+  }, [])
+
+  const scrollEl = useMemo(() => {
+    if (typeof document === 'undefined') return null
+    return (document.querySelector('main') as HTMLElement | null) ?? document.documentElement
   }, [])
 
   const loadData = async () => {
@@ -324,22 +377,72 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
   const handleLike = async (post: Post) => {
     if (!post.can_view) return
-    if (post.liked) {
-      await unlikePost(user.telegram_id, post.id)
-      setPosts(posts.map(p => p.id === post.id ? { ...p, liked: false, likes_count: Math.max(0, (p.likes_count || 0) - 1) } : p))
-    } else {
-      await likePost(user.telegram_id, post.id)
-      setPosts(posts.map(p => p.id === post.id ? { ...p, liked: true, likes_count: (p.likes_count || 0) + 1 } : p))
+    const optimisticLiked = !post.liked
+    const delta = optimisticLiked ? 1 : -1
+
+    // optimistic update
+    setPosts(prev =>
+      prev.map(p =>
+        p.id === post.id
+          ? {
+              ...p,
+              liked: optimisticLiked,
+              likes_count: Math.max(0, (p.likes_count || 0) + delta)
+            }
+          : p
+      )
+    )
+
+    try {
+      if (optimisticLiked) {
+        await likePost(user.telegram_id, post.id)
+      } else {
+        await unlikePost(user.telegram_id, post.id)
+      }
+    } catch (err) {
+      // rollback on failure
+      setPosts(prev =>
+        prev.map(p =>
+          p.id === post.id
+            ? {
+                ...p,
+                liked: !optimisticLiked,
+                likes_count: Math.max(0, (p.likes_count || 0) - delta)
+              }
+            : p
+        )
+      )
+      console.warn('Like action failed', err)
     }
   }
 
   const handleSave = async (post: Post) => {
-    if (post.saved) {
-      await unsavePost(user.telegram_id, post.id)
-      setPosts(posts.map(p => p.id === post.id ? { ...p, saved: false } : p))
-    } else {
-      await savePost(user.telegram_id, post.id)
-      setPosts(posts.map(p => p.id === post.id ? { ...p, saved: true } : p))
+    const optimisticSaved = !post.saved
+
+    setPosts(prev =>
+      prev.map(p =>
+        p.id === post.id
+          ? { ...p, saved: optimisticSaved }
+          : p
+      )
+    )
+
+    try {
+      if (optimisticSaved) {
+        await savePost(user.telegram_id, post.id)
+      } else {
+        await unsavePost(user.telegram_id, post.id)
+      }
+    } catch (err) {
+      // rollback
+      setPosts(prev =>
+        prev.map(p =>
+          p.id === post.id
+            ? { ...p, saved: !optimisticSaved }
+            : p
+        )
+      )
+      console.warn('Save action failed', err)
     }
   }
 
@@ -464,6 +567,53 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   }, [visibleCount, posts.length])
 
   const visiblePosts = useMemo(() => posts.slice(0, visibleCount), [posts, visibleCount])
+
+  const feedVirtualizer = useVirtualizer({
+    count: visiblePosts.length,
+    getScrollElement: () => (scrollEl ?? document.documentElement)!,
+    estimateSize: () => 720,
+    overscan: 4,
+    scrollMargin: 120,
+  })
+
+  // Track which post is most visible to drive video playback
+  useEffect(() => {
+    if (mediaObserver.current) {
+      mediaObserver.current.disconnect()
+    }
+
+    const rootEl = document.querySelector('main') as HTMLElement | null
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let bestId: number | null = null
+        let bestRatio = 0
+        for (const entry of entries) {
+          const idAttr = (entry.target as HTMLElement).dataset.postId
+          const id = idAttr ? Number(idAttr) : null
+          if (!id) continue
+          if (entry.isIntersecting && entry.intersectionRatio > bestRatio) {
+            bestRatio = entry.intersectionRatio
+            bestId = id
+          }
+        }
+        if (bestId !== null) {
+          setActivePostId(bestId)
+        }
+      },
+      {
+        root: rootEl || undefined,
+        threshold: [0.25, 0.5, 0.75],
+        rootMargin: '0px 0px -15% 0px',
+      }
+    )
+
+    mediaRefs.current.forEach((el) => observer.observe(el))
+    mediaObserver.current = observer
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [visiblePosts])
   const formatTime = (date: string) => {
     const diff = Date.now() - new Date(date).getTime()
     const hours = Math.floor(diff / 3600000)
@@ -541,13 +691,13 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                   )}
                   <button
                     onClick={() => handleCopyLink(post)}
-                    className="w-full px-5 py-3 text-left text-[14px] font-semibold text-gray-700 hover:bg-gray-50 flex items-center gap-3"
+                    className="w-full px-5 py-3 text-left text-[14px] font-semibold text-gray-700 hover:bg-gray-900 flex items-center gap-3"
                   >
                     <Copy className="w-4 h-4" /> Copy link
                   </button>
                   <button
                     onClick={() => handleHidePost(post)}
-                    className="w-full px-5 py-3 text-left text-[14px] font-semibold text-gray-700 hover:bg-gray-50 flex items-center gap-3"
+                    className="w-full px-5 py-3 text-left text-[14px] font-semibold text-gray-700 hover:bg-gray-900 flex items-center gap-3"
                   >
                     <EyeOff className="w-4 h-4" /> Not interested
                   </button>
@@ -577,13 +727,25 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
       {/* Media */}
       {post.media_url && post.can_view ? (
-        <div className="w-full bg-black">
+        <div
+          className="w-full bg-black rounded-2xl overflow-hidden border border-white/5"
+          data-post-id={post.id}
+          ref={(el) => {
+            if (el) {
+              mediaRefs.current.set(post.id, el)
+            } else {
+              mediaRefs.current.delete(post.id)
+            }
+          }}
+        >
           <MediaCarousel
             urls={post.media_urls && post.media_urls.length > 0 ? post.media_urls : [post.media_url]}
             canView={post.can_view}
             muted={feedMuted}
             onMuteChange={setFeedMuted}
             videoIdPrefix={post.id.toString()}
+            shouldPlay={activePostId === post.id}
+            onDoubleTap={() => handleLike(post)}
           />
         </div>
       ) : post.media_url ? (
@@ -602,7 +764,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
             
             {post.unlock_price > 0 ? (
               <motion.button
-                className="w-full py-4 bg-white text-gray-900 rounded-2xl font-bold text-[15px] shadow-[0_0_30px_-5px_rgba(255,255,255,0.3)] flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors relative overflow-hidden group"
+                className="w-full py-4 bg-white text-white rounded-2xl font-bold text-[15px] shadow-[0_0_30px_-5px_rgba(255,255,255,0.3)] flex items-center justify-center gap-2 hover:bg-gray-900 transition-colors relative overflow-hidden group"
                 whileTap={{ scale: 0.98 }}
                 onClick={() => setPurchaseModal(post)}
               >
@@ -612,7 +774,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
               </motion.button>
             ) : (
               <motion.button
-                className="w-full py-4 bg-white text-gray-900 rounded-2xl font-bold text-[15px] shadow-[0_0_30px_-5px_rgba(255,255,255,0.3)] flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors"
+                className="w-full py-4 bg-white text-white rounded-2xl font-bold text-[15px] shadow-[0_0_30px_-5px_rgba(255,255,255,0.3)] flex items-center justify-center gap-2 hover:bg-gray-900 transition-colors"
                 whileTap={{ scale: 0.98 }}
                 onClick={() => post.creator && onCreatorClick(post.creator)}
               >
@@ -706,13 +868,13 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
         {[1,2,3].map(i => (
           <div key={i} className="card p-4 animate-pulse">
             <div className="flex gap-3 mb-3">
-              <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
+              <div className="w-10 h-10 bg-gray-800 rounded-full"></div>
               <div className="flex-1">
-                <div className="h-4 bg-gray-200 rounded w-24 mb-2"></div>
-                <div className="h-3 bg-gray-200 rounded w-16"></div>
+                <div className="h-4 bg-gray-800 rounded w-24 mb-2"></div>
+                <div className="h-3 bg-gray-800 rounded w-16"></div>
               </div>
             </div>
-            <div className="h-48 bg-gray-200 rounded-xl"></div>
+            <div className="h-48 bg-gray-800 rounded-xl"></div>
           </div>
         ))}
       </div>
@@ -720,14 +882,14 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   }
 
   return (
-    <div className="bg-white max-w-lg mx-auto">
+    <div className="bg-black max-w-lg mx-auto">
       {/* Live Now Section - Stories style */}
       {(livestreams.length > 0 || user.is_creator) && (
-        <div className="border-b border-gray-100 py-3 px-4">
+        <div className="border-b border-gray-800 py-3 px-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-              <span className="text-[13px] font-semibold text-gray-900">Live</span>
+              <span className="text-[13px] font-semibold text-white">Live</span>
             </div>
             {user.is_creator && onGoLive && (
               <button
@@ -761,7 +923,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                       LIVE
                     </div>
                   </div>
-                  <span className="text-[11px] text-gray-900 mt-1.5 truncate w-full text-center">
+                  <span className="text-[11px] text-white mt-1.5 truncate w-full text-center">
                     {stream.creator?.first_name}
                   </span>
                 </button>
@@ -777,10 +939,10 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
       {/* Suggestions */}
       {suggestions.length > 0 && (
-        <div className="border-b border-gray-100 py-4 px-4">
+        <div className="border-b border-gray-800 py-4 px-4">
           <div className="flex items-center justify-between mb-4">
             <span className="text-[14px] font-semibold text-gray-500">Suggested for you</span>
-            <button className="text-[13px] font-semibold text-gray-900">
+            <button className="text-[13px] font-semibold text-white">
               See All
             </button>
           </div>
@@ -789,7 +951,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
             {suggestions.map((creator) => (
               <div
                 key={creator.telegram_id}
-                className="min-w-[150px] bg-gray-50 rounded-lg p-4 flex flex-col items-center"
+                className="min-w-[150px] bg-gray-900 rounded-lg p-4 flex flex-col items-center"
               >
                 <button
                   onClick={() => onCreatorClick(creator)}
@@ -807,7 +969,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                       </div>
                     )}
                   </div>
-                  <span className="text-[13px] font-semibold text-gray-900 truncate w-full text-center">
+                  <span className="text-[13px] font-semibold text-white truncate w-full text-center">
                     {creator.username}
                   </span>
                   <span className="text-[12px] text-gray-500 truncate w-full text-center">
@@ -826,7 +988,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
         </div>
       )}
 
-      {/* Posts Feed - Simple map, no virtualizer overlap issues */}
+      {/* Posts Feed - Virtualized for smooth scroll */}
       <div className="bg-black">
         {posts.length === 0 ? (
           <div className="px-4 py-16 text-center">
@@ -837,11 +999,41 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
             <p className="text-sm text-gray-400">Follow creators to see their posts in your feed.</p>
           </div>
         ) : (
-          <div>
-            {visiblePosts.map((post) => renderPostCard(post))}
+          <div style={{ position: 'relative', height: feedVirtualizer.getTotalSize() + 120 }}>
+            {feedVirtualizer.getVirtualItems().map((virtualRow) => {
+              const post = visiblePosts[virtualRow.index]
+              if (!post) return null
+
+              return (
+                <div
+                  key={post.id}
+                  data-index={virtualRow.index}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                    paddingBottom: 24,
+                  }}
+                >
+                  {renderPostCard(post)}
+                </div>
+              )
+            })}
 
             {visibleCount < posts.length && (
-              <div ref={loadMoreRef} className="flex items-center justify-center py-8">
+              <div
+                ref={loadMoreRef}
+                className="flex items-center justify-center"
+                style={{
+                  position: 'absolute',
+                  top: feedVirtualizer.getTotalSize(),
+                  left: 0,
+                  width: '100%',
+                  padding: '32px 0',
+                }}
+              >
                 <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
               </div>
             )}
@@ -868,7 +1060,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
               onClick={e => e.stopPropagation()}
             >
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold text-gray-900">Unlock Content</h3>
+                <h3 className="text-xl font-bold text-white">Unlock Content</h3>
                 <button onClick={() => setPurchaseModal(null)} className="p-1 rounded-full hover:bg-gray-100 transition-colors">
                   <X className="w-6 h-6 text-gray-500" />
                 </button>
@@ -883,12 +1075,12 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                 <p className="text-4xl font-bold text-green-600 tracking-tight">${purchaseModal.unlock_price.toFixed(2)}</p>
               </div>
 
-              <div className="bg-gray-50/80 rounded-2xl p-4 mb-6 border border-gray-100">
+              <div className="bg-gray-900/80 rounded-2xl p-4 mb-6 border border-gray-800">
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-500">Your balance</span>
                   <span className="font-bold text-gray-800">{user.balance} tokens</span>
                 </div>
-                <div className="w-full h-[1px] bg-gray-200 my-2" />
+                <div className="w-full h-[1px] bg-gray-800 my-2" />
                 <div className="flex justify-between text-sm items-center">
                   <span className="text-gray-500">Remaining</span>
                   <span className={`font-bold ${user.balance >= purchaseModal.unlock_price ? 'text-gray-800' : 'text-red-500'}`}>
@@ -901,7 +1093,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                 className={`w-full py-3.5 rounded-xl font-bold text-[15px] flex items-center justify-center gap-2 shadow-lg transition-all
                   ${user.balance >= purchaseModal.unlock_price 
                     ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-green-500/25' 
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                    : 'bg-gray-800 text-gray-400 cursor-not-allowed'}`}
                 whileHover={user.balance >= purchaseModal.unlock_price ? { scale: 1.02, y: -1 } : {}}
                 whileTap={user.balance >= purchaseModal.unlock_price ? { scale: 0.98 } : {}}
                 onClick={() => handlePurchase(purchaseModal)}

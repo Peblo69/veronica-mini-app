@@ -13,6 +13,12 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false },
 })
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
 interface AdminRequestBody {
   action?: string
   data?: Record<string, unknown>
@@ -23,6 +29,7 @@ function jsonResponse(body: unknown, status = 200) {
     status,
     headers: {
       'content-type': 'application/json',
+      ...corsHeaders,
     },
   })
 }
@@ -41,6 +48,11 @@ async function ensureAuthorized(req: Request): Promise<Response | null> {
 }
 
 serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders })
+  }
+
   if (req.method !== 'POST') {
     return jsonResponse({ error: 'Method not allowed' }, 405)
   }

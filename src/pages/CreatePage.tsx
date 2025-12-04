@@ -181,10 +181,14 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
       const finalNsfw = isCreator ? isNsfw : false
       const finalPrice = isCreator && showPriceInput ? parseFloat(unlockPrice) || 0 : 0
 
+      const hasMedia = mediaUrls.length > 0
+      const hasVideo = mediaFiles.some(file => file.type === 'video')
+      const primaryMediaType = hasMedia ? (hasVideo ? 'video' : 'image') : 'text'
       const postPayload: CreatePostData = {
-        content,
-        media_url: mediaUrls[0] || '', // First image as main
-        media_urls: mediaUrls.length > 0 ? mediaUrls : undefined,
+        content: content.trim(),
+        media_url: hasMedia ? mediaUrls[0] : undefined, // First media as main
+        media_urls: hasMedia ? mediaUrls : undefined,
+        media_type: primaryMediaType,
         visibility: finalVisibility,
         is_nsfw: finalNsfw,
         unlock_price: finalPrice,
@@ -200,7 +204,8 @@ export default function CreatePage({ user, onBecomeCreator }: CreatePageProps) {
       const { error } = await createPost(user.telegram_id, postPayload)
 
       if (error) {
-        alert('Failed to create post')
+        console.error('Create post failed:', error)
+        alert(`Failed to create post: ${error.message || 'Please try again.'}`)
       } else {
         setSuccess(true)
         setContent('')

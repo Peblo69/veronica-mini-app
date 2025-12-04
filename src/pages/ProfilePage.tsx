@@ -3,6 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Grid, Bookmark, Clock, CheckCircle, Lock, Menu, Plus, UserPlus, Camera, Image, Video, X } from 'lucide-react'
 import { type User, type Post, getCreatorPosts, getSavedPosts } from '../lib/api'
 import PostDetail from '../components/PostDetail'
+import { useInViewport } from '../hooks/useInViewport'
+import { usePrefetchMedia } from '../hooks/usePrefetchMedia'
+import { useConnectionQuality } from '../hooks/useConnectionQuality'
 
 interface ProfilePageProps {
   user: User & { application_status?: string }
@@ -63,51 +66,6 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
   const handleStoryUpload = () => {
     setShowActionMenu(false)
     storyInputRef.current?.click()
-  }
-
-  const isVideoPost = (post: Post) => {
-    if (!post.media_url) return false
-    if (post.media_type) {
-      const type = post.media_type.toLowerCase()
-      if (type.includes('video')) return true
-    }
-    return /\.(mp4|webm|mov|m4v)$/i.test(post.media_url)
-  }
-
-  const renderPostMedia = (post: Post) => {
-    if (!post.media_url) {
-      return (
-        <div className="w-full h-full bg-gray-50 flex items-center justify-center p-3">
-          <p className="text-[10px] text-gray-500 text-center line-clamp-4">{post.content}</p>
-        </div>
-      )
-    }
-
-    if (isVideoPost(post)) {
-      return (
-        <>
-          <img
-            src={post.media_thumbnail || post.media_url}
-            className="w-full h-full object-cover"
-            alt=""
-            loading="lazy"
-          />
-          <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/10 to-transparent" />
-          <div className="absolute top-1 right-1 bg-black/60 rounded-full p-1">
-            <Video className="w-3.5 h-3.5 text-white" />
-          </div>
-        </>
-      )
-    }
-
-    return (
-      <img
-        src={post.media_url}
-        alt=""
-        className="w-full h-full object-cover"
-        loading="lazy"
-      />
-    )
   }
 
   const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>, type: 'profile' | 'story') => {
@@ -343,7 +301,7 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
                   whileTap={{ opacity: 0.9 }}
                   onClick={() => setSelectedPost(post)}
                 >
-                  {renderPostMedia(post)}
+                  <ProfileMediaTile post={post} />
                   {post.visibility !== 'public' && (
                     <div className="absolute top-1 right-1">
                       <Lock className="w-3 h-3 text-white drop-shadow-md" />
@@ -371,7 +329,7 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
                   whileTap={{ opacity: 0.9 }}
                   onClick={() => setSelectedPost(post)}
                 >
-                  {renderPostMedia(post)}
+                  <ProfileMediaTile post={post} />
                 </motion.div>
               ))}
             </div>
@@ -508,6 +466,66 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
           </>
         )}
       </AnimatePresence>
+    </div>
+  )
+}
+
+const VIDEO_REGEX = /\.(mp4|webm|mov|m4v)$/i
+
+function isVideoPost(post: Post) {
+  if (!post.media_url) return false
+  if (post.media_type) {
+    const type = post.media_type.toLowerCase()
+    if (type.includes('video')) return true
+  }
+  return VIDEO_REGEX.test(post.media_url)
+}
+
+function ProfileMediaTile({ post }: { post: Post }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [shouldLoad, setShouldLoad] = useState(false)
+  const isVisible = useInViewport(containerRef, { minimumRatio: 0.25 })
+  const displayUrl = post.media_thumbnail || post.media_url
+  const { isDataSaver } = useConnectionQuality()
+  usePrefetchMedia(isDataSaver ? null : displayUrl)
+
+  useEffect(() => {
+    if (isVisible) setShouldLoad(true)
+  }, [isVisible])
+
+  if (!post.media_url) {
+    return (
+      <div ref={containerRef} className="w-full h-full flex items-center justify-center bg-gray-50 p-3">
+        <p className="text-[10px] text-gray-500 text-center line-clamp-4">{post.content}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div ref={containerRef} className="w-full h-full">
+      {!shouldLoad ? (
+        <div className="w-full h-full bg-gray-100 animate-pulse" />
+      ) : isVideoPost(post) ? (
+        <>
+          <img
+            src={displayUrl || post.media_url}
+            alt=""
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+          <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/20 to-transparent" />
+          <div className="absolute top-1 right-1 bg-black/60 rounded-full p-1">
+            <Video className="w-3.5 h-3.5 text-white" />
+          </div>
+        </>
+      ) : (
+        <img
+          src={post.media_url}
+          alt=""
+          className="w-full h-full object-cover"
+          loading="lazy"
+        />
+      )}
     </div>
   )
 }

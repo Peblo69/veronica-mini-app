@@ -290,6 +290,7 @@ export interface CreatePostData {
 }
 
 export async function createPost(creatorId: number, postData: CreatePostData) {
+  const trimmedContent = (postData.content || '').trim()
   // Determine media type from URL if not provided
   let mediaType = postData.media_type || 'text'
   const firstUrl = postData.media_urls?.[0] || postData.media_url
@@ -305,12 +306,15 @@ export async function createPost(creatorId: number, postData: CreatePostData) {
   // Build insert data
   const insertData: Record<string, unknown> = {
     creator_id: creatorId,
-    content: postData.content,
-    media_url: firstUrl || postData.media_url, // First image as main/thumbnail
+    content: trimmedContent,
     media_type: mediaType,
     visibility: postData.visibility || 'public',
     is_nsfw: postData.is_nsfw || false,
     unlock_price: postData.unlock_price || 0,
+  }
+
+  if (firstUrl) {
+    insertData.media_url = firstUrl // First image/video as primary
   }
 
   if (postData.media_thumbnail_url) {
@@ -331,6 +335,10 @@ export async function createPost(creatorId: number, postData: CreatePostData) {
     .insert(insertData)
     .select()
     .single()
+
+  if (error) {
+    console.error('createPost supabase error:', { error, insertData })
+  }
 
   // Update post count
   if (!error) {
@@ -523,6 +531,44 @@ export async function getPostLikes(postId: number): Promise<User[]> {
   return (data || []).map((item: any) => item.users).filter(Boolean) as User[]
 }
 
+// Get users who commented on a post (unique)
+export async function getPostCommenters(postId: number): Promise<User[]> {
+  const { data, error } = await supabase
+    .from('comments')
+    .select(`
+      user_id,
+      users:user_id (
+        telegram_id,
+        username,
+        first_name,
+        last_name,
+        avatar_url,
+        is_verified,
+        is_creator
+      )
+    `)
+    .eq('post_id', postId)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error('Error fetching post commenters:', error)
+    return []
+  }
+
+  // Get unique users (user might have multiple comments)
+  const seen = new Set<number>()
+  const uniqueUsers: User[] = []
+  for (const item of data || []) {
+    const user = (item as any).users
+    if (user && !seen.has(user.telegram_id)) {
+      seen.add(user.telegram_id)
+      uniqueUsers.push(user)
+    }
+  }
+
+  return uniqueUsers
+}
+
 // ============================================
 // FOLLOWS / SUBSCRIPTIONS API
 // ============================================
@@ -592,6 +638,16 @@ export async function isSubscribed(subscriberId: number, creatorId: number): Pro
     .eq('is_active', true)
     .single()
   return !!data
+}
+
+// Search users by username or display name
+export async function searchUsers(query: string, limit = 20): Promise<User[]> {
+  const { data } = await supabase
+    .from('users')
+    .select('*')
+    .or(`username.ilike.%${query}%,display_name.ilike.%${query}%`)
+    .limit(limit)
+  return (data || []) as User[]
 }
 
 // ============================================

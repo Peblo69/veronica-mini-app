@@ -41,8 +41,6 @@
   }
 
   setViewportHeight()
-  window.visualViewport?.addEventListener('resize', setViewportHeight)
-  window.addEventListener('resize', setViewportHeight)
 })()
 
 import { StrictMode } from 'react'

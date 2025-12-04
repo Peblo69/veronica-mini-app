@@ -13,7 +13,14 @@
       "Bash(git push:*)",
       "Bash(npm run dev:*)",
       "WebSearch",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(npx supabase:*)",
+      "Bash(openssl rand:*)",
+      "Bash(npm run web:*)",
+      "Bash(npx expo start)",
+      "Bash(npx expo start --port 8085)",
+      "Bash(git clone:*)",
+      "Bash(npx expo install:*)"
     ],
     "deny": [],
     "ask": []

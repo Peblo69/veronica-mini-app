@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import type { VideoHTMLAttributes } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle, Search, ArrowLeft, Send, Image, Gift, DollarSign, Lock, X, Loader2, Plus, Video, CheckCheck, AlertCircle, CornerUpLeft, Forward, Trash2, Flag, Smile } from 'lucide-react'
+import { CheckCircle, Search, ArrowLeft, Send, Image, Gift, DollarSign, Lock, X, Loader2, Plus, Video, CheckCheck, AlertCircle, CornerUpLeft, Forward, Trash2, Flag, Smile, Mic, Volume2 } from 'lucide-react'
 import { type User } from '../lib/api'
 import {
   getConversations,
@@ -23,6 +25,7 @@ import {
 } from '../lib/chatApi'
 import { uploadMessageMedia, uploadVoiceMessage, getMediaType } from '../lib/storage'
 import VoiceRecorder from '../components/VoiceRecorder'
+import { useInViewport } from '../hooks/useInViewport'
 
 type ChatMessage = Message & {
   _localId?: string
@@ -37,6 +40,36 @@ type PendingMedia = {
   file: File | Blob
   mediaType: 'image' | 'video' | 'voice'
   duration?: number
+}
+
+type MessageVideoProps = VideoHTMLAttributes<HTMLVideoElement> & {
+  containerClassName?: string
+}
+
+function MessageVideo({ containerClassName, ...videoProps }: MessageVideoProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const isVisible = useInViewport(containerRef, { minimumRatio: 0.35 })
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    if (!isVisible && !video.paused) {
+      video.pause()
+    }
+  }, [isVisible])
+
+  const attrs: VideoHTMLAttributes<HTMLVideoElement> = {
+  ...videoProps,
+  preload: videoProps.preload ?? 'metadata'
+  }
+
+  return (
+    <div ref={containerRef} className={containerClassName}>
+      <video ref={videoRef} {...attrs} />
+    </div>
+  )
 }
 
 type MessageCategory = 'primary' | 'general' | 'requests'
@@ -78,25 +111,21 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const previewUrlsRef = useRef<Set<string>>(new Set())
   const pendingMediaRef = useRef<Map<string, PendingMedia>>(new Map())
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const [keyboardHeight, setKeyboardHeight] = useState(0)
-  const keyboardHeightRef = useRef(0)
-  const viewportKeyboardRef = useRef(0)
-  const composerFocusedRef = useRef(false)
   const initialScrollDoneRef = useRef(false)
   const isSendingRef = useRef(false)
-  const setKeyboardInset = useCallback((value: number, options?: { force?: boolean }) => {
-    const nextValue = Math.max(0, Math.round(value || 0))
-    viewportKeyboardRef.current = nextValue
-    const shouldApply = options?.force || composerFocusedRef.current
-    const finalValue = shouldApply ? nextValue : 0
-    if (keyboardHeightRef.current === finalValue) return
-    keyboardHeightRef.current = finalValue
-    setKeyboardHeight(finalValue)
-  }, [])
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastTapRef = useRef<{ time: number; messageId: string } | null>(null)
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const pendingReactionsRef = useRef<Set<string>>(new Set()) // Track pending reaction calls
+
+  const messageListVirtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => messagesContainerRef.current,
+    estimateSize: () => 220,
+    overscan: 12,
+    getItemKey: (index) => messages[index]?.id ?? index,
+    measureElement: (el) => el.getBoundingClientRect().height || 0,
+  })
 
   const trackPreviewUrl = (url: string) => {
     previewUrlsRef.current.add(url)
@@ -215,42 +244,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       onChatStateChange?.(false)
     }
   }, [activeConversation])
-
-  // Keyboard handling - keep composer synced with keyboard height
-  useEffect(() => {
-    if (!activeConversation) return
-
-    const tg = (window as any).Telegram?.WebApp
-
-    const handleTelegramViewport = (event?: { height?: number; isStateStable?: boolean }) => {
-      if (!tg) return
-      const stableHeight = tg.viewportStableHeight || window.innerHeight
-      const currentHeight = event?.height ?? tg.viewportHeight ?? window.innerHeight
-      const keyboardSpace = Math.max(0, (stableHeight || 0) - (currentHeight || 0))
-      setKeyboardInset(keyboardSpace)
-    }
-
-    const handleVisualViewport = () => {
-      if (!window.visualViewport) return
-      const keyboardSpace = Math.max(0, window.innerHeight - window.visualViewport.height)
-      setKeyboardInset(keyboardSpace)
-    }
-
-    handleTelegramViewport()
-    handleVisualViewport()
-
-    tg?.onEvent?.('viewportChanged', handleTelegramViewport)
-    window.visualViewport?.addEventListener('resize', handleVisualViewport)
-    window.visualViewport?.addEventListener('scroll', handleVisualViewport)
-
-    return () => {
-      tg?.offEvent?.('viewportChanged', handleTelegramViewport)
-      window.visualViewport?.removeEventListener('resize', handleVisualViewport)
-      window.visualViewport?.removeEventListener('scroll', handleVisualViewport)
-      composerFocusedRef.current = false
-      setKeyboardInset(0, { force: true })
-    }
-  }, [activeConversation, setKeyboardInset])
 
   // Scroll to bottom on new messages (only after initial load is done)
   useEffect(() => {
@@ -383,15 +376,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
     // Add optimistic message
     setMessages(prev => [...prev, optimisticMessage])
-
-    // Blur after a micro delay to let iOS finish the touch event
-    setTimeout(() => {
-      if (inputRef.current) {
-        inputRef.current.blur()
-      }
-      composerFocusedRef.current = false
-      setKeyboardInset(0, { force: true })
-    }, 50)
 
     try {
       // Pass reply_to_id if replying to a message
@@ -719,20 +703,20 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
   // Scroll to replied message with highlight animation
   const scrollToMessage = useCallback((messageId: string) => {
-    const element = messageRefs.current.get(messageId)
-    if (!element) return
+    const targetIndex = messages.findIndex(m => m.id === messageId)
+    if (targetIndex === -1) return
 
-    // Scroll to the message
-    element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    messageListVirtualizer.scrollToIndex(targetIndex, { align: 'center' })
 
-    // Add highlight with pulse animation
     setTimeout(() => {
+      const element = messageRefs.current.get(messageId)
+      if (!element) return
+
       element.classList.add('animate-pulse')
       element.style.backgroundColor = 'rgba(59, 130, 246, 0.25)'
       element.style.borderRadius = '16px'
       element.style.transition = 'background-color 0.3s ease-out'
 
-      // Flash effect - pulse twice
       setTimeout(() => {
         element.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'
       }, 200)
@@ -743,14 +727,13 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         element.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'
       }, 600)
 
-      // Remove all effects
       setTimeout(() => {
         element.classList.remove('animate-pulse')
         element.style.backgroundColor = ''
         element.style.borderRadius = ''
       }, 1500)
-    }, 300)
-  }, [])
+    }, 120)
+  }, [messageListVirtualizer, messages])
 
   const formatTime = (date: string) => {
     const d = new Date(date)
@@ -794,7 +777,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const renderConversationCard = (conv: Conversation) => (
     <motion.button
       key={conv.id}
-      className="card p-4 flex items-center gap-4 w-full text-left hover:bg-gray-50 transition-colors"
+      className="p-4 flex items-center gap-4 w-full text-left rounded-2xl bg-[#0f0f0f] border border-white/5 hover:bg-white/5 transition-colors shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.15 }}
@@ -805,31 +788,31 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
           src={conv.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${conv.other_user?.telegram_id}`}
           alt=""
           loading="lazy"
-          className="w-14 h-14 rounded-full object-cover"
+          className="w-14 h-14 rounded-full object-cover border border-white/10"
         />
+        {(conv.unread_count || 0) > 0 && (
+          <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-of-blue text-[10px] text-white flex items-center justify-center shadow-lg">
+            {conv.unread_count}
+          </div>
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1">
-          <span className="font-semibold text-[15px]">
+          <span className="font-semibold text-[15px] text-white truncate">
             {conv.other_user?.first_name || conv.other_user?.username || 'User'}
           </span>
           {conv.other_user?.is_verified && (
             <CheckCircle className="w-4 h-4 text-of-blue fill-of-blue" />
           )}
         </div>
-        <p className="text-sm text-gray-500 truncate mt-0.5">
+        <p className="text-sm text-gray-400 truncate mt-0.5">
           {conv.last_message_preview || 'Start a conversation'}
         </p>
       </div>
       <div className="text-right shrink-0">
-        <span className="text-xs text-gray-400">
+        <span className="text-xs text-gray-500">
           {formatTime(conv.last_message_at)}
         </span>
-        {(conv.unread_count || 0) > 0 && (
-          <div className="w-5 h-5 rounded-full bg-of-blue text-white text-xs flex items-center justify-center mt-1 ml-auto">
-            {conv.unread_count}
-          </div>
-        )}
       </div>
     </motion.button>
   )
@@ -838,7 +821,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   if (activeConversation) {
     return (
       <div
-        className="fixed inset-0 z-[100] flex flex-col bg-[#F8FAFC]"
+        className="fixed inset-0 z-[100] flex flex-col bg-[#050505]"
         style={{ height: 'var(--app-height)', position: 'absolute', inset: 0, width: '100%' }}
       >
         {/* Hidden file input */}
@@ -852,16 +835,16 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         />
 
         {/* Header - Sticky at top */}
-        <div className="shrink-0 bg-white border-b border-gray-100 shadow-sm safe-area-top relative z-50">
+        <div className="shrink-0 bg-[#0c0c0c] border-b border-white/5 shadow-sm safe-area-top relative z-50 backdrop-blur-md">
           <div className="flex items-center gap-3 px-3 py-2 h-14">
             <button
               onClick={() => {
                 setActiveConversation(null)
                 onChatStateChange?.(false)
               }}
-              className="p-1.5 hover:bg-gray-100 rounded-full transition-colors -ml-1"
+              className="p-1.5 hover:bg-white/10 rounded-full transition-colors -ml-1"
             >
-              <ArrowLeft className="w-5 h-5 text-gray-800" />
+              <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <button
               onClick={() => {
@@ -869,276 +852,344 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                   onProfileClick?.(activeConversation.other_user)
                 }
               }}
-              className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-70 transition-opacity text-left cursor-pointer"
+              className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 transition-opacity text-left cursor-pointer"
             >
               <div className="relative shrink-0">
                 <img
                   src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
                   alt=""
                   loading="lazy"
-                  className="w-10 h-10 rounded-full object-cover"
+                  className="w-10 h-10 rounded-full object-cover border border-white/10"
                 />
-                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
+                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-[#0c0c0c]" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1">
-                  <span className="font-semibold text-[15px] text-gray-900 truncate">{activeConversation.other_user?.first_name || activeConversation.other_user?.username}</span>
+                  <span className="font-semibold text-[15px] text-white truncate">{activeConversation.other_user?.first_name || activeConversation.other_user?.username}</span>
                   {activeConversation.other_user?.is_verified && (
                     <CheckCircle className="w-3.5 h-3.5 text-of-blue fill-of-blue" />
                   )}
                 </div>
-                <p className="text-[11px] text-green-600 font-medium">Online</p>
+                <p className="text-[11px] text-green-400 font-medium">Online</p>
               </div>
             </button>
           </div>
         </div>
 
-        {/* Messages - Scrollable area */}
-        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-2 overscroll-none">
-          {messages.map((msg, index) => {
-            const isOwn = msg.sender_id === user.telegram_id
-            const isPPVLocked = msg.is_ppv && !msg.ppv_unlocked_by?.includes(user.telegram_id) && !isOwn
-            const showAvatar = !isOwn && (index === messages.length - 1 || messages[index + 1]?.sender_id !== msg.sender_id)
-            const isPending = msg._status === 'sending' || msg._status === 'uploading'
-            const isFailed = msg._status === 'failed'
-            const resolvedMediaUrl = msg.media_url || msg.preview_url || undefined
-            const timeLabel = formatTime(msg.created_at)
-            const reactions = messageReactions.get(msg.id) || []
 
-            const renderTicks = () => {
-              if (!isOwn) return null
-              if (isPending) {
-                return <Loader2 className="w-3 h-3 text-white/70 animate-spin" />
+        {/* Messages - Virtualized scrollable area */}
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 py-3 overscroll-none bg-gradient-to-b from-[#0a0a0a] via-[#0c0c0c] to-[#050505]">
+          <div
+            style={{
+              height: messageListVirtualizer.getTotalSize(),
+              width: '100%',
+              position: 'relative'
+            }}
+          >
+            {messageListVirtualizer.getVirtualItems().map((virtualRow) => {
+              const msg = messages[virtualRow.index]
+              if (!msg) return null
+
+              const index = virtualRow.index
+              const isOwn = msg.sender_id === user.telegram_id
+              const isPPVLocked = msg.is_ppv && !msg.ppv_unlocked_by?.includes(user.telegram_id) && !isOwn
+              const showAvatar = !isOwn && (index === messages.length - 1 || messages[index + 1]?.sender_id !== msg.sender_id)
+              const isPending = msg._status === 'sending' || msg._status === 'uploading'
+              const isFailed = msg._status === 'failed'
+              const resolvedMediaUrl = msg.media_url || msg.preview_url || undefined
+              const timeLabel = formatTime(msg.created_at)
+              const reactions = messageReactions.get(msg.id) || []
+
+              const renderTicks = () => {
+                if (!isOwn) return null
+                if (isPending) {
+                  return <Loader2 className="w-3 h-3 text-white/70 animate-spin" />
+                }
+                return msg.is_read ? (
+                  <CheckCheck className="w-3.5 h-3.5 text-blue-300" />
+                ) : (
+                  <CheckCheck className="w-3.5 h-3.5 text-white/50" />
+                )
               }
-              return msg.is_read ? (
-                <CheckCheck className="w-3.5 h-3.5 text-blue-300" />
-              ) : (
-                <CheckCheck className="w-3.5 h-3.5 text-white/50" />
-              )
-            }
 
-            return (
-              <div
-                key={msg.id}
-                ref={el => { if (el) messageRefs.current.set(msg.id, el) }}
-                className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} transition-colors duration-500 rounded-2xl`}
-              >
-                {/* Reply preview - shows what message this is replying to */}
-                {msg.reply_to && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      scrollToMessage(msg.reply_to!.id)
-                    }}
-                    className={`flex items-start gap-2 text-xs px-3 py-2 rounded-xl mb-1.5 max-w-[85%] ${
-                      isOwn
-                        ? 'bg-blue-400/30 text-white ml-auto border-l-2 border-white/70'
-                        : 'bg-gray-100 text-gray-700 border-l-2 border-of-blue'
-                    }`}
-                  >
-                    <div className="flex flex-col items-start min-w-0 flex-1">
-                      <span className={`text-[11px] font-semibold mb-0.5 ${isOwn ? 'text-white/90' : 'text-of-blue'}`}>
-                        {msg.reply_to.sender_id === user.telegram_id ? 'You' : activeConversation.other_user?.first_name || 'User'}
-                      </span>
-                      <span className={`truncate w-full text-[13px] ${isOwn ? 'text-white/80' : 'text-gray-600'}`}>
-                        {msg.reply_to.content
-                          ? msg.reply_to.content.slice(0, 50) + (msg.reply_to.content.length > 50 ? '...' : '')
-                          : msg.reply_to.message_type === 'image' ? '📷 Photo'
-                          : msg.reply_to.message_type === 'video' ? '🎥 Video'
-                          : msg.reply_to.message_type === 'voice' ? '🎤 Voice message'
-                          : msg.reply_to.message_type === 'gift' ? '🎁 Gift'
-                          : '📎 Media'
-                        }
-                      </span>
-                    </div>
-                  </button>
-                )}
-
-                <div className={`flex items-end gap-2 w-full ${isOwn ? 'justify-end' : 'justify-start'}`}>
-                  {!isOwn && (
-                    <div className="w-7 shrink-0 pb-0.5">
-                      {showAvatar && (
-                        <img
-                          src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
-                          alt=""
-                          loading="lazy"
-                          className="w-7 h-7 rounded-full object-cover"
-                        />
-                      )}
-                    </div>
+              return (
+                <div
+                  key={virtualRow.key}
+                  ref={el => {
+                    if (el) {
+                      messageListVirtualizer.measureElement(el)
+                      messageRefs.current.set(msg.id, el)
+                    } else {
+                      messageRefs.current.delete(msg.id)
+                    }
+                  }}
+                  data-index={virtualRow.index}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                    paddingBottom: '8px'
+                  }}
+                  className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} transition-colors duration-500 rounded-2xl`}
+                >
+                  {/* Reply preview - shows what message this is replying to */}
+                  {msg.reply_to && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        scrollToMessage(msg.reply_to!.id)
+                      }}
+              className={`flex items-start gap-2 text-xs px-3 py-2 rounded-xl mb-1.5 max-w-[85%] ${
+                isOwn
+                  ? 'bg-gradient-to-r from-[#1f6fff]/60 to-[#5a8dff]/40 text-white ml-auto border-l-2 border-white/50'
+                  : 'bg-white/8 text-white border-l-2 border-of-blue'
+              }`}
+                    >
+                      <div className="flex flex-col items-start min-w-0 flex-1">
+                        <span className={`text-[11px] font-semibold mb-0.5 ${isOwn ? 'text-white/90' : 'text-of-blue'}`}>
+                          {msg.reply_to.sender_id === user.telegram_id ? 'You' : activeConversation.other_user?.first_name || 'User'}
+                        </span>
+                        <span className={`truncate w-full text-[13px] ${isOwn ? 'text-white/80' : 'text-gray-200'}`}>
+                          {msg.reply_to.content
+                            ? msg.reply_to.content.slice(0, 50) + (msg.reply_to.content.length > 50 ? '...' : '')
+                            : msg.reply_to.message_type === 'image' ? 'Photo'
+                            : msg.reply_to.message_type === 'video' ? 'Video'
+                            : msg.reply_to.message_type === 'voice' ? 'Voice message'
+                            : msg.reply_to.message_type === 'gift' ? 'Gift'
+                            : 'Media'
+                          }
+                        </span>
+                      </div>
+                    </button>
                   )}
 
-                  <div
-                    className={`relative max-w-[75%] px-4 py-2.5 ${
-                      isOwn
-                        ? 'bg-of-blue text-white rounded-[20px] rounded-br-md'
-                        : 'bg-white text-gray-800 rounded-[20px] rounded-bl-md shadow-sm border border-gray-100'
-                    } ${msg.message_type === 'text' || msg.message_type === 'voice' ? '' : '!p-0 !bg-transparent !shadow-none !border-0 !rounded-2xl'} ${isFailed ? 'ring-2 ring-red-300' : ''}`}
-                    style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
-                    onTouchStart={() => handleTouchStart(msg)}
-                    onTouchEnd={handleTouchEnd}
-                    onTouchCancel={handleTouchEnd}
-                    onContextMenu={e => e.preventDefault()}
-                    onClick={() => handleMessageTap(msg)}
-                  >
-                    {isPending && msg.message_type !== 'text' && (
-                      <div className="absolute inset-0 rounded-2xl bg-black/40 flex items-center justify-center z-10">
-                        <Loader2 className="w-8 h-8 text-white animate-spin" />
+                  <div className={`flex items-end gap-2 w-full ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                    {!isOwn && (
+                      <div className="w-7 shrink-0 pb-0.5">
+                        {showAvatar && (
+                          <img
+                            src={activeConversation.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${activeConversation.other_user?.telegram_id}`}
+                            alt=""
+                            loading="lazy"
+                            className="w-7 h-7 rounded-full object-cover"
+                          />
+                        )}
                       </div>
                     )}
 
-                    {/* Gift message */}
-                    {msg.message_type === 'gift' && msg.gift && (
-                      <div className={`text-center py-3 px-4 rounded-2xl ${isOwn ? 'bg-of-blue' : 'bg-white shadow-sm border border-gray-100'}`}>
-                        <div className="w-10 h-10 mx-auto bg-gradient-to-tr from-pink-400 to-rose-500 rounded-xl flex items-center justify-center mb-2">
-                          <Gift className="w-5 h-5 text-white" />
+                    <div
+                      className={`relative max-w-[75%] px-4 py-2.5 ${
+                        isOwn
+                          ? 'bg-gradient-to-r from-[#1f6fff] to-[#5a8dff] text-white rounded-[20px] rounded-br-md shadow-lg shadow-[#1f6fff33]'
+                          : 'bg-[#161616] text-white rounded-[20px] rounded-bl-md border border-white/5'
+                      } ${msg.message_type === 'text' || msg.message_type === 'voice' ? '' : '!p-0 !bg-transparent !shadow-none !border-0 !rounded-2xl'} ${isFailed ? 'ring-2 ring-red-300' : ''}`}
+                      style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
+                      onTouchStart={() => handleTouchStart(msg)}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchCancel={handleTouchEnd}
+                      onContextMenu={e => e.preventDefault()}
+                      onClick={() => handleMessageTap(msg)}
+                    >
+                      {isPending && msg.message_type !== 'text' && (
+                        <div className="absolute inset-0 rounded-2xl bg-black/40 flex items-center justify-center z-10">
+                          <Loader2 className="w-8 h-8 text-white animate-spin" />
                         </div>
-                        <p className={`font-semibold text-sm ${isOwn ? 'text-white' : 'text-gray-800'}`}>
-                          {msg.gift.name}
-                        </p>
-                        <div className={`inline-block px-3 py-1 rounded-full text-xs font-medium mt-1 ${isOwn ? 'bg-white/20 text-white' : 'bg-pink-50 text-pink-600'}`}>
-                          {msg.gift.price} tokens
-                        </div>
-                      </div>
-                    )}
+                      )}
 
-                    {/* Tip message */}
-                    {msg.message_type === 'tip' && (
-                      <div className={`text-center py-3 px-4 rounded-2xl ${isOwn ? 'bg-of-blue' : 'bg-white shadow-sm border border-gray-100'}`}>
-                        <div className="w-10 h-10 mx-auto bg-gradient-to-tr from-green-400 to-emerald-500 rounded-full flex items-center justify-center mb-2">
-                          <DollarSign className="w-5 h-5 text-white" />
+                      {/* Gift message */}
+                      {msg.message_type === 'gift' && msg.gift && (
+                        <div className={`text-center py-3 px-4 rounded-2xl ${isOwn ? 'bg-gradient-to-r from-[#1f6fff] to-[#5a8dff]' : 'bg-white/5 border border-white/10'}`}>
+                          <div className="w-10 h-10 mx-auto bg-gradient-to-tr from-pink-400 to-rose-500 rounded-xl flex items-center justify-center mb-2">
+                            <Gift className="w-5 h-5 text-white" />
+                          </div>
+                          <p className={`font-semibold text-sm ${isOwn ? 'text-white' : 'text-gray-800'}`}>
+                            {msg.gift.name}
+                          </p>
+                          <p className={`text-xs ${isOwn ? 'text-white/80' : 'text-gray-500'}`}>
+                            {msg.gift.price} tokens
+                          </p>
                         </div>
-                        <p className={`font-semibold text-sm ${isOwn ? 'text-white' : 'text-gray-800'}`}>
-                          Tip
-                        </p>
-                        <div className={`inline-block px-3 py-1 rounded-full text-sm font-semibold mt-1 ${isOwn ? 'bg-white/20 text-white' : 'bg-green-50 text-green-600'}`}>
-                          ${msg.tip_amount}
-                        </div>
-                      </div>
-                    )}
+                      )}
 
-                    {/* PPV message */}
-                    {msg.message_type === 'ppv' && (
-                      <div className="min-w-[180px] max-w-[220px] rounded-2xl overflow-hidden bg-black">
-                        {isPPVLocked ? (
-                          <div className="text-center py-4 bg-black/60 backdrop-blur-sm">
-                            <div className="w-10 h-10 mx-auto bg-white/20 rounded-full flex items-center justify-center mb-2">
-                              <Lock className="w-5 h-5 text-white" />
+                      {/* Tip message */}
+                      {msg.tip_amount && (
+                        <div className={`text-center py-3 px-4 rounded-2xl ${isOwn ? 'bg-gradient-to-r from-[#1f6fff] to-[#5a8dff]' : 'bg-white/5 border border-white/10'}`}>
+                          <div className="w-10 h-10 mx-auto bg-gradient-to-tr from-emerald-400 to-green-500 rounded-xl flex items-center justify-center mb-2">
+                            <DollarSign className="w-5 h-5 text-white" />
+                          </div>
+                          <p className={`font-semibold text-sm ${isOwn ? 'text-white' : 'text-gray-800'}`}>
+                            ${msg.tip_amount.toFixed(2)} tip sent
+                          </p>
+                          <p className={`text-xs ${isOwn ? 'text-white/80' : 'text-gray-500'}`}>
+                            {isOwn ? 'You sent a tip' : 'Tip received'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Voice message */}
+                      {msg.message_type === 'voice' && (
+                        <div className={`flex items-center gap-3 ${isOwn ? 'text-white' : 'text-gray-100'}`}>
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isOwn ? 'bg-white/15' : 'bg-white/5'}`}>
+                            <Mic className={`w-5 h-5 ${isOwn ? 'text-white' : 'text-gray-200'}`} />
+                          </div>
+                          <div className="flex-1">
+                            <div className="h-2 rounded-full bg-white/20 overflow-hidden relative">
+                              <div className="absolute inset-y-0 left-0 w-1/2 bg-white/70 animate-pulse" />
                             </div>
-                            <p className="text-xs font-medium mb-2 text-white/80">Exclusive Content</p>
+                            <p className={`text-xs mt-1 ${isOwn ? 'text-white/80' : 'text-gray-400'}`}>
+                              Voice message
+                            </p>
+                          </div>
+                          {isPending ? (
+                            <Loader2 className={`w-4 h-4 animate-spin ${isOwn ? 'text-white/70' : 'text-gray-400'}`} />
+                          ) : (
                             <button
-                              onClick={() => handleUnlockPPV(msg.id)}
-                              className="bg-white text-black px-4 py-1.5 rounded-full text-xs font-bold"
+                              className={`w-8 h-8 rounded-full flex items-center justify-center ${isOwn ? 'bg-white/15 text-white' : 'bg-white/10 text-white'} active:scale-95`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                const audio = new Audio(resolvedMediaUrl!)
+                                audio.play().catch(err => console.error('Failed to play voice', err))
+                              }}
                             >
-                              Unlock ${msg.ppv_price}
+                              <Volume2 className="w-4 h-4" />
                             </button>
-                          </div>
-                        ) : (
-                          <div className="rounded-2xl overflow-hidden">
-                            {msg.media_url && (
-                              msg.media_url.match(/\.(mp4|webm|mov)$/i) ? (
-                                <video src={msg.media_url} controls className="w-full max-h-[220px] object-cover block" />
-                              ) : (
-                                <img src={msg.media_url} alt="" className="w-full max-h-[220px] object-cover block" />
-                              )
-                            )}
-                          </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Image / Video */}
+                      {(msg.message_type === 'image' || msg.message_type === 'video') && resolvedMediaUrl && (
+                        <div className="relative overflow-hidden rounded-2xl max-w-[75vw] max-h-[70vh] bg-black border border-white/10">
+                          {msg.message_type === 'image' ? (
+                            <img
+                              src={resolvedMediaUrl}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <MessageVideo
+                              src={resolvedMediaUrl}
+                              controls
+                              playsInline
+                              loop
+                              muted={!isOwn}
+                              className="max-h-[70vh] max-w-[75vw] object-contain"
+                              containerClassName="max-h-[70vh] max-w-[75vw]"
+                            />
+                          )}
+
+                          {isPending && (
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                              <Loader2 className="w-10 h-10 text-white animate-spin" />
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* PPV locked overlay */}
+                      {isPPVLocked && (
+                        <div className="absolute inset-0 bg-black/70 rounded-2xl flex flex-col items-center justify-center text-white text-center p-4 backdrop-blur-sm">
+                          <Lock className="w-7 h-7 mb-2" />
+                          <p className="font-semibold mb-1">Unlock to view</p>
+                          <p className="text-sm text-white/80 mb-3">{msg.ppv_price} tokens</p>
+                          <button
+                            onClick={() => handleUnlockPPV(msg.id)}
+                            className="px-4 py-2 bg-of-blue rounded-full text-white font-semibold text-sm active:scale-95"
+                          >
+                            Unlock
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Text message */}
+                      {msg.message_type === 'text' && msg.content && (
+                        <p className="text-[15px] leading-relaxed whitespace-pre-wrap break-words">
+                          {msg.content}
+                        </p>
+                      )}
+
+                      {/* Failed status message */}
+                      {isFailed && (
+                        <div className="mt-1 text-xs text-red-200 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          <span>Failed to send</span>
+                        </div>
+                      )}
+
+                      {/* Reply footer - show reply icon */}
+                      <div className={`flex items-center justify-between gap-2 mt-2 text-[11px] ${isOwn ? "text-white/80" : "text-gray-500"}`}>
+                        <div className="flex items-center gap-1.5">
+                          {renderTicks()}
+                          <span>{timeLabel}</span>
+                        </div>
+
+                        {!isPPVLocked && (
+                          <button
+                            className="hover:opacity-80 active:scale-95 transition-transform"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setReplyTo(msg)
+                            }}
+                          >
+                            <CornerUpLeft className="w-3.5 h-3.5" />
+                          </button>
                         )}
                       </div>
+
+                      {/* Reactions */}
+                      {reactions.length > 0 && (
+                        <div className="flex items-center gap-1 mt-1">
+                          {reactions.map((reaction, idx) => (
+                            <div
+                              key={`${reaction.emoji}-${idx}`}
+                              className="flex items-center gap-1 px-2 py-1 bg-white/70 rounded-full shadow-sm border border-white/80"
+                            >
+                              <span>{reaction.emoji}</span>
+                              <span className="text-xs text-gray-600">{reaction.user_id === user.telegram_id ? 'You' : ''}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* PPV locked if attachment */}
+                    {isPPVLocked && (
+                      <button
+                        onClick={() => handleUnlockPPV(msg.id)}
+                        className="mt-2 px-4 py-2 bg-gray-900 text-white rounded-xl text-sm font-semibold active:scale-95 shadow-lg shadow-black/20"
+                      >
+                        Unlock for {msg.ppv_price} tokens
+                      </button>
                     )}
 
-                    {/* Image message */}
-                    {msg.message_type === 'image' && resolvedMediaUrl && (
-                      <div className="rounded-2xl overflow-hidden max-w-[220px]">
-                        <img
-                          src={resolvedMediaUrl}
-                          alt=""
-                          loading="lazy"
-                          className="w-full max-h-[260px] object-cover block rounded-2xl"
-                        />
-                      </div>
-                    )}
-
-                    {/* Video message */}
-                    {msg.message_type === 'video' && resolvedMediaUrl && (
-                      <div className="rounded-2xl overflow-hidden max-w-[220px] bg-black">
-                        <video
-                          src={resolvedMediaUrl}
-                          controls
-                          controlsList="nodownload"
-                          playsInline
-                          muted
-                          preload="metadata"
-                          className="w-full max-h-[260px] object-contain block rounded-2xl"
-                        />
-                      </div>
-                    )}
-
-                    {/* Regular text */}
-                    {msg.message_type === 'text' && (
-                      <>
-                        {msg.content?.match(/^https?:\/\/.*\.(jpg|jpeg|png|gif|webp|mp4|webm)$/i) ? (
-                          <div className="rounded-2xl overflow-hidden max-w-[220px]">
-                            {msg.content.match(/\.(mp4|webm)$/i) ? (
-                              <video src={msg.content} controls controlsList="nodownload" playsInline muted className="w-full max-h-[260px] object-contain block rounded-2xl bg-black" />
-                            ) : (
-                              <img src={msg.content} alt="" className="w-full max-h-[260px] object-cover block rounded-2xl" />
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex items-end gap-2">
-                            <p className="text-[15px] leading-relaxed whitespace-pre-wrap break-words" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{msg.content}</p>
-                            <span className={`text-[10px] shrink-0 flex items-center gap-1 ${isOwn ? 'text-white/60' : 'text-gray-400'}`}>
-                              {timeLabel}
-                              {renderTicks()}
-                            </span>
-                          </div>
-                        )}
-                      </>
-                    )}
-
-                    {/* Voice message */}
-                    {(msg.message_type === 'voice' || resolvedMediaUrl?.match(/\.(webm|ogg|mp3|wav)$/i)) && resolvedMediaUrl && (
-                      <div className={`flex items-center gap-2 min-w-[140px] ${isOwn ? 'text-white' : 'text-gray-800'}`}>
-                        <span className="text-lg">🎙️</span>
-                        <audio src={resolvedMediaUrl} controls className="h-8 w-full accent-current opacity-90" />
-                      </div>
-                    )}
-
-                    {/* Time & ticks for non-text bubbles */}
-                    {msg.message_type !== 'text' && (
-                      <div className={`flex items-center justify-end gap-1 mt-1 ${isOwn ? 'text-white/60' : 'text-gray-400'}`}>
-                        <span className="text-[10px]">{timeLabel}</span>
-                        {renderTicks()}
-                      </div>
-                    )}
-
-                    {/* Reactions - always on bottom right, near page edge */}
-                    {reactions.length > 0 && (
-                      <div className="absolute -bottom-3 -right-1 flex gap-0.5 bg-white rounded-full px-1.5 py-0.5 shadow-md border border-gray-100 z-10">
-                        {reactions.map((r, i) => (
-                          <span key={i} className="text-sm">{r.emoji}</span>
-                        ))}
-                      </div>
+                    {/* Message status icon for errors */}
+                    {isFailed && (
+                      <button
+                        onClick={() => retryFailedMessage(msg)}
+                        className="flex items-center gap-1 text-xs text-red-500 hover:underline"
+                      >
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span>{msg.error || 'Failed. Tap to retry.'}</span>
+                      </button>
                     )}
                   </div>
                 </div>
-
-                {isFailed && (
-                  <button
-                    onClick={() => retryFailedMessage(msg)}
-                    className={`flex items-center gap-1 text-xs text-red-500 px-2 mt-1 ${isOwn ? 'justify-end' : 'justify-start'} hover:underline`}
-                  >
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span>{msg.error || 'Failed. Tap to retry.'}</span>
-                  </button>
-                )}
-              </div>
-            )
-          })}
-          <div ref={messagesEndRef} className="h-6" />
+              )
+            })}
+            <div
+              ref={messagesEndRef}
+              style={{
+                position: 'absolute',
+                top: messageListVirtualizer.getTotalSize(),
+                height: 1,
+                width: '100%'
+              }}
+            />
+          </div>
         </div>
-
         {/* Message Action Menu */}
         <AnimatePresence>
           {showMessageMenu && selectedMessage && (
@@ -1381,12 +1432,10 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
         {/* Input */}
         <div
-          className="shrink-0 bg-white border-t border-gray-100 px-3 py-2 safe-area-bottom"
+          className="shrink-0 bg-white border-t border-gray-100 px-3 py-2"
           style={{
-            paddingBottom: keyboardHeight > 0
-              ? `calc(${keyboardHeight}px + env(safe-area-inset-bottom, 0px))`
-              : undefined,
-            transition: 'padding-bottom 0.2s ease'
+            paddingBottom: 'calc(var(--keyboard-height, 0px) + env(safe-area-inset-bottom, 0px))',
+            transition: 'padding-bottom 0.12s ease'
           }}
         >
           <div className="bg-gray-100 rounded-full p-1.5 flex items-end gap-2">
@@ -1412,17 +1461,9 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 }}
                 ref={inputRef}
                 onFocus={() => {
-                  composerFocusedRef.current = true
-                  // Scroll to bottom instantly when focused
                   requestAnimationFrame(() => {
                     messagesEndRef.current?.scrollIntoView({ block: 'end' })
                   })
-                  setKeyboardInset(viewportKeyboardRef.current, { force: true })
-                }}
-                onBlur={() => {
-                  composerFocusedRef.current = false
-                  // Drop keyboard inset immediately so composer settles with keyboard
-                  setKeyboardInset(0, { force: true })
                 }}
                 placeholder="Message..."
                 rows={1}
@@ -1466,9 +1507,9 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
   // Conversations list
   return (
-    <div className="min-h-full bg-white">
+    <div className="min-h-full bg-[#050505] text-white">
       {/* Header */}
-      <div className="sticky top-0 z-40 bg-white border-b border-gray-100 px-4 pt-4 pb-3">
+      <div className="sticky top-0 z-40 bg-[#0c0c0c] border-b border-white/5 px-4 pt-4 pb-3 backdrop-blur-md">
         <h2 className="text-2xl font-bold mb-4">Messages</h2>
 
         {/* Category Tabs */}
@@ -1479,8 +1520,8 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
               onClick={() => setActiveCategory(cat.id)}
               className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${
                 activeCategory === cat.id
-                  ? 'bg-black text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  ? 'bg-white text-black'
+                  : 'bg-white/10 text-gray-300 hover:bg-white/15'
               }`}
             >
               {cat.label}
@@ -1496,7 +1537,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search messages..."
-            className="w-full pl-11 pr-4 py-3 rounded-xl bg-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-of-blue"
+            className="w-full pl-11 pr-4 py-3 rounded-xl bg-[#111] text-sm text-white focus:outline-none focus:ring-2 focus:ring-of-blue border border-white/10"
           />
         </div>
       </div>
@@ -1508,7 +1549,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
             <Loader2 className="w-8 h-8 animate-spin mx-auto text-of-blue" />
           </div>
         ) : filteredConversations.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
+          <div className="text-center py-12 text-gray-400">
             <p className="font-medium">No messages</p>
             <p className="text-sm mt-1">Start a conversation from a creator's profile</p>
           </div>

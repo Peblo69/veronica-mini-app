@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, Heart, MessageCircle, Bookmark, Share2, MoreHorizontal,
@@ -6,6 +6,8 @@ import {
 } from 'lucide-react'
 import { type User, type Post, editPost, deletePost, likePost, unlikePost, savePost, unsavePost } from '../lib/api'
 import Comments from './Comments'
+import { useInViewport } from '../hooks/useInViewport'
+import { useConnectionQuality } from '../hooks/useConnectionQuality'
 
 interface PostDetailProps {
   post: Post
@@ -28,6 +30,24 @@ export default function PostDetail({ post, user, onBack, onDeleted, onUpdated }:
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const isOwner = Number(post.creator_id) === Number(user.telegram_id)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const videoContainerRef = useRef<HTMLDivElement | null>(null)
+  const isVideoVisible = useInViewport(videoContainerRef, { minimumRatio: 0.5 })
+  const { isSlow, isDataSaver } = useConnectionQuality()
+  const canAutoPlay = !(isSlow || isDataSaver)
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    if (!isVideoVisible && !video.paused) {
+      video.pause()
+      return
+    }
+
+    if (isVideoVisible && canAutoPlay && !video.paused) {
+      video.play().catch(() => {})
+    }
+  }, [isVideoVisible, canAutoPlay])
 
   const handleLike = async () => {
     if (currentPost.liked) {
@@ -192,16 +212,32 @@ export default function PostDetail({ post, user, onBack, onDeleted, onUpdated }:
 
           {/* Media */}
           {currentPost.media_url && (
-            <div className="relative bg-gray-100 w-full">
+            <div className="relative bg-gray-100 w-full" ref={videoContainerRef}>
               {currentPost.media_url.match(/\.(mp4|webm|mov)$/i) ? (
-                <video
-                  src={currentPost.media_url}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  poster={currentPost.media_thumbnail || undefined}
-                  className="w-full max-h-[70vh] object-contain bg-black"
-                />
+                <>
+                  <video
+                    ref={videoRef}
+                    src={currentPost.media_url}
+                    controls={!canAutoPlay}
+                    playsInline
+                    preload={canAutoPlay ? 'auto' : 'metadata'}
+                    poster={currentPost.media_thumbnail || undefined}
+                    className="w-full max-h-[70vh] object-contain bg-black"
+                  />
+                  {!canAutoPlay && (
+                    <div className="absolute bottom-4 left-4 right-4">
+                      <div className="flex items-center justify-between bg-black/60 text-white text-xs font-semibold px-3 py-2 rounded-full shadow-lg">
+                        <span>Tap play (data saver)</span>
+                        <button
+                          onClick={() => videoRef.current?.play().catch(() => {})}
+                          className="text-of-blue font-bold"
+                        >
+                          Play
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <img
                   src={currentPost.media_url}

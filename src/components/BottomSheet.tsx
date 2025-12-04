@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react'
-import { motion, AnimatePresence, type PanInfo } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { X, CheckCircle } from 'lucide-react'
 import { type User } from '../lib/api'
 
@@ -13,115 +12,87 @@ interface BottomSheetProps {
 }
 
 export default function BottomSheet({ isOpen, onClose, title, users, loading, onUserClick }: BottomSheetProps) {
-  const [sheetHeight, setSheetHeight] = useState(50) // percentage
-
-  // Handle drag end to snap to positions
-  const handleDragEnd = (_: any, info: PanInfo) => {
-    const velocity = info.velocity.y
-    const offset = info.offset.y
-
-    if (velocity > 500 || offset > 100) {
-      // Dragged down fast or far - close
-      onClose()
-    } else if (velocity < -500 || offset < -100) {
-      // Dragged up fast or far - expand to full
-      setSheetHeight(90)
-    } else {
-      // Snap to middle
-      setSheetHeight(50)
-    }
-  }
-
-  // Reset height when opened
-  useEffect(() => {
-    if (isOpen) {
-      setSheetHeight(50)
-    }
-  }, [isOpen])
-
   return (
-    <AnimatePresence>
+    <AnimatePresence mode="sync">
       {isOpen && (
         <>
-          {/* Backdrop */}
+          {/* Backdrop - solid dark, no blur */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50"
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="fixed inset-0 bg-black/70 z-[9998]"
             onClick={onClose}
           />
 
-          {/* Sheet */}
+          {/* Sheet - dark theme to prevent white flashes */}
           <motion.div
             initial={{ y: '100%' }}
-            animate={{ y: `${100 - sheetHeight}%` }}
+            animate={{ y: 0 }}
             exit={{ y: '100%' }}
-            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            drag="y"
-            dragConstraints={{ top: 0, bottom: 0 }}
-            dragElastic={0.2}
-            onDragEnd={handleDragEnd}
-            className="fixed bottom-0 left-0 right-0 z-50 touch-none"
-            style={{ height: '90vh' }}
+            transition={{
+              type: 'tween',
+              duration: 0.3,
+              ease: [0.32, 0.72, 0, 1]
+            }}
+            className="fixed bottom-0 left-0 right-0 z-[9999] will-change-transform"
+            style={{ height: '55%' }}
           >
-            <div className="h-full bg-white/80 backdrop-blur-xl rounded-t-3xl shadow-2xl border-t border-white/50 overflow-hidden flex flex-col">
-              {/* Drag Handle */}
-              <div className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing">
-                <div className="w-10 h-1 bg-gray-300 rounded-full" />
+            <div className="h-full bg-[#262626] rounded-t-[12px] overflow-hidden flex flex-col">
+              {/* Handle bar */}
+              <div className="flex justify-center pt-3 pb-2">
+                <div className="w-9 h-1 bg-[#555] rounded-full" />
               </div>
 
               {/* Header */}
-              <div className="flex items-center justify-between px-5 pb-3 border-b border-gray-100/80">
-                <h3 className="text-lg font-bold text-gray-900">{title}</h3>
+              <div className="flex items-center justify-between px-4 py-2 border-b border-[#363636]">
+                <h3 className="text-base font-semibold text-white">{title}</h3>
                 <button
                   onClick={onClose}
-                  className="p-2 -mr-2 rounded-full hover:bg-gray-100/80 transition-colors"
+                  className="p-1.5 rounded-full bg-[#363636] active:bg-[#444]"
                 >
-                  <X className="w-5 h-5 text-gray-500" />
+                  <X className="w-4 h-4 text-gray-400" />
                 </button>
               </div>
 
               {/* Content */}
-              <div className="flex-1 overflow-y-auto overscroll-contain">
+              <div className="flex-1 overflow-y-auto bg-[#262626]">
                 {loading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="w-8 h-8 border-2 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
+                  <div className="flex items-center justify-center py-10">
+                    <div className="w-6 h-6 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
                   </div>
                 ) : users.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                  <div className="flex flex-col items-center justify-center py-10 text-gray-500">
                     <p className="text-sm">No one yet</p>
                   </div>
                 ) : (
-                  <div className="py-2">
+                  <div className="py-1">
                     {users.map((user) => (
                       <button
                         key={user.telegram_id}
                         onClick={() => onUserClick?.(user)}
-                        className="w-full flex items-center gap-3 px-5 py-3 hover:bg-gray-50/80 transition-colors"
+                        className="w-full flex items-center gap-3 px-4 py-3 active:bg-white/5"
                       >
                         {/* Avatar */}
                         <div className="relative flex-shrink-0">
                           <img
                             src={user.avatar_url || `https://i.pravatar.cc/150?u=${user.telegram_id}`}
                             alt=""
-                            className="w-12 h-12 rounded-full object-cover bg-gray-100"
+                            className="w-11 h-11 rounded-full object-cover bg-[#333]"
                           />
                           {user.is_verified && (
-                            <div className="absolute -bottom-0.5 -right-0.5 bg-white rounded-full p-0.5">
-                              <CheckCircle className="w-4 h-4 text-blue-500 fill-blue-500" />
+                            <div className="absolute -bottom-0.5 -right-0.5 bg-[#262626] rounded-full p-0.5">
+                              <CheckCircle className="w-3.5 h-3.5 text-[#0095f6] fill-[#0095f6]" />
                             </div>
                           )}
                         </div>
 
                         {/* Info */}
                         <div className="flex-1 text-left min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-semibold text-[15px] text-gray-900 truncate">
-                              {user.username || user.first_name || 'User'}
-                            </span>
-                          </div>
+                          <span className="font-semibold text-[15px] text-white truncate block">
+                            {user.username || user.first_name || 'User'}
+                          </span>
                           {user.first_name && user.username && (
                             <p className="text-[13px] text-gray-500 truncate">
                               {user.first_name} {user.last_name || ''}
@@ -129,9 +100,9 @@ export default function BottomSheet({ isOpen, onClose, title, users, loading, on
                           )}
                         </div>
 
-                        {/* Follow button placeholder */}
+                        {/* Creator badge */}
                         {user.is_creator && (
-                          <span className="text-xs font-medium text-gray-400 bg-gray-100 px-2 py-1 rounded-full">
+                          <span className="text-[11px] font-semibold text-[#0095f6] bg-[#0095f6]/10 px-2.5 py-1 rounded-full">
                             Creator
                           </span>
                         )}

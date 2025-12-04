@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, Suspense, lazy } from 'react'
+import { useState, useEffect, Suspense, lazy } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Home, Search, PlusSquare, MessageCircle, User } from 'lucide-react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
@@ -27,9 +27,51 @@ const navItems = [
   { id: 'profile', icon: User, path: '/profile' },
 ]
 
+// Hook to detect keyboard visibility - Instagram pattern: hide nav when keyboard shows
+function useKeyboardVisible() {
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    const handleResize = () => {
+      const vv = window.visualViewport
+      if (!vv) return
+
+      // Keyboard is visible if viewport height decreased significantly
+      const keyboardHeight = window.innerHeight - vv.height
+      const isKeyboardOpen = keyboardHeight > 150
+
+      if (isKeyboardOpen !== visible) {
+        setVisible(isKeyboardOpen)
+      }
+    }
+
+    window.visualViewport?.addEventListener('resize', handleResize)
+    window.visualViewport?.addEventListener('scroll', handleResize)
+
+    // Telegram WebApp keyboard events
+    const tg = (window as any).Telegram?.WebApp
+    const handleTgViewport = () => {
+      if (tg?.viewportHeight && tg?.viewportStableHeight) {
+        const diff = tg.viewportStableHeight - tg.viewportHeight
+        setVisible(diff > 150)
+      }
+    }
+    tg?.onEvent?.('viewportChanged', handleTgViewport)
+
+    return () => {
+      window.visualViewport?.removeEventListener('resize', handleResize)
+      window.visualViewport?.removeEventListener('scroll', handleResize)
+      tg?.offEvent?.('viewportChanged', handleTgViewport)
+    }
+  }, [visible])
+
+  return visible
+}
+
 function App() {
   const navigate = useNavigate()
   const location = useLocation()
+  const keyboardVisible = useKeyboardVisible()
   const [viewingCreator, setViewingCreator] = useState<any>(null)
   const [user, setUser] = useState<UserType | null>(null)
   const [loading, setLoading] = useState(true)
@@ -40,6 +82,7 @@ function App() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [isSheetOpen, setIsSheetOpen] = useState(false)
   void secretBuffer
 
   useViewport()
@@ -226,6 +269,9 @@ function App() {
   const normalizedPath = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
   const activeNav = navItems.find(item => normalizedPath === item.path || normalizedPath.startsWith(item.path + '/'))?.id || 'home'
 
+  // Should we show the bottom nav? Instagram pattern - hide during overlays, chat, keyboard, sheets
+  const showBottomNav = !viewingCreator && !showApplication && !showAdmin && !isChatOpen && !showLivestream && !keyboardVisible && !isSheetOpen
+
   const routeContent = user ? (
     <Suspense fallback={<div className="p-6 text-center text-gray-500">Loading...</div>}>
       <Routes>
@@ -237,6 +283,7 @@ function App() {
               onCreatorClick={openCreatorProfile}
               onLivestreamClick={(livestreamId) => openLivestream(false, livestreamId)}
               onGoLive={() => openLivestream(true)}
+              onSheetStateChange={setIsSheetOpen}
             />
           )}
         />
@@ -320,19 +367,18 @@ function App() {
 
   if (loading || !user) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500">{loading ? 'Loading...' : 'Initializing...'}</p>
+          <div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-400">{loading ? 'Loading...' : 'Initializing...'}</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="h-full w-full bg-gray-50/50 relative overflow-hidden flex flex-col">
-      <div className="fixed inset-0 bg-gradient-to-br from-blue-50/50 via-purple-50/30 to-pink-50/30 -z-10" />
-
+    <div className="h-full w-full bg-black relative overflow-hidden flex flex-col">
+      {/* Main content area */}
       <main className="flex-1 overflow-y-auto overflow-x-hidden overscroll-none">
         <AnimatePresence mode="wait">
           <motion.div
@@ -340,85 +386,71 @@ function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="h-full"
+            transition={{ duration: 0.15 }}
+            className="min-h-full"
           >
             {renderPage()}
           </motion.div>
         </AnimatePresence>
       </main>
 
+      {/* Settings overlay */}
       <AnimatePresence>
         {showSettings && user && (
-          <Suspense fallback={<div className="fixed inset-0 bg-white/80 flex items-center justify-center">Loading...</div>}>
+          <Suspense fallback={<div className="fixed inset-0 bg-black/80 flex items-center justify-center">Loading...</div>}>
             <SettingsPage user={user} setUser={setUser} onClose={() => setShowSettings(false)} />
           </Suspense>
         )}
       </AnimatePresence>
 
-      {!viewingCreator && !showApplication && !showAdmin && !isChatOpen && !showLivestream && (
-        <nav className="flex-shrink-0 bg-white/10 backdrop-blur-3xl border-t border-white/20 safe-area-bottom shadow-[0_-8px_30px_rgba(0,0,0,0.04)] relative z-50">
-          <div className="flex items-center justify-around px-6 py-2">
-            {navItems.map((item) => {
-              const isActive = activeNav === item.id
-              return (
-                <button
-                  key={item.id}
-                  className="flex flex-col items-center justify-center w-12 h-12 relative outline-none select-none touch-manipulation"
-                  onClick={() => navigate(item.path)}
-                >
-                  {isActive && item.id !== 'create' && (
-                    <motion.div
-                      layoutId="nav-glow"
-                      className="absolute inset-0 bg-gradient-to-tr from-purple-500/20 to-blue-500/20 rounded-full blur-md"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.3 }}
-                    />
-                  )}
-
-                  {item.id === 'create' ? (
-                    <div className="relative group">
-                      <div className="absolute -inset-2 bg-gradient-to-r from-violet-600/50 to-fuchsia-600/50 rounded-full blur opacity-40 group-hover:opacity-60 animate-pulse transition-opacity duration-500" />
-                      <motion.div
-                        whileTap={{ scale: 0.9 }}
-                        className="relative w-11 h-11 bg-gradient-to-br from-gray-900 via-slate-900 to-black rounded-2xl flex items-center justify-center shadow-[0_4px_12px_rgba(0,0,0,0.3)] border border-white/10"
-                      >
-                        <PlusSquare className="w-5 h-5 text-white drop-shadow-md" strokeWidth={2.5} />
-                      </motion.div>
-                    </div>
-                  ) : (
-                    <div className="relative flex flex-col items-center">
-                      <motion.div
-                        animate={{
-                          scale: isActive ? 1.1 : 1,
-                          y: isActive ? -1 : 0,
-                          color: isActive ? '#111827' : '#9CA3AF'
+      {/* Bottom Navigation - Instagram style */}
+      <AnimatePresence>
+        {showBottomNav && (
+          <motion.nav
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="flex-shrink-0 bg-black border-t border-gray-800/50 safe-area-bottom relative z-50"
+            style={{
+              paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+            }}
+          >
+            <div className="flex items-center justify-around h-12">
+              {navItems.map((item) => {
+                const isActive = activeNav === item.id
+                return (
+                  <button
+                    key={item.id}
+                    className="flex-1 flex items-center justify-center h-full relative outline-none select-none touch-manipulation active:opacity-60"
+                    onClick={() => navigate(item.path)}
+                  >
+                    {item.id === 'create' ? (
+                      // Create button - special styling
+                      <div className="w-6 h-6 flex items-center justify-center">
+                        <PlusSquare
+                          className="w-6 h-6 text-white"
+                          strokeWidth={1.5}
+                        />
+                      </div>
+                    ) : (
+                      // Regular nav items
+                      <item.icon
+                        className="w-6 h-6 text-white transition-transform duration-150"
+                        strokeWidth={isActive ? 2.5 : 1.5}
+                        fill={isActive && (item.id === 'home') ? 'currentColor' : 'none'}
+                        style={{
+                          transform: isActive ? 'scale(1.05)' : 'scale(1)'
                         }}
-                        transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                      >
-                        <item.icon
-                          className={`w-[26px] h-[26px] transition-colors duration-300`}
-                          strokeWidth={isActive ? 2.5 : 1.5}
-                          fill={isActive && item.id === 'home' ? 'currentColor' : 'none'}
-                        />
-                      </motion.div>
-                      {isActive && (
-                        <motion.div
-                          layoutId="nav-dot"
-                          className="absolute -bottom-2 w-1 h-1 bg-gray-900 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.5)]"
-                          transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                        />
-                      )}
-                    </div>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </nav>
-      )}
+                      />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </motion.nav>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
