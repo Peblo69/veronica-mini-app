@@ -972,7 +972,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                     left: 0,
                     width: '100%',
                     transform: `translateY(${virtualRow.start}px)`,
-                    paddingBottom: '8px'
+                    paddingBottom: reactions.length > 0 ? '20px' : '8px'
                   }}
                   className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} transition-colors duration-500 rounded-2xl`}
                 >
@@ -1077,23 +1077,23 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
                       {/* Voice message */}
                       {msg.message_type === 'voice' && (
-                        <div className={`flex items-center gap-3 ${isOwn ? 'text-white' : 'text-slate-800'}`}>
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isOwn ? 'bg-white/20' : 'bg-slate-300'}`}>
-                            <Mic className={`w-5 h-5 ${isOwn ? 'text-white' : 'text-slate-600'}`} />
+                        <div className="flex items-center gap-3 text-white">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isOwn ? 'bg-white/20' : 'bg-white/10'}`}>
+                            <Mic className="w-5 h-5 text-white" />
                           </div>
                           <div className="flex-1">
-                            <div className={`h-2 rounded-full overflow-hidden relative ${isOwn ? 'bg-white/30' : 'bg-slate-300'}`}>
-                              <div className={`absolute inset-y-0 left-0 w-1/2 animate-pulse ${isOwn ? 'bg-white' : 'bg-slate-500'}`} />
+                            <div className={`h-2 rounded-full overflow-hidden relative ${isOwn ? 'bg-white/30' : 'bg-white/20'}`}>
+                              <div className={`absolute inset-y-0 left-0 w-1/2 animate-pulse ${isOwn ? 'bg-white' : 'bg-white/60'}`} />
                             </div>
-                            <p className={`text-xs mt-1 ${isOwn ? 'text-white/80' : 'text-slate-500'}`}>
+                            <p className="text-xs mt-1 text-white/70">
                               Voice message
                             </p>
                           </div>
                           {isPending ? (
-                            <Loader2 className={`w-4 h-4 animate-spin ${isOwn ? 'text-white/70' : 'text-slate-400'}`} />
+                            <Loader2 className="w-4 h-4 animate-spin text-white/70" />
                           ) : (
                             <button
-                              className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-transform ${isOwn ? 'bg-white/20 text-white' : 'bg-white text-slate-800 shadow-sm'}`}
+                              className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-transform ${isOwn ? 'bg-white/20' : 'bg-white/10'} text-white`}
                               onClick={(e) => {
                                 e.stopPropagation()
                                 const audio = new Audio(resolvedMediaUrl!)
@@ -1169,7 +1169,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
                       {/* Reactions */}
                       {reactions.length > 0 && (
-                        <div className="absolute -bottom-3 right-0 flex items-center gap-0.5 bg-white rounded-full shadow-md px-1.5 py-0.5 border border-gray-100 z-20">
+                        <div className="absolute -bottom-2.5 right-1 flex items-center gap-0.5 bg-[#1c1c1e] rounded-full shadow-lg px-1.5 py-0.5 border border-white/10 z-20">
                           {reactions.map((reaction, idx) => (
                             <span key={`${reaction.emoji}-${idx}`} className="text-xs leading-none">{reaction.emoji}</span>
                           ))}
@@ -1515,7 +1515,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
   // Conversations list
   return (
-    <div className="min-h-full bg-[#050505] text-white relative">
+    <div className="min-h-full text-white relative" style={{ background: 'radial-gradient(ellipse at bottom, #1B2735 0%, #090A0F 100%)' }}>
       <StarsBackground />
       
       {/* Header */}
