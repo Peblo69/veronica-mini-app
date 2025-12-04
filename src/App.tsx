@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, Suspense, lazy } from 'react'
+﻿import { useState, useEffect, Suspense, lazy } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Home, Search, PlusSquare, MessageCircle, User } from 'lucide-react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
@@ -40,12 +40,7 @@ function App() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null)
   void secretBuffer
-
-  const scrollRef = useCallback((node: HTMLDivElement | null) => {
-    setScrollElement(node)
-  }, [])
 
   useViewport()
 
@@ -256,7 +251,6 @@ function App() {
               onConversationOpened={() => setSelectedConversationId(null)}
               onChatStateChange={setIsChatOpen}
               onProfileClick={openCreatorProfile}
-              scrollElement={scrollElement}
             />
           )}
         />
@@ -339,7 +333,7 @@ function App() {
     <div className="h-full w-full bg-gray-50/50 relative overflow-hidden flex flex-col">
       <div className="fixed inset-0 bg-gradient-to-br from-blue-50/50 via-purple-50/30 to-pink-50/30 -z-10" />
 
-      <main ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden overscroll-none">
+      <main className="flex-1 overflow-y-auto overflow-x-hidden overscroll-none">
         <AnimatePresence mode="wait">
           <motion.div
             key={showAdmin ? 'admin' : showApplication ? 'application' : viewingCreator ? 'creator' : showLivestream ? 'livestream' : location.pathname}
@@ -363,43 +357,60 @@ function App() {
       </AnimatePresence>
 
       {!viewingCreator && !showApplication && !showAdmin && !isChatOpen && !showLivestream && (
-        <nav className="flex-shrink-0 bg-white/80 backdrop-blur-xl border-t border-white/20 safe-area-bottom shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)]">
-          <div className="flex items-center justify-around px-4 py-2">
+        <nav className="flex-shrink-0 bg-white/10 backdrop-blur-3xl border-t border-white/20 safe-area-bottom shadow-[0_-8px_30px_rgba(0,0,0,0.04)] relative z-50">
+          <div className="flex items-center justify-around px-6 py-2">
             {navItems.map((item) => {
               const isActive = activeNav === item.id
               return (
                 <button
                   key={item.id}
-                  className="flex flex-col items-center justify-center p-2 transition-transform active:scale-90 relative group"
+                  className="flex flex-col items-center justify-center w-12 h-12 relative outline-none select-none touch-manipulation"
                   onClick={() => navigate(item.path)}
                 >
                   {isActive && item.id !== 'create' && (
                     <motion.div
                       layoutId="nav-glow"
-                      className="absolute inset-0 bg-gradient-to-tr from-blue-500/20 to-purple-500/20 rounded-2xl blur-md"
+                      className="absolute inset-0 bg-gradient-to-tr from-purple-500/20 to-blue-500/20 rounded-full blur-md"
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
+                      transition={{ duration: 0.3 }}
                     />
                   )}
-                  
+
                   {item.id === 'create' ? (
-                    <div className="relative group-active:scale-95 transition-transform duration-200">
-                      <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl blur-sm opacity-50 group-hover:opacity-75 transition-opacity" />
-                      <div className="relative w-11 h-11 bg-gradient-to-br from-gray-900 to-black rounded-2xl flex items-center justify-center shadow-xl border border-white/10">
-                        <PlusSquare className="w-5 h-5 text-white" strokeWidth={2.5} />
-                      </div>
+                    <div className="relative group">
+                      <div className="absolute -inset-2 bg-gradient-to-r from-violet-600/50 to-fuchsia-600/50 rounded-full blur opacity-40 group-hover:opacity-60 animate-pulse transition-opacity duration-500" />
+                      <motion.div
+                        whileTap={{ scale: 0.9 }}
+                        className="relative w-11 h-11 bg-gradient-to-br from-gray-900 via-slate-900 to-black rounded-2xl flex items-center justify-center shadow-[0_4px_12px_rgba(0,0,0,0.3)] border border-white/10"
+                      >
+                        <PlusSquare className="w-5 h-5 text-white drop-shadow-md" strokeWidth={2.5} />
+                      </motion.div>
                     </div>
                   ) : (
-                    <div className="relative z-10">
-                      <item.icon 
-                        className={`w-[26px] h-[26px] transition-all duration-300 ${
-                          isActive 
-                            ? 'text-gray-900 fill-gray-900 drop-shadow-[0_0_8px_rgba(0,0,0,0.15)]' 
-                            : 'text-gray-400 hover:text-gray-600'
-                        }`} 
-                        strokeWidth={isActive ? 2.5 : 2}
-                      />
+                    <div className="relative flex flex-col items-center">
+                      <motion.div
+                        animate={{
+                          scale: isActive ? 1.1 : 1,
+                          y: isActive ? -1 : 0,
+                          color: isActive ? '#111827' : '#9CA3AF'
+                        }}
+                        transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                      >
+                        <item.icon
+                          className={`w-[26px] h-[26px] transition-colors duration-300`}
+                          strokeWidth={isActive ? 2.5 : 1.5}
+                          fill={isActive && item.id === 'home' ? 'currentColor' : 'none'}
+                        />
+                      </motion.div>
+                      {isActive && (
+                        <motion.div
+                          layoutId="nav-dot"
+                          className="absolute -bottom-2 w-1 h-1 bg-gray-900 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.5)]"
+                          transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                        />
+                      )}
                     </div>
                   )}
                 </button>

@@ -1,12 +1,16 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Heart, MessageCircle, Bookmark, Share2, MoreHorizontal, CheckCircle, Lock, Eye, DollarSign, X, Users, Trash2, EyeOff, Edit3, Flag, Copy, UserX, Volume2, VolumeX, Play } from 'lucide-react'
 import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, purchaseContent, deletePost, getPostLikes, type User, type Post } from '../lib/api'
 import { getLivestreams, subscribeToLivestreams, type Livestream } from '../lib/livestreamApi'
 import PostDetail from '../components/PostDetail'
 import BottomSheet from '../components/BottomSheet'
+import CommentsSheet from '../components/CommentsSheet'
 import { reportPost } from '../lib/reportApi'
 import { blockUser } from '../lib/settingsApi'
+import { useInViewport } from '../hooks/useInViewport'
+import { useConnectionQuality } from '../hooks/useConnectionQuality'
+import useSharedVideoPlayback from '../hooks/useSharedVideoPlayback'
 
 interface HomePageProps {
   user: User
@@ -18,16 +22,49 @@ interface HomePageProps {
 const filterLiveStreams = (streams: Livestream[]) =>
   streams.filter(stream => stream.status === 'live' && !!stream.started_at && !!stream.agora_channel && (stream.viewer_count || 0) > 0)
 
+const INITIAL_POST_BATCH = 6
+const LOAD_MORE_BATCH = 4
+
 // Video Player Component with mute/unmute and tap to pause
-function FeedVideoPlayer({ src }: { src: string }) {
+interface FeedVideoPlayerProps {
+  src: string
+  aspectRatio?: 'square' | 'full'
+  videoId?: string
+  muted?: boolean
+  onMuteChange?: (muted: boolean) => void
+}
+
+function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, onMuteChange }: FeedVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
-  const [isMuted, setIsMuted] = useState(true)
+  const isInViewport = useInViewport(videoRef, { minimumRatio: aspectRatio === 'full' ? 0.5 : 0.35 })
+  const { isSlow, isDataSaver } = useConnectionQuality()
+  const { isActive, requestPlay, clearActive, activeId } = useSharedVideoPlayback(videoId || src)
+
+  const [isMuted, setIsMuted] = useState(muted)
   const [isPaused, setIsPaused] = useState(false)
   const [isLoaded, setIsLoaded] = useState(false)
+  const [naturalAspect, setNaturalAspect] = useState<number | null>(null)
+  const canAutoPlay = !isSlow && !isDataSaver
+  const resolvedAspect = naturalAspect || (aspectRatio === 'full' ? 9 / 16 : 4 / 5)
+
+  const handlePointerEnter = () => {
+    if (!isPaused && canAutoPlay) {
+      requestPlay(videoId || src)
+      videoRef.current?.play().catch(() => {})
+    }
+  }
+
+  const handlePointerLeave = () => {
+    if (!isPaused && !isInViewport) {
+      videoRef.current?.pause()
+    }
+  }
 
   const toggleMute = (e: React.MouseEvent) => {
     e.stopPropagation()
-    setIsMuted(!isMuted)
+    const next = !isMuted
+    setIsMuted(next)
+    onMuteChange?.(next)
   }
 
   const togglePause = () => {
@@ -35,16 +72,72 @@ function FeedVideoPlayer({ src }: { src: string }) {
     if (!video) return
 
     if (video.paused) {
+      requestPlay(videoId || src)
       video.play().catch(() => {})
       setIsPaused(false)
     } else {
       video.pause()
       setIsPaused(true)
+      if ((videoId || src) === activeId) {
+        clearActive()
+      }
     }
   }
 
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    if (!isInViewport) {
+      if (!video.paused) video.pause()
+      return
+    }
+
+    if (!isPaused && canAutoPlay) {
+      requestPlay(videoId || src)
+      if (isActive) {
+        video.play().catch(() => {})
+      }
+    }
+  }, [isInViewport, isPaused, canAutoPlay, isActive, requestPlay, videoId, src])
+
+  // Pause if another video takes over
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    if (!isActive && !video.paused) {
+      video.pause()
+      setIsPaused(true)
+    }
+  }, [isActive])
+
+  // Auto-claim active when conditions are right
+  useEffect(() => {
+    if (isInViewport && !isPaused && canAutoPlay) {
+      requestPlay(videoId || src)
+    }
+  }, [isInViewport, isPaused, canAutoPlay, requestPlay, videoId, src])
+
+  useEffect(() => {
+    if (!canAutoPlay) {
+      setIsPaused(true)
+    }
+  }, [canAutoPlay])
+
+  useEffect(() => {
+    setIsMuted(muted)
+  }, [muted])
+
   return (
-    <div className="relative w-full h-full bg-black">
+    <div
+      className="relative w-full bg-black flex items-center justify-center"
+      onMouseEnter={handlePointerEnter}
+      onMouseLeave={handlePointerLeave}
+      style={{
+        aspectRatio: resolvedAspect,
+        maxHeight: aspectRatio === 'full' ? '85vh' : undefined
+      }}
+    >
       {/* Loading spinner */}
       {!isLoaded && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
@@ -56,14 +149,19 @@ function FeedVideoPlayer({ src }: { src: string }) {
       <video
         ref={videoRef}
         src={src}
-        className={`w-full h-full object-cover transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+        className={`w-full h-full max-h-full object-contain transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
         playsInline
         loop
         muted={isMuted}
-        autoPlay
-        preload="auto"
+        preload={canAutoPlay ? 'auto' : 'metadata'}
         onClick={togglePause}
-        onLoadedData={() => setIsLoaded(true)}
+        onLoadedMetadata={(e) => {
+          const video = e.currentTarget
+          if (video.videoWidth && video.videoHeight) {
+            setNaturalAspect(video.videoWidth / video.videoHeight)
+          }
+          setIsLoaded(true)
+        }}
         onCanPlay={() => setIsLoaded(true)}
       />
 
@@ -79,8 +177,8 @@ function FeedVideoPlayer({ src }: { src: string }) {
         </div>
       )}
 
-      {/* Mute/Unmute button */}
-      {isLoaded && (
+      {/* Mute/Unmute button - positioned for overlay mode */}
+      {isLoaded && aspectRatio === 'square' && (
         <button
           onClick={toggleMute}
           className="absolute bottom-3 right-3 p-2 bg-black/60 rounded-full z-20 hover:bg-black/80 transition-colors"
@@ -92,12 +190,18 @@ function FeedVideoPlayer({ src }: { src: string }) {
           )}
         </button>
       )}
+
+      {!canAutoPlay && isLoaded && (
+        <div className="absolute bottom-3 left-3 text-[11px] px-2 py-1 rounded-full bg-black/60 text-white/80">
+          Data saver on – tap to play
+        </div>
+      )}
     </div>
   )
 }
 
-// Instagram-style carousel for multiple images
-function MediaCarousel({ urls, canView }: { urls: string[]; canView: boolean }) {
+// Instagram-style carousel for multiple images/videos
+function MediaCarousel({ urls, canView, videoIdPrefix, muted, onMuteChange }: { urls: string[]; canView: boolean; videoIdPrefix?: string; muted?: boolean; onMuteChange?: (muted: boolean) => void }) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -114,7 +218,7 @@ function MediaCarousel({ urls, canView }: { urls: string[]; canView: boolean }) 
   if (!canView || urls.length === 0) return null
 
   return (
-    <div className="relative w-full aspect-square bg-black">
+    <div className="relative w-full bg-black rounded-2xl overflow-hidden">
       {/* Scrollable container */}
       <div
         ref={containerRef}
@@ -123,15 +227,23 @@ function MediaCarousel({ urls, canView }: { urls: string[]; canView: boolean }) 
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {urls.map((url, index) => (
-          <div key={index} className="flex-none w-full h-full snap-center">
+          <div key={index} className="flex-none w-full snap-center">
             {url.match(/\.(mp4|webm)$/i) ? (
-              <FeedVideoPlayer src={url} />
+              <div className="w-full flex justify-center bg-black">
+                <FeedVideoPlayer
+                  src={url}
+                  aspectRatio="full"
+                  videoId={`${videoIdPrefix || 'carousel'}-${index}-${url}`}
+                  muted={muted}
+                  onMuteChange={onMuteChange}
+                />
+              </div>
             ) : (
               <img
                 src={url}
                 alt=""
                 loading="lazy"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain bg-black"
               />
             )}
           </div>
@@ -169,15 +281,22 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   const [suggestions, setSuggestions] = useState<User[]>([])
   const [livestreams, setLivestreams] = useState<Livestream[]>([])
   const [loading, setLoading] = useState(true)
+  const [feedMuted, setFeedMuted] = useState(false)
   const [purchaseModal, setPurchaseModal] = useState<Post | null>(null)
   const [purchasing, setPurchasing] = useState(false)
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
   const [postMenuOpen, setPostMenuOpen] = useState<number | null>(null)
+  const [visibleCount, setVisibleCount] = useState(INITIAL_POST_BATCH)
+  const loadMoreRef = useRef<HTMLDivElement | null>(null)
 
   // Likes sheet state
   const [likesSheetOpen, setLikesSheetOpen] = useState(false)
   const [likesSheetUsers, setLikesSheetUsers] = useState<User[]>([])
   const [likesSheetLoading, setLikesSheetLoading] = useState(false)
+
+  // Comments sheet state
+  const [commentsSheetOpen, setCommentsSheetOpen] = useState(false)
+  const [commentsSheetPost, setCommentsSheetPost] = useState<number | null>(null)
 
   useEffect(() => {
     loadData()
@@ -197,6 +316,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
       getLivestreams()
     ])
     setPosts(feedPosts)
+    setVisibleCount(Math.min(feedPosts.length, INITIAL_POST_BATCH))
     setSuggestions(suggestedCreators)
     setLivestreams(filterLiveStreams(liveStreams))
     setLoading(false)
@@ -230,6 +350,11 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
     const users = await getPostLikes(post.id)
     setLikesSheetUsers(users)
     setLikesSheetLoading(false)
+  }
+
+  const handleViewCommenters = async (post: Post) => {
+    setCommentsSheetPost(post.id)
+    setCommentsSheetOpen(true)
   }
 
   const handlePurchase = async (post: Post) => {
@@ -317,12 +442,28 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
     setPostMenuOpen(null)
   }
 
-  const openPostDetail = (post: Post) => {
-    if (post.can_view) {
-      setSelectedPost(post)
-    }
-  }
+  useEffect(() => {
+    const sentinel = loadMoreRef.current
+    if (!sentinel) return
+    if (visibleCount >= posts.length) return
 
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount(prev => {
+            if (prev >= posts.length) return prev
+            return Math.min(posts.length, prev + LOAD_MORE_BATCH)
+          })
+        }
+      },
+      { rootMargin: '240px 0px' }
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [visibleCount, posts.length])
+
+  const visiblePosts = useMemo(() => posts.slice(0, visibleCount), [posts, visibleCount])
   const formatTime = (date: string) => {
     const diff = Date.now() - new Date(date).getTime()
     const hours = Math.floor(diff / 3600000)
@@ -332,30 +473,22 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   }
 
   const renderPostCard = (post: Post) => (
-    <div
-      key={post.id}
-      className="bg-white border-b border-gray-100"
-    >
+    <div key={post.id} className="bg-black border-b border-gray-800">
       {/* Header - Instagram style */}
-      <div className="flex items-center justify-between px-4 py-3">
+      <div className="flex items-center justify-between px-3 py-2">
         <button className="flex items-center gap-3" onClick={() => post.creator && onCreatorClick(post.creator)}>
-          <div className="relative">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-500 p-[2px]">
-              <img
-                src={post.creator?.avatar_url || 'https://i.pravatar.cc/150?u=' + post.creator_id}
-                alt=""
-                loading="lazy"
-                className="w-full h-full rounded-full object-cover bg-white"
-              />
-            </div>
+          <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-700">
+            <img
+              src={post.creator?.avatar_url || 'https://i.pravatar.cc/150?u=' + post.creator_id}
+              alt=""
+              className="w-full h-full object-cover"
+            />
           </div>
-          <div className="text-left">
-            <div className="flex items-center gap-1">
-              <span className="font-semibold text-[14px] text-gray-900">{post.creator?.username || 'creator'}</span>
-              {post.creator?.is_verified && (
-                <CheckCircle className="w-3.5 h-3.5 text-blue-500 fill-blue-500" />
-              )}
-            </div>
+          <div className="flex items-center gap-1">
+            <span className="font-semibold text-sm text-white">{post.creator?.username || 'creator'}</span>
+            {post.creator?.is_verified && (
+              <CheckCircle className="w-3.5 h-3.5 text-blue-500 fill-blue-500" />
+            )}
           </div>
         </button>
         <div className="relative">
@@ -364,7 +497,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
               e.stopPropagation()
               setPostMenuOpen(postMenuOpen === post.id ? null : post.id)
             }}
-            className="p-2 -mr-2 text-gray-900"
+            className="p-2 text-white"
           >
             <MoreHorizontal className="w-5 h-5" />
           </button>
@@ -380,10 +513,10 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                   onClick={() => setPostMenuOpen(null)}
                 />
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                  initial={{ opacity: 0, scale: 0.9, y: -10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                  className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-gray-100 py-1 z-50 min-w-[180px]"
+                  exit={{ opacity: 0, scale: 0.9, y: -10 }}
+                  className="absolute right-0 top-full mt-1 bg-[#262626] rounded-lg py-1 z-50 min-w-[160px] shadow-xl"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {Number(post.creator_id) === Number(user.telegram_id) && (
@@ -393,43 +526,43 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                           setSelectedPost(post)
                           setPostMenuOpen(null)
                         }}
-                        className="w-full px-4 py-2.5 text-left text-sm text-gray-900 hover:bg-gray-50 flex items-center gap-3"
+                        className="w-full px-4 py-2.5 text-left text-sm text-white hover:bg-white/10 flex items-center gap-2"
                       >
                         <Edit3 className="w-4 h-4" /> Edit
                       </button>
                       <button
                         onClick={() => handleDeletePost(post)}
-                        className="w-full px-4 py-2.5 text-left text-sm text-red-500 hover:bg-red-50 flex items-center gap-3"
+                        className="w-full px-4 py-2.5 text-left text-sm text-red-500 hover:bg-white/10 flex items-center gap-2"
                       >
                         <Trash2 className="w-4 h-4" /> Delete
                       </button>
-                      <div className="h-px bg-gray-100 my-1" />
+                      <div className="h-px bg-gray-100 mx-4 my-1" />
                     </>
                   )}
                   <button
                     onClick={() => handleCopyLink(post)}
-                    className="w-full px-4 py-2.5 text-left text-sm text-gray-900 hover:bg-gray-50 flex items-center gap-3"
+                    className="w-full px-5 py-3 text-left text-[14px] font-semibold text-gray-700 hover:bg-gray-50 flex items-center gap-3"
                   >
                     <Copy className="w-4 h-4" /> Copy link
                   </button>
                   <button
                     onClick={() => handleHidePost(post)}
-                    className="w-full px-4 py-2.5 text-left text-sm text-gray-900 hover:bg-gray-50 flex items-center gap-3"
+                    className="w-full px-5 py-3 text-left text-[14px] font-semibold text-gray-700 hover:bg-gray-50 flex items-center gap-3"
                   >
                     <EyeOff className="w-4 h-4" /> Not interested
                   </button>
                   {Number(post.creator_id) !== Number(user.telegram_id) && (
                     <>
-                      <div className="h-px bg-gray-100 my-1" />
+                      <div className="h-px bg-gray-100 mx-4 my-1" />
                       <button
                         onClick={() => handleBlockUser(post)}
-                        className="w-full px-4 py-2.5 text-left text-sm text-gray-900 hover:bg-gray-50 flex items-center gap-3"
+                        className="w-full px-4 py-2.5 text-left text-sm text-white hover:bg-white/10 flex items-center gap-2"
                       >
                         <UserX className="w-4 h-4" /> Block
                       </button>
                       <button
                         onClick={() => handleReportPost(post)}
-                        className="w-full px-4 py-2.5 text-left text-sm text-red-500 hover:bg-red-50 flex items-center gap-3"
+                        className="w-full px-4 py-2.5 text-left text-sm text-red-500 hover:bg-white/10 flex items-center gap-2"
                       >
                         <Flag className="w-4 h-4" /> Report
                       </button>
@@ -442,43 +575,51 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
         </div>
       </div>
 
-      {/* Media - Full width, no rounded corners */}
+      {/* Media */}
       {post.media_url && post.can_view ? (
         <div className="w-full bg-black">
           <MediaCarousel
             urls={post.media_urls && post.media_urls.length > 0 ? post.media_urls : [post.media_url]}
             canView={post.can_view}
+            muted={feedMuted}
+            onMuteChange={setFeedMuted}
+            videoIdPrefix={post.id.toString()}
           />
         </div>
       ) : post.media_url ? (
         // Locked content
-        <div className="relative bg-gradient-to-br from-gray-900 to-gray-800 text-white aspect-square flex flex-col items-center justify-center text-center overflow-hidden">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent)]" />
-          <div className="relative z-10 p-6">
-            <div className="w-16 h-16 mx-auto rounded-full bg-white/10 flex items-center justify-center mb-4 backdrop-blur-sm">
-              <Lock className="w-8 h-8 text-white/90" />
+        <div className="relative bg-gray-900 text-white aspect-[4/5] flex flex-col items-center justify-center text-center overflow-hidden">
+          <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20" />
+          <div className="absolute inset-0 bg-gradient-to-br from-purple-900/40 via-gray-900 to-gray-900" />
+          
+          <div className="relative z-10 p-8 w-full max-w-md mx-auto">
+            <div className="w-20 h-20 mx-auto rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mb-6 backdrop-blur-xl shadow-2xl shadow-purple-500/10 rotate-3 hover:rotate-0 transition-transform duration-500">
+              <Lock className="w-8 h-8 text-white/90 drop-shadow-lg" />
             </div>
-            <h3 className="text-lg font-semibold mb-2">{getLockReason(post)}</h3>
-            <p className="text-sm text-white/60 mb-6 max-w-[280px] mx-auto">Unlock premium content from {post.creator?.first_name || 'this creator'}</p>
+            
+            <h3 className="text-2xl font-bold mb-3 tracking-tight">{getLockReason(post)}</h3>
+            <p className="text-white/60 mb-8 leading-relaxed">Unlock premium content from <span className="text-white font-semibold">{post.creator?.first_name}</span> and support their work.</p>
+            
             {post.unlock_price > 0 ? (
               <motion.button
-                className="px-6 py-3 bg-white text-gray-900 rounded-lg text-sm font-semibold flex items-center gap-2 mx-auto"
-                whileTap={{ scale: 0.95 }}
+                className="w-full py-4 bg-white text-gray-900 rounded-2xl font-bold text-[15px] shadow-[0_0_30px_-5px_rgba(255,255,255,0.3)] flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors relative overflow-hidden group"
+                whileTap={{ scale: 0.98 }}
                 onClick={() => setPurchaseModal(post)}
               >
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-black/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
                 <DollarSign className="w-4 h-4" />
                 Unlock for ${post.unlock_price.toFixed(2)}
               </motion.button>
             ) : (
               <motion.button
-                className="px-6 py-3 bg-white text-gray-900 rounded-lg text-sm font-semibold flex items-center gap-2 mx-auto"
-                whileTap={{ scale: 0.95 }}
+                className="w-full py-4 bg-white text-gray-900 rounded-2xl font-bold text-[15px] shadow-[0_0_30px_-5px_rgba(255,255,255,0.3)] flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors"
+                whileTap={{ scale: 0.98 }}
                 onClick={() => post.creator && onCreatorClick(post.creator)}
               >
                 {post.visibility === 'followers' ? (
-                  <><Eye className="w-4 h-4" /> Follow to View</>
+                  <><Eye className="w-5 h-5" /> Follow to View</>
                 ) : (
-                  <><CheckCircle className="w-4 h-4" /> Subscribe to View</>
+                  <><CheckCircle className="w-5 h-5" /> Subscribe to View</>
                 )}
               </motion.button>
             )}
@@ -490,93 +631,55 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
       <div className="px-3 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button
-              className="active:opacity-50"
-              onClick={() => handleLike(post)}
-            >
-              <Heart
-                className={`w-5 h-5 ${post.liked ? 'text-red-500 fill-red-500' : 'text-black'}`}
-                strokeWidth={2}
-              />
+            <button className="active:scale-90 transition-transform" onClick={() => handleLike(post)}>
+              <Heart className={`w-6 h-6 ${post.liked ? 'text-red-500 fill-red-500' : 'text-white'}`} />
             </button>
-
-            <button
-              className="active:opacity-50"
-              onClick={() => openPostDetail(post)}
-            >
-              <MessageCircle className="w-5 h-5 text-black" strokeWidth={2} />
+            <button className="active:scale-90 transition-transform" onClick={() => handleViewCommenters(post)}>
+              <MessageCircle className="w-6 h-6 text-white" />
             </button>
-
-            <button className="active:opacity-50">
-              <Share2 className="w-5 h-5 text-black" strokeWidth={2} />
+            <button className="active:scale-90 transition-transform">
+              <Share2 className="w-6 h-6 text-white" />
             </button>
           </div>
-
-          <button
-            onClick={() => handleSave(post)}
-            className="active:opacity-50"
-          >
-            <Bookmark
-              className={`w-5 h-5 ${post.saved ? 'text-black fill-black' : 'text-black'}`}
-              strokeWidth={2}
-            />
+          <button onClick={() => handleSave(post)} className="active:scale-90 transition-transform">
+            <Bookmark className={`w-6 h-6 ${post.saved ? 'text-white fill-white' : 'text-white'}`} />
           </button>
         </div>
-      </div>
 
-      {/* Likes Count */}
-      {(post.likes_count || 0) > 0 && (
-        <button
-          className="px-4 pb-1 text-left"
-          onClick={() => handleViewLikes(post)}
-        >
-          <span className="text-[14px] font-semibold text-gray-900">
-            {post.likes_count.toLocaleString()} {post.likes_count === 1 ? 'like' : 'likes'}
-          </span>
+        {/* Likes Count */}
+        {(post.likes_count || 0) > 0 && (
+          <button className="mt-2" onClick={() => handleViewLikes(post)}>
+            <span className="text-sm font-semibold text-white">{post.likes_count.toLocaleString()} likes</span>
+          </button>
+        )}
+
+        {/* Caption */}
+        {post.content && (
+          <div className="mt-1">
+            <span className="text-sm text-white">
+              <span className="font-semibold mr-1">{post.creator?.username}</span>
+              {post.content}
+            </span>
+          </div>
+        )}
+
+        {/* View comments */}
+        {post.comments_count > 0 && (
+          <button className="mt-1" onClick={() => handleViewCommenters(post)}>
+            <span className="text-sm text-gray-400">View all {post.comments_count} comments</span>
+          </button>
+        )}
+
+        {/* Add comment row */}
+        <button className="flex items-center gap-2 mt-2 w-full" onClick={() => handleViewCommenters(post)}>
+          <img src={user.avatar_url || 'https://i.pravatar.cc/150?u=' + user.telegram_id} className="w-6 h-6 rounded-full object-cover" alt="" />
+          <span className="text-sm text-gray-500">Add a comment...</span>
         </button>
-      )}
 
-      {/* Caption */}
-      {post.content && (
-        <div className="px-4 pb-1">
-          <p className="text-[14px] text-gray-900 leading-[1.4]">
-            <button
-              onClick={() => post.creator && onCreatorClick(post.creator)}
-              className="font-semibold mr-1.5 hover:opacity-70"
-            >
-              {post.creator?.username}
-            </button>
-            {post.content}
-          </p>
+        {/* Timestamp */}
+        <div className="mt-1 mb-2">
+          <span className="text-[11px] text-gray-500 uppercase">{formatTime(post.created_at)}</span>
         </div>
-      )}
-
-      {/* View comments */}
-      {post.comments_count > 0 && (
-        <button
-          className="px-4 py-1 text-[14px] text-gray-500 text-left w-full"
-          onClick={() => openPostDetail(post)}
-        >
-          View all {post.comments_count} comments
-        </button>
-      )}
-
-      {/* Add comment row */}
-      <button
-        className="px-4 py-2 flex items-center gap-3 w-full"
-        onClick={() => openPostDetail(post)}
-      >
-        <img
-          src={user.avatar_url || 'https://i.pravatar.cc/150?u=' + user.telegram_id}
-          className="w-6 h-6 rounded-full object-cover"
-          alt=""
-        />
-        <span className="text-[14px] text-gray-400">Add a comment...</span>
-      </button>
-
-      {/* Timestamp */}
-      <div className="px-4 pb-4">
-        <span className="text-[11px] text-gray-400 uppercase tracking-wide">{formatTime(post.created_at)}</span>
       </div>
     </div>
   )
@@ -723,19 +826,25 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
         </div>
       )}
 
-      {/* Posts Feed */}
-      <div>
+      {/* Posts Feed - Simple map, no virtualizer overlap issues */}
+      <div className="bg-black">
         {posts.length === 0 ? (
           <div className="px-4 py-16 text-center">
-            <div className="w-16 h-16 border-2 border-gray-900 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Users className="w-8 h-8 text-gray-900" />
+            <div className="w-16 h-16 border-2 border-white rounded-full flex items-center justify-center mx-auto mb-4">
+              <Users className="w-8 h-8 text-white" />
             </div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">Welcome to Veronica</h3>
-            <p className="text-[14px] text-gray-500">Follow creators to see their posts in your feed.</p>
+            <h3 className="text-xl font-semibold text-white mb-2">Welcome to Veronica</h3>
+            <p className="text-sm text-gray-400">Follow creators to see their posts in your feed.</p>
           </div>
         ) : (
           <div>
-            {posts.map((post) => renderPostCard(post))}
+            {visiblePosts.map((post) => renderPostCard(post))}
+
+            {visibleCount < posts.length && (
+              <div ref={loadMoreRef} className="flex items-center justify-center py-8">
+                <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -842,6 +951,14 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
           setLikesSheetOpen(false)
           onCreatorClick(user)
         }}
+      />
+
+      {/* Comments Bottom Sheet */}
+      <CommentsSheet
+        isOpen={commentsSheetOpen}
+        onClose={() => setCommentsSheetOpen(false)}
+        postId={commentsSheetPost}
+        user={user}
       />
     </div>
   )
