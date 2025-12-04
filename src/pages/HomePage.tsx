@@ -864,17 +864,20 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
   if (loading) {
     return (
-      <div className="p-4 space-y-4">
-        {[1,2,3].map(i => (
-          <div key={i} className="card p-4 animate-pulse">
+      <div className="bg-black min-h-screen p-4 space-y-4">
+        {[1, 2, 3].map(i => (
+          <div
+            key={i}
+            className="rounded-2xl border border-white/5 bg-[#0a0b0f] p-4 animate-pulse shadow-[0_14px_40px_rgba(0,0,0,0.35)]"
+          >
             <div className="flex gap-3 mb-3">
-              <div className="w-10 h-10 bg-gray-800 rounded-full"></div>
+              <div className="w-10 h-10 bg-white/10 rounded-full" />
               <div className="flex-1">
-                <div className="h-4 bg-gray-800 rounded w-24 mb-2"></div>
-                <div className="h-3 bg-gray-800 rounded w-16"></div>
+                <div className="h-4 bg-white/10 rounded w-24 mb-2" />
+                <div className="h-3 bg-white/10 rounded w-16" />
               </div>
             </div>
-            <div className="h-48 bg-gray-800 rounded-xl"></div>
+            <div className="h-48 bg-white/10 rounded-xl" />
           </div>
         ))}
       </div>

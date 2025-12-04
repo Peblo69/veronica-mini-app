@@ -68,6 +68,15 @@ function useKeyboardVisible() {
   return visible
 }
 
+const LoadingOverlay = ({ message }: { message?: string }) => (
+  <div className="fixed inset-0 bg-black flex items-center justify-center z-[200]">
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
+      <p className="text-sm text-white/70">{message || 'Loading...'}</p>
+    </div>
+  </div>
+)
+
 function App() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -273,7 +282,7 @@ function App() {
   const showBottomNav = !viewingCreator && !showApplication && !showAdmin && !isChatOpen && !showLivestream && !keyboardVisible && !isSheetOpen
 
   const routeContent = user ? (
-    <Suspense fallback={<div className="p-6 text-center text-gray-500">Loading...</div>}>
+    <Suspense fallback={<LoadingOverlay message="Loading..." />}>
       <Routes>
         <Route
           path="/"
@@ -322,7 +331,7 @@ function App() {
 
     if (showLivestream && user) {
       return (
-        <Suspense fallback={<div className="p-6 text-center text-gray-500">Loading livestream...</div>}>
+        <Suspense fallback={<LoadingOverlay message="Loading livestream..." />}>
           <LivestreamPage
             user={user}
             isCreator={showLivestream.isCreator}
@@ -335,7 +344,7 @@ function App() {
 
     if (showAdmin) {
       return (
-        <Suspense fallback={<div className="p-6 text-center text-gray-500">Loading admin...</div>}>
+        <Suspense fallback={<LoadingOverlay message="Loading admin..." />}>
           <AdminPage telegramId={user.telegram_id} onExit={() => setShowAdmin(false)} />
         </Suspense>
       )
@@ -343,7 +352,7 @@ function App() {
 
     if (showApplication) {
       return (
-        <Suspense fallback={<div className="p-6 text-center text-gray-500">Loading application...</div>}>
+        <Suspense fallback={<LoadingOverlay message="Loading application..." />}>
           <CreatorApplicationPage user={user} onBack={() => setShowApplication(false)} onSuccess={handleApplicationSuccess} />
         </Suspense>
       )
@@ -351,7 +360,7 @@ function App() {
 
     if (viewingCreator) {
       return (
-        <Suspense fallback={<div className="p-6 text-center text-gray-500">Loading profile...</div>}>
+        <Suspense fallback={<LoadingOverlay message="Loading profile..." />}>
           <CreatorProfilePage
             creator={viewingCreator}
             currentUser={user}
@@ -397,7 +406,7 @@ function App() {
       {/* Settings overlay */}
       <AnimatePresence>
         {showSettings && user && (
-          <Suspense fallback={<div className="fixed inset-0 bg-black/80 flex items-center justify-center">Loading...</div>}>
+          <Suspense fallback={<LoadingOverlay message="Loading settings..." />}>
             <SettingsPage user={user} setUser={setUser} onClose={() => setShowSettings(false)} />
           </Suspense>
         )}
