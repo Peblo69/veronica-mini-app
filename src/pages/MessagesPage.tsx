@@ -1027,8 +1027,8 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                         isSpecialType ? 'p-0 !bg-transparent !shadow-none !border-none' :
                         msg.message_type === 'image' || msg.message_type === 'video' ? 'p-0 !bg-transparent !shadow-none !border-none' :
                         isOwn
-                          ? 'px-4 py-2.5 bg-gradient-to-br from-[#007AFF] to-[#0055FF] text-white rounded-[20px] rounded-br-md shadow-lg shadow-blue-500/20 border border-white/10'
-                          : 'px-4 py-2.5 bg-slate-200/90 backdrop-blur-sm text-slate-800 rounded-[20px] rounded-bl-md shadow-sm border border-white/20'
+                          ? 'px-3 py-1.5 bg-gradient-to-br from-[#007AFF] to-[#0055FF] text-white rounded-[18px] rounded-br-sm'
+                          : 'px-3 py-1.5 bg-[#262626] text-white rounded-[18px] rounded-bl-sm'
                       } ${isFailed ? 'ring-2 ring-red-400' : ''}`}
                       style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
                       onTouchStart={() => handleTouchStart(msg)}
@@ -1153,7 +1153,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
                       {/* Text message */}
                       {msg.message_type === 'text' && msg.content && (
-                        <p className="text-[15px] leading-relaxed whitespace-pre-wrap break-words font-medium">
+                        <p className="text-[15px] leading-snug whitespace-pre-wrap break-words">
                           {msg.content}
                         </p>
                       )}
@@ -1166,15 +1166,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                         </div>
                       )}
 
-                      {/* Reply footer - show reply icon - Only for bubbles */}
-                      {!isSpecialType && (msg.message_type === 'text' || msg.message_type === 'voice') && (
-                        <div className={`flex items-center justify-between gap-2 mt-1.5 text-[10px] ${isOwn ? "text-white/70" : "text-slate-500"}`}>
-                          <div className="flex items-center gap-1">
-                            {renderTicks()}
-                            <span>{timeLabel}</span>
-                          </div>
-                        </div>
-                      )}
 
                       {/* Reactions */}
                       {reactions.length > 0 && (
@@ -1197,6 +1188,14 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                       </button>
                     )}
                   </div>
+
+                  {/* Time under bubble - over background */}
+                  {!isSpecialType && (
+                    <div className={`flex items-center gap-1 mt-1 text-[10px] text-gray-500 ${isOwn ? 'justify-end mr-1' : 'justify-start ml-9'}`}>
+                      {isOwn && renderTicks()}
+                      <span>{timeLabel}</span>
+                    </div>
+                  )}
                 </motion.div>
               )
             })}
