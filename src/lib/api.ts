@@ -288,6 +288,11 @@ export interface CreatePostData {
   visibility?: 'public' | 'followers' | 'subscribers'
   is_nsfw?: boolean
   unlock_price?: number
+  // Media metadata
+  media_width?: number
+  media_height?: number
+  media_duration?: number  // for videos, in seconds
+  media_size_bytes?: number
 }
 
 export async function createPost(creatorId: number, postData: CreatePostData) {
@@ -330,6 +335,12 @@ export async function createPost(creatorId: number, postData: CreatePostData) {
   if (postData.media_thumbnail_urls && postData.media_thumbnail_urls.length > 0) {
     insertData.media_thumbnail_urls = postData.media_thumbnail_urls
   }
+
+  // Add media metadata if provided
+  if (postData.media_width) insertData.media_width = postData.media_width
+  if (postData.media_height) insertData.media_height = postData.media_height
+  if (postData.media_duration) insertData.media_duration = postData.media_duration
+  if (postData.media_size_bytes) insertData.media_size_bytes = postData.media_size_bytes
 
   const { data, error } = await supabase
     .from('posts')

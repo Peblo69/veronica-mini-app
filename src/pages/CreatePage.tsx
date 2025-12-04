@@ -13,10 +13,18 @@ interface CreatePageProps {
 type Visibility = 'public' | 'followers' | 'subscribers'
 type Step = 'select' | 'edit' | 'details'
 
+interface MediaMetadata {
+  width: number
+  height: number
+  duration?: number // for videos, in seconds
+  sizeBytes: number
+}
+
 interface MediaFile {
   file: File
   preview: string
   type: 'image' | 'video'
+  metadata?: MediaMetadata
   thumbnail?: {
     file: File | null
     preview?: string
@@ -27,6 +35,46 @@ interface MediaFile {
     saturation: number
     blur: number
   }
+}
+
+// Helper to extract image dimensions
+function getImageMetadata(file: File): Promise<MediaMetadata> {
+  return new Promise((resolve) => {
+    const img = document.createElement('img')
+    img.onload = () => {
+      resolve({
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+        sizeBytes: file.size
+      })
+      URL.revokeObjectURL(img.src)
+    }
+    img.onerror = () => {
+      resolve({ width: 0, height: 0, sizeBytes: file.size })
+    }
+    img.src = URL.createObjectURL(file)
+  })
+}
+
+// Helper to extract video dimensions and duration
+function getVideoMetadata(file: File): Promise<MediaMetadata> {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.onloadedmetadata = () => {
+      resolve({
+        width: video.videoWidth,
+        height: video.videoHeight,
+        duration: Math.round(video.duration),
+        sizeBytes: file.size
+      })
+      URL.revokeObjectURL(video.src)
+    }
+    video.onerror = () => {
+      resolve({ width: 0, height: 0, sizeBytes: file.size })
+    }
+    video.src = URL.createObjectURL(file)
+  })
 }
 
 // Premium Monochrome Sphere
@@ -171,8 +219,13 @@ export default function CreatePage({ user }: CreatePageProps) {
 
       const preview = URL.createObjectURL(file)
       let thumbnail: MediaFile['thumbnail']
+      let metadata: MediaMetadata | undefined
 
-      if (mediaType === 'video') {
+      // Extract metadata based on media type
+      if (mediaType === 'image') {
+        metadata = await getImageMetadata(file)
+      } else if (mediaType === 'video') {
+        metadata = await getVideoMetadata(file)
         const thumbFile = await generateVideoThumbnailFile(file)
         if (thumbFile) {
           thumbnail = { file: thumbFile, preview: URL.createObjectURL(thumbFile) }
@@ -183,6 +236,7 @@ export default function CreatePage({ user }: CreatePageProps) {
         file,
         preview,
         type: mediaType as 'image' | 'video',
+        metadata,
         thumbnail,
         filters: { brightness: 100, contrast: 100, saturation: 100, blur: 0 }
       })
@@ -302,7 +356,11 @@ export default function CreatePage({ user }: CreatePageProps) {
       const hasMedia = mediaUrls.length > 0
       const hasVideo = mediaFiles.some(file => file.type === 'video')
       const primaryMediaType = hasMedia ? (hasVideo ? 'video' : 'image') : 'text'
-      
+
+      // Get metadata from the first media file (primary media)
+      const primaryMedia = mediaFiles[0]
+      const primaryMetadata = primaryMedia?.metadata
+
       const postPayload: CreatePostData = {
         content: content.trim(),
         media_url: hasMedia ? mediaUrls[0] : undefined,
@@ -311,6 +369,11 @@ export default function CreatePage({ user }: CreatePageProps) {
         visibility: finalVisibility,
         is_nsfw: finalNsfw,
         unlock_price: finalPrice,
+        // Include media metadata
+        media_width: primaryMetadata?.width,
+        media_height: primaryMetadata?.height,
+        media_duration: primaryMetadata?.duration,
+        media_size_bytes: primaryMetadata?.sizeBytes,
       }
 
       const normalizedThumbnailUrls = thumbnailUrls.map(url => url || null)

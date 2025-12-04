@@ -213,10 +213,21 @@ export async function unlikeComment(commentId: string, userId: number): Promise<
 // REALTIME SUBSCRIPTION
 // ============================================
 
+export interface CommentRealtimeCallbacks {
+  onInsert?: (comment: Comment) => void
+  onUpdate?: (comment: Comment) => void
+  onDelete?: (commentId: string) => void
+}
+
 export function subscribeToComments(
   postId: number,
-  onComment: (comment: Comment) => void
+  callbacks: CommentRealtimeCallbacks | ((comment: Comment) => void)
 ) {
+  // Support legacy single callback or new object callbacks
+  const cbs: CommentRealtimeCallbacks = typeof callbacks === 'function'
+    ? { onInsert: callbacks }
+    : callbacks
+
   const channel = supabase
     .channel(`comments:${postId}`)
     .on(
@@ -234,8 +245,42 @@ export function subscribeToComments(
           .eq('id', payload.new.id)
           .single()
 
-        if (data) {
-          onComment(data as Comment)
+        if (data && cbs.onInsert) {
+          cbs.onInsert(data as Comment)
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'comments',
+        filter: `post_id=eq.${postId}`
+      },
+      async (payload) => {
+        const { data } = await supabase
+          .from('comments')
+          .select('*, user:users!user_id(*)')
+          .eq('id', payload.new.id)
+          .single()
+
+        if (data && cbs.onUpdate) {
+          cbs.onUpdate(data as Comment)
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'comments',
+        filter: `post_id=eq.${postId}`
+      },
+      (payload) => {
+        if (cbs.onDelete) {
+          cbs.onDelete(payload.old.id)
         }
       }
     )
