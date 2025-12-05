@@ -29,6 +29,7 @@ export default function CommentsSheet({ isOpen, onClose, postId, user }: Comment
   const [loading, setLoading] = useState(true)
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null)
   const [expandedReplies, setExpandedReplies] = useState<Record<string, number>>({}) // commentId -> how many visible
+  const [justSent, setJustSent] = useState(false) // Track when we just sent to disable transition
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const commentsListRef = useRef<HTMLDivElement>(null)
@@ -102,12 +103,19 @@ export default function CommentsSheet({ isOpen, onClose, postId, user }: Comment
     const parentId = replyingTo?.id
     const parentComment = replyingTo
 
-    // Clear input immediately for smooth UX - don't wait for response
+    // INSTANT snap to bottom - disable transition, blur keyboard immediately
+    setJustSent(true)
+    textareaRef.current?.blur() // Close keyboard immediately
+
+    // Clear input
     setNewComment('')
     setReplyingTo(null)
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
+
+    // Re-enable transitions after keyboard has closed
+    setTimeout(() => setJustSent(false), 500)
 
     const comment = await uploadComment(commentText, parentId)
 
@@ -325,10 +333,12 @@ export default function CommentsSheet({ isOpen, onClose, postId, user }: Comment
             style={{
               height: 'calc(var(--app-height) - 96px)',
               maxHeight: 'calc(var(--app-height) - 72px)',
-              paddingBottom: keyboard.visible
-                ? `calc(var(--keyboard-height) + env(safe-area-inset-bottom, 0px) + 10px)`
-                : 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
-              transition: 'padding-bottom 0.08s linear',
+              paddingBottom: justSent
+                ? 'calc(env(safe-area-inset-bottom, 0px) + 12px)' // Force bottom position immediately
+                : keyboard.visible
+                  ? `calc(var(--keyboard-height) + env(safe-area-inset-bottom, 0px) + 10px)`
+                  : 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
+              transition: justSent ? 'none' : 'padding-bottom 0.08s linear', // No transition when just sent
               transform: 'translateZ(0)',
             }}
           >
