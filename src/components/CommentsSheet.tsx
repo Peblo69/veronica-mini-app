@@ -96,6 +96,9 @@ export default function CommentsSheet({ isOpen, onClose, postId, user }: Comment
     textareaRef.current?.focus()
   }
 
+  // Ref to the sheet element for direct DOM manipulation
+  const sheetRef = useRef<HTMLDivElement>(null)
+
   const handleSubmit = async () => {
     if (!newComment.trim() || sending || !postId) return
 
@@ -103,9 +106,15 @@ export default function CommentsSheet({ isOpen, onClose, postId, user }: Comment
     const parentId = replyingTo?.id
     const parentComment = replyingTo
 
-    // INSTANT snap to bottom - disable transition, blur keyboard immediately
+    // INSTANT snap to bottom - manipulate DOM directly BEFORE blur to prevent glitch
+    // This must happen synchronously before keyboard closes
+    if (sheetRef.current) {
+      sheetRef.current.style.transition = 'none'
+      sheetRef.current.style.paddingBottom = 'calc(env(safe-area-inset-bottom, 0px) + 12px)'
+    }
+
     setJustSent(true)
-    textareaRef.current?.blur() // Close keyboard immediately
+    textareaRef.current?.blur() // Close keyboard
 
     // Clear input
     setNewComment('')
@@ -114,8 +123,14 @@ export default function CommentsSheet({ isOpen, onClose, postId, user }: Comment
       textareaRef.current.style.height = 'auto'
     }
 
-    // Re-enable transitions after keyboard has closed
-    setTimeout(() => setJustSent(false), 500)
+    // Re-enable transitions after keyboard has fully closed
+    setTimeout(() => {
+      setJustSent(false)
+      if (sheetRef.current) {
+        sheetRef.current.style.transition = ''
+        sheetRef.current.style.paddingBottom = ''
+      }
+    }, 600)
 
     const comment = await uploadComment(commentText, parentId)
 
@@ -321,6 +336,7 @@ export default function CommentsSheet({ isOpen, onClose, postId, user }: Comment
 
           {/* Sheet - fixed position, relies on app-height vars to avoid vh jitter on iOS */}
           <motion.div
+            ref={sheetRef}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
