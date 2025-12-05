@@ -302,9 +302,9 @@ export async function createPost(creatorId: number, postData: CreatePostData) {
   const firstUrl = postData.media_urls?.[0] || postData.media_url
 
   if (firstUrl && !postData.media_type) {
-    if (firstUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+    if (firstUrl.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i)) {
       mediaType = 'image'
-    } else if (firstUrl.match(/\.(mp4|webm|mov)$/i)) {
+    } else if (firstUrl.match(/\.(mp4|webm|mov|m4v)(\?|$)/i)) {
       mediaType = 'video'
     }
   }

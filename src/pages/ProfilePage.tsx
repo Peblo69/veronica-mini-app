@@ -478,7 +478,7 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
   )
 }
 
-const VIDEO_REGEX = /\.(mp4|webm|mov|m4v)$/i
+const VIDEO_REGEX = /\.(mp4|webm|mov|m4v)(\?|$)/i
 
 function isVideoPost(post: Post) {
   if (!post.media_url) return false

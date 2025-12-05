@@ -244,7 +244,7 @@ function MediaCarousel({ urls, canView, muted, onMuteChange, shouldPlay, onDoubl
       >
         {urls.map((url, index) => (
           <div key={index} className="flex-none w-full snap-center">
-            {url.match(/\.(mp4|webm)$/i) ? (
+            {url.match(/\.(mp4|webm|mov|m4v)(\?|$)/i) ? (
               <FeedVideoPlayer
                 src={url}
                 muted={muted}
@@ -608,7 +608,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
     // Set first video post as active on initial load
     if (activePostId === null && visiblePosts.length > 0) {
-      const firstVideoPost = visiblePosts.find(p => p.media_url?.match(/\.(mp4|webm)$/i) || p.media_urls?.some(u => u.match(/\.(mp4|webm)$/i)))
+      const firstVideoPost = visiblePosts.find(p => p.media_url?.match(/\.(mp4|webm|mov|m4v)(\?|$)/i) || p.media_urls?.some(u => u.match(/\.(mp4|webm|mov|m4v)(\?|$)/i)))
       if (firstVideoPost) {
         setActivePostId(firstVideoPost.id)
       } else {

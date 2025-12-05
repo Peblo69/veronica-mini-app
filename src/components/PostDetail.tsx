@@ -213,7 +213,7 @@ export default function PostDetail({ post, user, onBack, onDeleted, onUpdated }:
           {/* Media */}
           {currentPost.media_url && (
             <div className="relative bg-gray-100 w-full" ref={videoContainerRef}>
-              {currentPost.media_url.match(/\.(mp4|webm|mov)$/i) ? (
+              {currentPost.media_url.match(/\.(mp4|webm|mov|m4v)(\?|$)/i) ? (
                 <>
                   <video
                     ref={videoRef}
