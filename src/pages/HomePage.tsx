@@ -25,8 +25,8 @@ interface HomePageProps {
 const filterLiveStreams = (streams: Livestream[]) =>
   streams.filter(stream => stream.status === 'live' && !!stream.started_at && !!stream.agora_channel && (stream.viewer_count || 0) > 0)
 
-const INITIAL_POST_BATCH = 6
-const LOAD_MORE_BATCH = 4
+const INITIAL_POST_BATCH = 5
+const LOAD_MORE_BATCH = 3
 
 // Video Player Component with mute/unmute and tap to pause
 interface FeedVideoPlayerProps {
@@ -37,9 +37,11 @@ interface FeedVideoPlayerProps {
   shouldPlay?: boolean
   onMuteChange?: (muted: boolean) => void
   poster?: string
+  slideIndex?: number
+  activeSlide?: number
 }
 
-function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, shouldPlay = false, onMuteChange, poster }: FeedVideoPlayerProps) {
+function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, shouldPlay = false, onMuteChange, poster, slideIndex, activeSlide }: FeedVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const isInViewport = useInViewport(videoRef, { minimumRatio: aspectRatio === 'full' ? 0.5 : 0.35 })
   const { isSlow, isDataSaver } = useConnectionQuality()
@@ -104,8 +106,9 @@ function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, 
     const video = videoRef.current
     if (!video || !isLoaded) return
 
-    // Must be the active post and in viewport to play
-    if (shouldPlay && isInViewport) {
+    // Must be the active post and in viewport AND active slide to play
+    const isActiveSlide = slideIndex === undefined || activeSlide === undefined || slideIndex === activeSlide
+    if (shouldPlay && isActiveSlide && isInViewport) {
       if (!isPaused) {
         requestPlay(videoId || src)
         // Try to play - use promise to handle autoplay blocks
@@ -131,10 +134,11 @@ function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, 
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
-    if ((!isActive || !shouldPlay) && !video.paused) {
+    const isActiveSlide = slideIndex === undefined || activeSlide === undefined || slideIndex === activeSlide
+    if ((!isActive || !shouldPlay || !isActiveSlide) && !video.paused) {
       video.pause()
     }
-  }, [isActive, shouldPlay])
+  }, [isActive, shouldPlay, slideIndex, activeSlide])
 
   // Reset pause state when becoming active
   useEffect(() => {
@@ -296,7 +300,9 @@ function MediaCarousel({ urls, canView, videoIdPrefix, muted, onMuteChange, shou
                   videoId={`${videoIdPrefix || 'carousel'}-${index}-${url}`}
                   muted={muted}
                   onMuteChange={onMuteChange}
-                  shouldPlay={shouldPlay}
+                  shouldPlay={shouldPlay && currentIndex === index}
+                  slideIndex={index}
+                  activeSlide={currentIndex}
                 />
               </div>
             ) : (
@@ -655,10 +661,10 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   const feedVirtualizer = useVirtualizer({
     count: visiblePosts.length,
     getScrollElement: () => (scrollEl ?? document.documentElement)!,
-    estimateSize: () => 800,
-    overscan: 4,
-    scrollMargin: 120,
-    measureElement: (el) => el.getBoundingClientRect().height + 16,
+    estimateSize: () => 720,
+    overscan: 2,
+    scrollMargin: 96,
+    measureElement: (el) => el.getBoundingClientRect().height + 8,
   })
 
   // Track which post is most visible to drive video playback
@@ -681,14 +687,17 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
             bestId = id
           }
         }
-        if (bestId !== null) {
-          setActivePostId(bestId)
-        }
+        // debounce a bit to avoid thrash
+        window.requestAnimationFrame(() => {
+          if (bestId !== null) {
+            setActivePostId(bestId)
+          }
+        })
       },
       {
         root: rootEl || undefined,
         threshold: [0.25, 0.5, 0.75],
-        rootMargin: '0px 0px -15% 0px',
+        rootMargin: '0px 0px -20% 0px',
       }
     )
 
