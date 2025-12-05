@@ -42,39 +42,78 @@ interface FeedVideoPlayerProps {
 }
 
 function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, shouldPlay = false, onMuteChange, poster, slideIndex, activeSlide }: FeedVideoPlayerProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const isInViewport = useInViewport(videoRef, { minimumRatio: aspectRatio === 'full' ? 0.5 : 0.35 })
-  const { isSlow, isDataSaver } = useConnectionQuality()
-  const { isActive, requestPlay, clearActive, activeId } = useSharedVideoPlayback(videoId || src)
+  const isInViewport = useInViewport(containerRef, { minimumRatio: 0.4 })
+  const { isDataSaver } = useConnectionQuality()
+  const myId = videoId || src
+  const { activeId, requestPlay, clearActive } = useSharedVideoPlayback(myId)
 
   const [isMuted, setIsMuted] = useState(muted)
   const [isPaused, setIsPaused] = useState(false)
   const [isLoaded, setIsLoaded] = useState(false)
   const [hasError, setHasError] = useState(false)
   const [naturalAspect, setNaturalAspect] = useState<number | null>(null)
-  const [hasPlayedOnce, setHasPlayedOnce] = useState(false)
-  // Be aggressive on autoplay; only block when user explicitly enables data saver
-  const canAutoPlay = !isDataSaver || !isSlow
+
   const resolvedAspect = naturalAspect || (aspectRatio === 'full' ? 9 / 16 : 4 / 5)
+
+  // Determine if THIS video should be playing right now
+  const isActiveSlide = slideIndex === undefined || activeSlide === undefined || slideIndex === activeSlide
+  const shouldBeActive = shouldPlay && isActiveSlide && isInViewport && !isPaused
 
   // Reset state when src changes
   useEffect(() => {
     setIsLoaded(false)
     setHasError(false)
-    setHasPlayedOnce(false)
-    videoRef.current?.load()
+    setIsPaused(false)
+    const video = videoRef.current
+    if (video) {
+      video.load()
+    }
   }, [src])
 
-  const handlePointerEnter = () => {
-    if (!isPaused && canAutoPlay && shouldPlay) {
-      requestPlay(videoId || src)
-      videoRef.current?.play().catch(() => {})
-    }
-  }
+  // Sync muted prop
+  useEffect(() => {
+    setIsMuted(muted)
+  }, [muted])
 
-  const handlePointerLeave = () => {
-    // Don't pause on pointer leave - let visibility control it
-  }
+  // MAIN PLAYBACK CONTROL - Simple and direct
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !isLoaded) return
+
+    if (shouldBeActive) {
+      // We want to play - claim active status
+      requestPlay(myId)
+
+      // Only play if we're the active video
+      if (activeId === myId && video.paused) {
+        video.play().catch(() => {
+          // Autoplay blocked - user needs to tap
+          setIsPaused(true)
+        })
+      }
+    } else {
+      // We shouldn't be playing
+      if (!video.paused) {
+        video.pause()
+      }
+      // Clear active if we were the active one
+      if (activeId === myId) {
+        clearActive()
+      }
+    }
+  }, [shouldBeActive, isLoaded, activeId, myId, requestPlay, clearActive])
+
+  // When another video becomes active, pause this one
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    if (activeId && activeId !== myId && !video.paused) {
+      video.pause()
+    }
+  }, [activeId, myId])
 
   const toggleMute = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -85,154 +124,105 @@ function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, 
 
   const togglePause = () => {
     const video = videoRef.current
-    if (!video) return
+    if (!video || !isLoaded) return
 
     if (video.paused) {
-      requestPlay(videoId || src)
-      video.play().catch(() => {})
       setIsPaused(false)
-      setHasPlayedOnce(true)
+      requestPlay(myId)
+      video.play().catch(() => setIsPaused(true))
     } else {
       video.pause()
       setIsPaused(true)
-      if ((videoId || src) === activeId) {
+      if (activeId === myId) {
         clearActive()
       }
     }
   }
 
-  // Main autoplay effect - simpler and more aggressive
-  useEffect(() => {
+  const handleRetry = () => {
+    setHasError(false)
+    setIsLoaded(false)
     const video = videoRef.current
-    if (!video || !isLoaded) return
-
-    // Must be the active post and in viewport AND active slide to play
-    const isActiveSlide = slideIndex === undefined || activeSlide === undefined || slideIndex === activeSlide
-    if (shouldPlay && isActiveSlide && isInViewport) {
-      if (!isPaused) {
-        requestPlay(videoId || src)
-        // Try to play - use promise to handle autoplay blocks
-        const playPromise = video.play()
-        if (playPromise !== undefined) {
-          playPromise.then(() => {
-            setHasPlayedOnce(true)
-          }).catch(() => {
-            // Autoplay blocked - video stays paused
-            setIsPaused(true)
-          })
-        }
-      }
-    } else {
-      // Not active or not in viewport - pause
-      if (!video.paused) {
-        video.pause()
-      }
+    if (video) {
+      video.load()
     }
-  }, [shouldPlay, isInViewport, isLoaded, isPaused, requestPlay, videoId, src])
-
-  // Pause if another video takes over
-  useEffect(() => {
-    const video = videoRef.current
-    if (!video) return
-    const isActiveSlide = slideIndex === undefined || activeSlide === undefined || slideIndex === activeSlide
-    if ((!isActive || !shouldPlay || !isActiveSlide) && !video.paused) {
-      video.pause()
-    }
-  }, [isActive, shouldPlay, slideIndex, activeSlide])
-
-  // Reset pause state when becoming active
-  useEffect(() => {
-    if (shouldPlay && isInViewport && hasPlayedOnce) {
-      setIsPaused(false)
-    }
-  }, [shouldPlay, isInViewport, hasPlayedOnce])
-
-  useEffect(() => {
-    setIsMuted(muted)
-  }, [muted])
+  }
 
   return (
     <div
+      ref={containerRef}
       className="relative w-full bg-black flex items-center justify-center"
-      onMouseEnter={handlePointerEnter}
-      onMouseLeave={handlePointerLeave}
       style={{
         aspectRatio: resolvedAspect,
         maxHeight: aspectRatio === 'full' ? '85vh' : undefined
       }}
-      >
-        {/* Loading spinner */}
-        {!isLoaded && !hasError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
-            <div className="w-10 h-10 border-3 border-white/30 border-t-white rounded-full animate-spin" />
-          </div>
-        )}
+    >
+      {/* Loading spinner */}
+      {!isLoaded && !hasError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
+          <div className="w-10 h-10 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+        </div>
+      )}
 
-        {/* Video */}
-        <video
-          ref={videoRef}
-          src={src}
-          className={`w-full h-full max-h-full object-contain transition-opacity duration-300 ${isLoaded && !hasError ? 'opacity-100' : 'opacity-0'}`}
-          playsInline
-          loop
-          muted={isMuted}
-          preload={canAutoPlay ? 'auto' : 'metadata'}
-          poster={poster}
-          controls={false}
-          disablePictureInPicture
-          controlsList="nodownload noremoteplayback nofullscreen"
-          onClick={togglePause}
-          onLoadedMetadata={(e) => {
-            const video = e.currentTarget
-            if (video.videoWidth && video.videoHeight) {
-              setNaturalAspect(video.videoWidth / video.videoHeight)
-            }
-            setIsLoaded(true)
-          }}
-          onLoadedData={() => setIsLoaded(true)}
-          onCanPlay={() => setIsLoaded(true)}
-          onError={() => {
-            setHasError(true)
-            setIsLoaded(false)
-          }}
-        />
+      {/* Video */}
+      <video
+        ref={videoRef}
+        src={src}
+        className={`w-full h-full max-h-full object-contain transition-opacity duration-300 ${isLoaded && !hasError ? 'opacity-100' : 'opacity-0'}`}
+        playsInline
+        loop
+        muted={isMuted}
+        preload={isDataSaver ? 'metadata' : 'auto'}
+        poster={poster}
+        controls={false}
+        disablePictureInPicture
+        controlsList="nodownload noremoteplayback nofullscreen"
+        onClick={togglePause}
+        onLoadedMetadata={(e) => {
+          const video = e.currentTarget
+          if (video.videoWidth && video.videoHeight) {
+            setNaturalAspect(video.videoWidth / video.videoHeight)
+          }
+          setIsLoaded(true)
+        }}
+        onLoadedData={() => setIsLoaded(true)}
+        onCanPlay={() => setIsLoaded(true)}
+        onError={() => {
+          setHasError(true)
+          setIsLoaded(false)
+        }}
+      />
 
-        {hasError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 text-white text-sm">
-            <span>Video failed to load</span>
-            <button
-              className="px-3 py-1 rounded-full bg-white/10 border border-white/20"
-              onClick={() => {
-                setHasError(false)
-                setIsLoaded(false)
-                videoRef.current?.load()
-                if (shouldPlay) {
-                  videoRef.current?.play().catch(() => setIsPaused(true))
-                }
-              }}
-            >
-              Retry
-            </button>
-          </div>
-        )}
+      {/* Error state with retry */}
+      {hasError && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80 text-white">
+          <span className="text-sm">Video failed to load</span>
+          <button
+            className="px-4 py-2 rounded-full bg-white/10 border border-white/20 text-sm font-medium active:scale-95 transition-transform"
+            onClick={handleRetry}
+          >
+            Tap to retry
+          </button>
+        </div>
+      )}
 
-      {/* Pause indicator */}
-      {isPaused && isLoaded && (
+      {/* Pause indicator - tap to resume */}
+      {isPaused && isLoaded && !hasError && (
         <div
           className="absolute inset-0 flex items-center justify-center bg-black/30 cursor-pointer"
           onClick={togglePause}
         >
-          <div className="w-16 h-16 bg-black/50 rounded-full flex items-center justify-center">
+          <div className="w-16 h-16 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-sm">
             <Play className="w-8 h-8 text-white fill-white ml-1" />
           </div>
         </div>
       )}
 
-      {/* Mute/Unmute button - Instagram style bottom right corner */}
-      {isLoaded && (
+      {/* Mute/Unmute button - always visible on video */}
+      {isLoaded && !hasError && (
         <button
           onClick={toggleMute}
-          className="absolute bottom-3 right-3 p-2 bg-black/60 rounded-full z-20 hover:bg-black/80 transition-colors"
+          className="absolute bottom-3 right-3 p-2 bg-black/60 rounded-full z-20 hover:bg-black/80 active:scale-95 transition-all"
         >
           {isMuted ? (
             <VolumeX className="w-5 h-5 text-white" />
@@ -242,9 +232,10 @@ function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, 
         </button>
       )}
 
-      {!canAutoPlay && isLoaded && (
+      {/* Data saver notice */}
+      {isDataSaver && isLoaded && (
         <div className="absolute bottom-3 left-3 text-[11px] px-2 py-1 rounded-full bg-black/60 text-white/80">
-          Data saver on – tap to play
+          Data saver on
         </div>
       )}
     </div>
@@ -363,7 +354,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   const [suggestions, setSuggestions] = useState<User[]>([])
   const [livestreams, setLivestreams] = useState<Livestream[]>([])
   const [loading, setLoading] = useState(true)
-  const [feedMuted, setFeedMuted] = useState(false)
+  const [feedMuted, setFeedMuted] = useState(true) // Start muted for better autoplay
   const [activePostId, setActivePostId] = useState<number | null>(null)
   const [purchaseModal, setPurchaseModal] = useState<Post | null>(null)
   const [purchasing, setPurchasing] = useState(false)
@@ -673,11 +664,39 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
       mediaObserver.current.disconnect()
     }
 
+    // Set first video post as active on initial load
+    if (activePostId === null && visiblePosts.length > 0) {
+      const firstVideoPost = visiblePosts.find(p => p.media_url?.match(/\.(mp4|webm)$/i) || p.media_urls?.some(u => u.match(/\.(mp4|webm)$/i)))
+      if (firstVideoPost) {
+        setActivePostId(firstVideoPost.id)
+      } else {
+        setActivePostId(visiblePosts[0].id)
+      }
+    }
+
     const rootEl = document.querySelector('main') as HTMLElement | null
+    const thresholds = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
+
     const observer = new IntersectionObserver(
       (entries) => {
+        // Find the entry with highest visibility ratio
         let bestId: number | null = null
         let bestRatio = 0
+
+        // Check all currently observed elements
+        mediaRefs.current.forEach((el, postId) => {
+          const rect = el.getBoundingClientRect()
+          const viewportHeight = window.innerHeight
+          const visibleHeight = Math.max(0, Math.min(rect.bottom, viewportHeight) - Math.max(rect.top, 0))
+          const ratio = visibleHeight / rect.height
+
+          if (ratio > bestRatio) {
+            bestRatio = ratio
+            bestId = postId
+          }
+        })
+
+        // Also check the entries from the callback
         for (const entry of entries) {
           const idAttr = (entry.target as HTMLElement).dataset.postId
           const id = idAttr ? Number(idAttr) : null
@@ -687,17 +706,15 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
             bestId = id
           }
         }
-        // debounce a bit to avoid thrash
-        window.requestAnimationFrame(() => {
-          if (bestId !== null) {
-            setActivePostId(bestId)
-          }
-        })
+
+        if (bestId !== null && bestId !== activePostId) {
+          setActivePostId(bestId)
+        }
       },
       {
         root: rootEl || undefined,
-        threshold: [0.25, 0.5, 0.75],
-        rootMargin: '0px 0px -20% 0px',
+        threshold: thresholds,
+        rootMargin: '-10% 0px -10% 0px',
       }
     )
 
@@ -707,7 +724,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
     return () => {
       observer.disconnect()
     }
-  }, [visiblePosts])
+  }, [visiblePosts, activePostId])
   const formatTime = (date: string) => {
     const diff = Date.now() - new Date(date).getTime()
     const hours = Math.floor(diff / 3600000)
