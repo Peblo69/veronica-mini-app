@@ -491,22 +491,32 @@ export async function getPost(postId: number): Promise<Post | null> {
 
 // Like post (atomic)
 export async function likePost(userId: number, postId: number) {
+  // Primary: atomic RPC
   const { data, error } = await supabase.rpc('atomic_like_post', {
     p_user_id: userId,
     p_post_id: postId
   })
 
-  if (error) {
-    console.error('Like post error:', error)
+  if (!error && data) return true
+
+  // Fallback: direct insert + count increment (for cases where RPC is missing)
+  console.warn('[likePost] atomic_like_post failed, falling back to direct insert', error)
+  const { error: insertError } = await supabase
+    .from('likes')
+    .insert({ user_id: userId, post_id: postId })
+
+  if (insertError) {
+    console.error('Like post error:', insertError)
     toast.error('Failed to like post')
     return false
   }
 
-  if (!data) {
-    // Already liked
-    return false
+  // Best-effort count increment
+  try {
+    await supabase.rpc('increment_likes', { p_post_id: postId })
+  } catch {
+    // ignore best-effort failure
   }
-
   return true
 }
 
@@ -517,13 +527,28 @@ export async function unlikePost(userId: number, postId: number) {
     p_post_id: postId
   })
 
-  if (error) {
-    console.error('Unlike post error:', error)
+  if (!error && data === true) return true
+
+  // Fallback: direct delete + count decrement
+  console.warn('[unlikePost] atomic_unlike_post failed, falling back to direct delete', error)
+  const { error: deleteError } = await supabase
+    .from('likes')
+    .delete()
+    .eq('user_id', userId)
+    .eq('post_id', postId)
+
+  if (deleteError) {
+    console.error('Unlike post error:', deleteError)
     toast.error('Failed to unlike post')
     return false
   }
 
-  return data === true
+  try {
+    await supabase.rpc('decrement_likes', { p_post_id: postId })
+  } catch {
+    // ignore best-effort failure
+  }
+  return true
 }
 
 // Get users who liked a post

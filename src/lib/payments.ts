@@ -121,24 +121,160 @@ export function showPaymentMethodPopup(
 ): void {
   const tg = window.Telegram?.WebApp
 
+  // If Telegram not available, fall back to tokens if balance allows
   if (!tg) {
-    // Fallback: tokens only
-    onSelect('tokens')
+    const canPayWithTokens = userBalance >= amount
+    onSelect(canPayWithTokens ? 'tokens' : null)
     return
   }
 
   const canPayWithTokens = userBalance >= amount
-  const message = canPayWithTokens
-    ? `Pay ${amount} tokens from your balance?`
-    : `You need ${amount} tokens. Your balance: ${userBalance}`
+  const buttons: Array<{ type?: string; text: string; id: string }> = []
+
+  buttons.push({ id: 'stars', text: 'Pay with Stars' })
 
   if (canPayWithTokens) {
-    tg.showConfirm(message, (confirmed) => {
-      onSelect(confirmed ? 'tokens' : null)
+    buttons.push({ id: 'tokens', text: `Pay ${amount} tokens` })
+  }
+
+  buttons.push({ type: 'cancel', text: 'Cancel', id: 'cancel' })
+
+  tg.showPopup(
+    {
+      title: 'Choose payment method',
+      message: canPayWithTokens
+        ? `Pay ${amount} tokens or use Telegram Stars`
+        : `Use Telegram Stars (you have ${userBalance} tokens)`,
+      buttons
+    },
+    (buttonId) => {
+      if (buttonId === 'stars') return onSelect('stars')
+      if (buttonId === 'tokens' && canPayWithTokens) return onSelect('tokens')
+      return onSelect(null)
+    }
+  )
+}
+
+// ============================================
+// STARS HELPERS
+// ============================================
+
+type StarsInvoiceKind = 'unlock' | 'tip' | 'subscription' | 'livestream'
+
+interface StarsInvoiceRequest {
+  amount: number
+  fromUserId: number
+  toUserId: number
+  referenceType: StarsInvoiceKind
+  referenceId: string
+  metadata?: Record<string, any>
+}
+
+interface StarsInvoiceResponse {
+  invoice_url: string
+  transaction_id: number
+}
+
+// Create an invoice via Supabase Functions (server-side must exist)
+async function createStarsInvoice(
+  payload: StarsInvoiceRequest
+): Promise<{ success: boolean; invoiceUrl?: string; transactionId?: number; error?: string }> {
+  try {
+    const { data, error } = await supabase.functions.invoke<StarsInvoiceResponse>('create-stars-invoice', {
+      body: payload,
     })
-  } else {
-    tg.showAlert(`Insufficient balance. You need ${amount} tokens but have ${userBalance}.`)
-    onSelect(null)
+
+    if (error || !data?.invoice_url || !data.transaction_id) {
+      return { success: false, error: error?.message || 'Failed to create Stars invoice' }
+    }
+
+    return { success: true, invoiceUrl: data.invoice_url, transactionId: data.transaction_id }
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'Stars invoice error' }
+  }
+}
+
+async function markStarsPaymentCompleted(transactionId: number): Promise<void> {
+  try {
+    await supabase.functions.invoke('confirm-stars-payment', {
+      body: { transactionId },
+    })
+  } catch (e) {
+    console.warn('[Stars] confirm failed (will rely on webhook):', e)
+  }
+}
+
+export async function payWithStars(
+  opts: StarsInvoiceRequest
+): Promise<PaymentResult> {
+  const tg = window.Telegram?.WebApp
+  if (!tg) {
+    return { success: false, error: 'Telegram WebApp not available for Stars' }
+  }
+
+  const invoice = await createStarsInvoice(opts)
+  if (!invoice.success || !invoice.invoiceUrl || !invoice.transactionId) {
+    return { success: false, error: invoice.error || 'Could not create Stars invoice' }
+  }
+
+  const invoiceUrl = invoice.invoiceUrl as string
+  const txId = invoice.transactionId as number
+
+  return await new Promise<PaymentResult>((resolve) => {
+    openTelegramStarsPayment(
+      invoiceUrl,
+      async () => {
+        // Optimistically mark complete; backend webhook should also finalize
+        await markStarsPaymentCompleted(txId)
+        resolve({ success: true, transactionId: String(txId) })
+      },
+      () => resolve({ success: false, error: 'Payment cancelled' })
+    )
+  })
+}
+
+// Optional helper: record Stars purchases/tips into dedicated tables when available
+async function recordStarsUnlock(
+  userId: number,
+  postId: number,
+  amount: number,
+  transactionId?: string
+) {
+  try {
+    await supabase
+      .from('post_purchases')
+      .insert({
+        user_id: userId,
+        post_id: postId,
+        amount,
+        transaction_id: transactionId ? Number(transactionId) : null
+      })
+  } catch (e) {
+    console.warn('[Stars] record unlock failed (post_purchases)', e)
+  }
+}
+
+async function recordStarsTip(
+  fromUserId: number,
+  toUserId: number,
+  amount: number,
+  message?: string,
+  postId?: number,
+  transactionId?: string
+) {
+  try {
+    await supabase
+      .from('tips')
+      .insert({
+        from_user_id: fromUserId,
+        to_user_id: toUserId,
+        amount,
+        message,
+        post_id: postId,
+        transaction_id: transactionId ? Number(transactionId) : null
+      })
+  } catch (e) {
+    console.warn('[Stars] record tip failed', e)
   }
 }
 
@@ -149,7 +285,8 @@ export function showPaymentMethodPopup(
 export async function processSubscriptionPayment(
   subscriberId: number,
   creatorId: number,
-  price: number
+  price: number,
+  method: PaymentMethod = 'tokens'
 ): Promise<PaymentResult> {
   // Free subscription
   if (price === 0) {
@@ -170,6 +307,44 @@ export async function processSubscriptionPayment(
     }
 
     return { success: true }
+  }
+
+  if (method === 'stars') {
+    const starsResult = await payWithStars({
+      amount: price,
+      fromUserId: subscriberId,
+      toUserId: creatorId,
+      referenceType: 'subscription',
+      referenceId: String(creatorId),
+    })
+
+    if (!starsResult.success) return starsResult
+
+    // Activate subscription after Stars payment
+    const { error: subError } = await supabase
+      .from('subscriptions')
+      .upsert({
+        subscriber_id: subscriberId,
+        creator_id: creatorId,
+        price_paid: price,
+        is_active: true,
+        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      }, {
+        onConflict: 'subscriber_id,creator_id'
+      })
+
+    if (subError) {
+      return { success: false, error: subError.message }
+    }
+
+    await supabase.from('notifications').insert({
+      user_id: creatorId,
+      from_user_id: subscriberId,
+      type: 'subscription',
+      content: 'subscribed to you!'
+    })
+
+    return { success: true, transactionId: starsResult.transactionId }
   }
 
   // Paid subscription with tokens
@@ -230,8 +405,45 @@ export async function processContentPurchase(
   userId: number,
   postId: number,
   creatorId: number,
-  price: number
+  price: number,
+  method: PaymentMethod = 'tokens'
 ): Promise<PaymentResult> {
+  if (method === 'stars') {
+    const starsResult = await payWithStars({
+      amount: price,
+      fromUserId: userId,
+      toUserId: creatorId,
+      referenceType: 'unlock',
+      referenceId: String(postId),
+    })
+
+    if (!starsResult.success) return starsResult
+
+    // Record purchase (existing table)
+    const { error: purchaseError } = await supabase
+      .from('content_purchases')
+      .insert({
+        user_id: userId,
+        post_id: postId,
+        amount: price
+      })
+
+    if (purchaseError) {
+      return { success: false, error: purchaseError.message }
+    }
+
+    await recordStarsUnlock(userId, postId, price, starsResult.transactionId)
+
+    await supabase.from('notifications').insert({
+      user_id: creatorId,
+      from_user_id: userId,
+      type: 'subscription',
+      content: 'purchased your post'
+    })
+
+    return { success: true, transactionId: starsResult.transactionId }
+  }
+
   // Pay with tokens
   const paymentResult = await payWithTokens(
     userId,
@@ -278,7 +490,8 @@ export async function processLivestreamTicket(
   viewerId: number,
   creatorId: number,
   livestreamId: string,
-  price: number
+  price: number,
+  method: PaymentMethod = 'tokens'
 ): Promise<PaymentResult> {
   if (price <= 0) {
     return { success: true }
@@ -293,6 +506,44 @@ export async function processLivestreamTicket(
 
   if (existingTicket && existingTicket.length > 0) {
     return { success: true }
+  }
+
+  if (method === 'stars') {
+    const starsResult = await payWithStars({
+      amount: price,
+      fromUserId: viewerId,
+      toUserId: creatorId,
+      referenceType: 'livestream',
+      referenceId: livestreamId,
+    })
+
+    if (!starsResult.success) return starsResult
+
+    const { error: ticketError } = await supabase
+      .from('livestream_tickets')
+      .insert({
+        livestream_id: livestreamId,
+        user_id: viewerId,
+        amount: price
+      })
+
+    if (ticketError) {
+      return { success: false, error: ticketError.message }
+    }
+
+    await supabase
+      .from('creator_earnings')
+      .insert({
+        creator_id: creatorId,
+        amount: price,
+        source_type: 'livestream',
+        source_id: livestreamId,
+        from_user_id: viewerId,
+        platform_fee: Math.ceil(price * 0.1),
+        net_amount: Math.max(0, price - Math.ceil(price * 0.1))
+      })
+
+    return { success: true, transactionId: starsResult.transactionId }
   }
 
   const paymentResult = await payWithTokens(
@@ -353,8 +604,35 @@ export async function processLivestreamTicket(
 export async function processTip(
   senderId: number,
   recipientId: number,
-  amount: number
+  amount: number,
+  method: PaymentMethod = 'tokens',
+  message?: string,
+  postId?: number
 ): Promise<PaymentResult> {
+  if (method === 'stars') {
+    const starsResult = await payWithStars({
+      amount,
+      fromUserId: senderId,
+      toUserId: recipientId,
+      referenceType: 'tip',
+      referenceId: String(recipientId),
+      metadata: { postId, message }
+    })
+
+    if (!starsResult.success) return starsResult
+
+    await recordStarsTip(senderId, recipientId, amount, message, postId, starsResult.transactionId)
+
+    await supabase.from('notifications').insert({
+      user_id: recipientId,
+      from_user_id: senderId,
+      type: 'tip',
+      content: `sent you a tip`
+    })
+
+    return { success: true, transactionId: starsResult.transactionId }
+  }
+
   const paymentResult = await payWithTokens(
     senderId,
     amount,

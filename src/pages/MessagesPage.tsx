@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { VideoHTMLAttributes } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle, Search, ArrowLeft, Send, Image, Gift, DollarSign, Lock, X, Loader2, Plus, Video, CheckCheck, AlertCircle, CornerUpLeft, Forward, Trash2, Mic, Volume2 } from 'lucide-react'
+import { CheckCircle, Search, ArrowLeft, Send, Image, Gift, DollarSign, Lock, X, Loader2, Plus, Video, CheckCheck, AlertCircle, CornerUpLeft, Forward, Trash2, Mic, Volume2, MessageCircle } from 'lucide-react'
 import { type User } from '../lib/api'
 import {
   getConversations,
@@ -27,36 +27,43 @@ import { uploadMessageMedia, uploadVoiceMessage, getMediaType } from '../lib/sto
 import VoiceRecorder from '../components/VoiceRecorder'
 import { useInViewport } from '../hooks/useInViewport'
 
-// Star Background Component
+// Star Background Component - Subtle twinkling stars on pure black background
 const StarsBackground = () => {
-  // Use useMemo to prevent re-rendering stars on every state change
-  const stars = useMemo(() => Array.from({ length: 70 }).map((_, i) => ({
+  const stars = useMemo(() => Array.from({ length: 60 }).map((_, i) => ({
     id: i,
     top: `${Math.random() * 100}%`,
     left: `${Math.random() * 100}%`,
-    size: `${Math.random() * 2 + 1}px`,
-    duration: `${Math.random() * 3 + 2}s`,
-    opacity: Math.random() * 0.7 + 0.3,
+    size: `${Math.random() * 1.5 + 0.5}px`,
+    duration: `${Math.random() * 4 + 3}s`,
+    opacity: Math.random() * 0.5 + 0.15,
     delay: `${Math.random() * 5}s`
   })), [])
 
   return (
-    <div className="stars-container fixed inset-0 z-0 pointer-events-none">
+    <div className="fixed inset-0 bg-black pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>
       {stars.map(star => (
         <div
           key={star.id}
-          className="star"
           style={{
+            position: 'absolute',
             top: star.top,
             left: star.left,
             width: star.size,
             height: star.size,
+            backgroundColor: 'white',
+            borderRadius: '50%',
+            opacity: star.opacity,
+            animation: `twinkle ${star.duration} ease-in-out infinite`,
             animationDelay: star.delay,
-            '--duration': star.duration,
-            '--opacity': star.opacity
-          } as any}
+          }}
         />
       ))}
+      <style>{`
+        @keyframes twinkle {
+          0%, 100% { opacity: 0.15; transform: scale(1); }
+          50% { opacity: 0.6; transform: scale(1.15); }
+        }
+      `}</style>
     </div>
   )
 }
@@ -150,7 +157,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastTapRef = useRef<{ time: number; messageId: string } | null>(null)
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
-  const pendingReactionsRef = useRef<Set<string>>(new Set()) // Track pending reaction calls
+  const pendingReactionsRef = useRef<Set<string>>(new Set())
 
   const messageListVirtualizer = useVirtualizer({
     count: messages.length,
@@ -198,15 +205,11 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     }
   }
 
-  // Keyboard handling - position input above keyboard
   useEffect(() => {
     if (!activeConversation) return
-    // We now rely on interactive-widget=resizes-content in index.html for basic resizing.
-    // However, we still listen to visualViewport to ensure we scroll to bottom.
     
     const handleResize = () => {
       if (messagesEndRef.current) {
-        // Use a small timeout to let layout settle
         setTimeout(() => {
           messagesEndRef.current?.scrollIntoView({ block: 'end' })
         }, 100)
@@ -217,7 +220,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     return () => window.visualViewport?.removeEventListener('resize', handleResize)
   }, [activeConversation])
 
-  // Load conversations
   useEffect(() => {
     loadConversations()
     loadGifts()
@@ -230,7 +232,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     }
   }, [])
 
-  // Handle selected conversation from external navigation
   useEffect(() => {
     if (selectedConversationId && conversations.length > 0) {
       const conv = conversations.find(c => c.id === selectedConversationId)
@@ -241,7 +242,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     }
   }, [selectedConversationId, conversations])
 
-  // Load messages when conversation changes
   useEffect(() => {
     onChatStateChange?.(!!activeConversation)
 
@@ -249,7 +249,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       loadMessages(activeConversation.id)
       markMessagesRead(activeConversation.id, user.telegram_id)
 
-      // Subscribe to new messages
       const unsubscribe = subscribeToMessages(activeConversation.id, (newMsg) => {
         setMessages(prev => {
           const clientId = newMsg.client_message_id
@@ -265,7 +264,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
           if (prev.some(m => m.id === newMsg.id)) return prev
           return [...prev, newMsg]
         })
-        // Mark as read if not from us
         if (newMsg.sender_id !== user.telegram_id) {
           markMessagesRead(activeConversation.id, user.telegram_id)
         }
@@ -279,10 +277,8 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     }
   }, [activeConversation])
 
-  // Scroll to bottom on new messages (only after initial load is done)
   useEffect(() => {
     if (messages.length > 0 && initialScrollDoneRef.current) {
-      // Only smooth scroll for new messages after initial load
       requestAnimationFrame(() => {
         if (messagesContainerRef.current) {
           messagesContainerRef.current.scrollTo({
@@ -302,20 +298,17 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   }
 
   const loadMessages = async (conversationId: string) => {
-    // Reset scroll flag when loading new conversation
     initialScrollDoneRef.current = false
 
     const data = await getMessages(conversationId)
     setMessages(data)
 
-    // Load reactions for all messages
     if (data.length > 0) {
       const messageIds = data.map(m => m.id)
       const reactions = await getMessageReactions(messageIds)
       setMessageReactions(reactions)
     }
 
-    // Scroll to bottom after messages load
     requestAnimationFrame(() => {
       setTimeout(() => {
         if (messagesContainerRef.current) {
@@ -369,7 +362,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   }
 
   const handleSendMessage = async () => {
-    // Use ref to prevent double-sends on iOS
     if (isSendingRef.current) return
     if (!newMessage.trim() || !activeConversation || sending) return
 
@@ -378,7 +370,7 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     const text = newMessage.trim()
     const tempId = `temp-text-${Date.now()}`
     const replyToId = replyTo?.id?.startsWith('temp-') ? undefined : replyTo?.id
-    const savedReplyTo = replyTo // Save before clearing
+    const savedReplyTo = replyTo
 
     const optimisticMessage: ChatMessage = {
       id: tempId,
@@ -403,19 +395,15 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       reply_to: savedReplyTo,
     }
 
-    // Clear input FIRST before any async work
     setNewMessage('')
     setReplyTo(null)
     setSending(true)
 
-    // Add optimistic message
     setMessages(prev => [...prev, optimisticMessage])
 
     try {
-      // Pass reply_to_id if replying to a message
       const msg = await sendMessage(activeConversation.id, user.telegram_id, text, tempId, replyToId)
       if (msg) {
-        // Add the reply_to data to the returned message
         if (savedReplyTo && !savedReplyTo.id.startsWith('temp-')) {
           msg.reply_to = savedReplyTo
         }
@@ -604,7 +592,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     void runMediaUpload(tempId, pending, activeConversation.id)
   }
 
-  // Long press handler
   const handleTouchStart = useCallback((msg: ChatMessage) => {
     longPressTimer.current = setTimeout(() => {
       setSelectedMessage(msg)
@@ -619,11 +606,9 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     }
   }, [])
 
-  // Double tap handler for quick like
   const handleMessageTap = useCallback((msg: ChatMessage) => {
     const now = Date.now()
     if (lastTapRef.current && lastTapRef.current.messageId === msg.id && now - lastTapRef.current.time < 300) {
-      // Double tap - add heart reaction
       handleAddReaction(msg.id, '❤️')
       lastTapRef.current = null
     } else {
@@ -631,43 +616,28 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     }
   }, [])
 
-  // Add reaction to message - with proper locking to prevent duplicates
   const handleAddReaction = async (messageId: string, emoji: string) => {
     const reactionKey = `${messageId}:${emoji}`
 
-    // Prevent duplicate calls - if this exact reaction is already pending, ignore
     if (pendingReactionsRef.current.has(reactionKey)) {
-      console.log('[Reaction] Already pending, ignoring:', reactionKey)
       setShowMessageMenu(false)
       setSelectedMessage(null)
       return
     }
 
-    // Don't allow reactions on temp/pending messages
     if (messageId.startsWith('temp-')) {
-      console.log('[Reaction] Skipping - temp message')
       setShowMessageMenu(false)
       setSelectedMessage(null)
       return
     }
 
-    // Mark as pending
     pendingReactionsRef.current.add(reactionKey)
-    console.log('[Reaction] Starting:', { messageId, emoji, userId: user.telegram_id })
-
-    // Close menu immediately
     setShowMessageMenu(false)
     setSelectedMessage(null)
 
     try {
-      // Call backend FIRST - let server be source of truth
-      const result = await addReaction(messageId, user.telegram_id, emoji)
-      console.log('[Reaction] Backend result:', result)
-
-      // Always refresh from server after operation
+      await addReaction(messageId, user.telegram_id, emoji)
       const updatedReactions = await getMessageReactions([messageId])
-      console.log('[Reaction] Server reactions:', updatedReactions.get(messageId))
-
       setMessageReactions(prev => {
         const newMap = new Map(prev)
         newMap.set(messageId, updatedReactions.get(messageId) || [])
@@ -675,7 +645,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
       })
     } catch (err) {
       console.error('[Reaction] Error:', err)
-      // On error, still refresh to get correct state
       try {
         const updatedReactions = await getMessageReactions([messageId])
         setMessageReactions(prev => {
@@ -687,55 +656,39 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         console.error('[Reaction] Failed to refresh:', e)
       }
     } finally {
-      // Release lock
       pendingReactionsRef.current.delete(reactionKey)
     }
   }
 
-  // Reply to message
   const handleReply = () => {
-    console.log('[Reply] Replying to:', selectedMessage)
     if (selectedMessage) {
       setReplyTo(selectedMessage)
       setShowMessageMenu(false)
       setSelectedMessage(null)
-      console.log('[Reply] replyTo set, menu closed')
     }
   }
 
-  // Delete message
   const handleDeleteMessage = async () => {
-    console.log('[Delete] Deleting message:', selectedMessage)
     if (!selectedMessage) return
 
     const messageId = selectedMessage.id
-    const senderId = selectedMessage.sender_id
-    console.log('[Delete] messageId:', messageId, 'senderId:', senderId, 'userId:', user.telegram_id)
-
     setShowMessageMenu(false)
     setSelectedMessage(null)
 
-    // For temp messages, just remove from UI
     if (messageId.startsWith('temp-')) {
-      console.log('[Delete] Removing temp message from UI')
       setMessages(prev => prev.filter(m => m.id !== messageId))
       return
     }
 
-    // Optimistic remove from UI - keep it removed even on error
-    console.log('[Delete] Removing message from UI')
     setMessages(prev => prev.filter(m => m.id !== messageId))
 
-    // Call backend (fire and forget)
     try {
-      const result = await deleteMessage(messageId, user.telegram_id)
-      console.log('[Delete] Backend result:', result)
+      await deleteMessage(messageId, user.telegram_id)
     } catch (err) {
       console.error('[Delete] Backend error:', err)
     }
   }
 
-  // Scroll to replied message with highlight animation
   const scrollToMessage = useCallback((messageId: string) => {
     const targetIndex = messages.findIndex(m => m.id === messageId)
     if (targetIndex === -1) return
@@ -780,21 +733,19 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
   }
 
-  // Filter conversations by category
   const getFilteredConversations = () => {
     let filtered = conversations.filter(c =>
       c.other_user?.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.other_user?.first_name?.toLowerCase().includes(searchQuery.toLowerCase())
     )
 
-    // For now, simulate categories (in real app, this would come from backend)
     switch (activeCategory) {
       case 'primary':
         return filtered
       case 'general':
-        return filtered.filter((_, i) => i % 3 === 0) // Simulated
+        return filtered.filter((_, i) => i % 3 === 0)
       case 'requests':
-        return filtered.filter((_, i) => i % 5 === 0) // Simulated
+        return filtered.filter((_, i) => i % 5 === 0)
       default:
         return filtered
     }
@@ -809,43 +760,35 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   ]
 
   const renderConversationCard = (conv: Conversation) => (
-    <motion.button
+    <button
       key={conv.id}
-      className="group w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 transition-all duration-300 border border-transparent hover:border-white/5 relative overflow-hidden"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
+      className="group w-full flex items-center gap-3 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:bg-white/10 border border-transparent"
       onClick={() => setActiveConversation(conv)}
     >
-      {/* Hover Glow Effect */}
-      <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-blue-500/0 to-blue-500/0 group-hover:from-blue-500/5 group-hover:via-purple-500/5 group-hover:to-pink-500/5 transition-all duration-500" />
-      
       <div className="relative shrink-0">
-        <div className="w-12 h-12 rounded-full p-[2px] bg-gradient-to-br from-white/10 to-white/5 group-hover:from-blue-500 group-hover:to-purple-500 transition-all duration-500">
+        <div className="w-12 h-12 rounded-full overflow-hidden bg-white/5">
           <img
             src={conv.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${conv.other_user?.telegram_id}`}
             alt=""
             loading="lazy"
-            className="w-full h-full rounded-full object-cover bg-black"
+            className="w-full h-full object-cover"
           />
         </div>
         {(conv.unread_count || 0) > 0 && (
-          <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-gradient-to-r from-red-500 to-rose-600 border-2 border-black flex items-center justify-center shadow-[0_0_10px_rgba(244,63,94,0.5)]">
+          <div className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 border-[3px] border-black flex items-center justify-center">
             <span className="text-[10px] font-bold text-white leading-none">{conv.unread_count}</span>
           </div>
         )}
-        {/* Online Indicator (Simulated) */}
-        <div className="absolute bottom-0.5 right-0.5 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-black" />
       </div>
 
-      <div className="flex-1 min-w-0 flex flex-col gap-0.5 text-left relative z-10">
+      <div className="flex-1 min-w-0 flex flex-col gap-0.5 text-left">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <span className="font-bold text-[15px] text-white/90 group-hover:text-white transition-colors truncate">
+            <span className="font-bold text-[14px] text-white/90 truncate">
               {conv.other_user?.first_name || conv.other_user?.username || 'User'}
             </span>
             {conv.other_user?.is_verified && (
-              <CheckCircle className="w-3.5 h-3.5 text-blue-400 fill-blue-400/20" />
+              <CheckCircle className="w-3 h-3 text-blue-400 fill-blue-400/20" />
             )}
           </div>
           <span className="text-[11px] text-white/30 font-medium whitespace-nowrap">
@@ -855,29 +798,23 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
         
         <div className="flex items-center justify-between gap-2">
           <p className={`text-[13px] truncate leading-snug ${
-            (conv.unread_count || 0) > 0 ? 'text-white/90 font-medium' : 'text-white/40 group-hover:text-white/60'
+            (conv.unread_count || 0) > 0 ? 'text-white/90 font-medium' : 'text-white/40'
           }`}>
             {conv.last_message_preview || 'Start a conversation'}
           </p>
-          {(conv.unread_count || 0) > 0 && (
-             <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
-          )}
         </div>
       </div>
-    </motion.button>
+    </button>
   )
 
-  // Chat view - Full screen overlay
   if (activeConversation) {
     return (
       <div
         className="fixed inset-0 z-[100] flex flex-col bg-[#050505]"
         style={{ height: 'var(--app-height)', position: 'absolute', inset: 0, width: '100%' }}
       >
-        {/* Star Background for Chat */}
         <StarsBackground />
 
-        {/* Hidden file input */}
         <input
           type="file"
           ref={fileInputRef}
@@ -887,7 +824,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
           onChange={handleFileSelect}
         />
 
-        {/* Header - Sticky at top with Glassmorphism */}
         <div className="shrink-0 bg-black/40 border-b border-white/5 shadow-sm safe-area-top relative z-50 backdrop-blur-xl">
           <div className="flex items-center gap-3 px-3 py-2 h-14">
             <button
@@ -929,8 +865,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
           </div>
         </div>
 
-
-        {/* Messages - Virtualized scrollable area */}
         <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 py-3 overscroll-none relative z-10">
           <div
             style={{
@@ -992,7 +926,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                   }}
                   className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} transition-colors duration-500 rounded-2xl`}
                 >
-                  {/* Reply preview - shows what message this is replying to */}
                   {msg.reply_to && (
                     <button
                       onClick={(e) => {
@@ -1039,7 +972,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
                     <div
                       className={`relative max-w-[75%] ${
-                        // Styling logic based on message type and ownership
                         isSpecialType ? 'p-0 !bg-transparent !shadow-none !border-none' :
                         msg.message_type === 'image' || msg.message_type === 'video' ? 'p-0 !bg-transparent !shadow-none !border-none' :
                         isOwn
@@ -1059,7 +991,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                         </div>
                       )}
 
-                      {/* Gift message - Premium No Bubble */}
                       {msg.message_type === 'gift' && msg.gift && (
                         <div className="text-center relative">
                           <div className="absolute inset-0 bg-gradient-to-tr from-pink-500/30 to-purple-500/30 blur-xl rounded-full" />
@@ -1077,7 +1008,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                         </div>
                       )}
 
-                      {/* Tip message - Premium No Bubble */}
                       {msg.tip_amount && (
                         <div className="text-center relative">
                            <div className="absolute inset-0 bg-gradient-to-tr from-green-500/30 to-emerald-500/30 blur-xl rounded-full" />
@@ -1091,7 +1021,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                         </div>
                       )}
 
-                      {/* Voice message */}
                       {msg.message_type === 'voice' && (
                         <div className="flex items-center gap-3 text-white">
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isOwn ? 'bg-white/20' : 'bg-white/10'}`}>
@@ -1122,7 +1051,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                         </div>
                       )}
 
-                      {/* Image / Video - No Border */}
                       {(msg.message_type === 'image' || msg.message_type === 'video') && resolvedMediaUrl && (
                         <div className="relative overflow-hidden rounded-3xl max-w-[75vw] max-h-[70vh] shadow-2xl">
                           {msg.message_type === 'image' ? (
@@ -1152,7 +1080,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                         </div>
                       )}
 
-                      {/* PPV locked overlay */}
                       {isPPVLocked && (
                         <div className="absolute inset-0 bg-black/60 backdrop-blur-md rounded-3xl flex flex-col items-center justify-center text-white text-center p-4">
                           <Lock className="w-8 h-8 mb-3 text-white/80" />
@@ -1167,14 +1094,12 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                         </div>
                       )}
 
-                      {/* Text message */}
                       {msg.message_type === 'text' && msg.content && (
                         <p className="text-[15px] leading-snug whitespace-pre-wrap break-words">
                           {msg.content}
                         </p>
                       )}
 
-                      {/* Failed status message */}
                       {isFailed && (
                         <div className="mt-1 text-xs text-red-200 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
@@ -1182,8 +1107,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                         </div>
                       )}
 
-
-                      {/* Reactions */}
                       {reactions.length > 0 && (
                         <div className="absolute -bottom-2.5 right-1 flex items-center gap-0.5 bg-[#1c1c1e] rounded-full shadow-lg px-1.5 py-0.5 border border-white/10 z-20">
                           {reactions.map((reaction, idx) => (
@@ -1193,7 +1116,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                       )}
                     </div>
 
-                    {/* Message status icon for errors */}
                     {isFailed && (
                       <button
                         onClick={() => retryFailedMessage(msg)}
@@ -1205,7 +1127,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                     )}
                   </div>
 
-                  {/* Time under bubble - over background */}
                   {!isSpecialType && (
                     <div className={`flex items-center gap-1 mt-1 text-[10px] text-gray-500 ${isOwn ? 'justify-end mr-1' : 'justify-start ml-9'}`}>
                       {isOwn && renderTicks()}
@@ -1226,7 +1147,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
             />
           </div>
         </div>
-        {/* Message Action Menu */}
         <AnimatePresence>
           {showMessageMenu && selectedMessage && (
             <>
@@ -1245,7 +1165,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                 style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
                 onContextMenu={e => e.preventDefault()}
               >
-                {/* Quick Reactions */}
                 <div className="flex justify-center gap-3 py-6 border-b border-gray-200/50" style={{ userSelect: 'none', WebkitUserSelect: 'none' }}>
                   {QUICK_REACTIONS.map(emoji => (
                     <button
@@ -1260,7 +1179,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                   ))}
                 </div>
 
-                {/* Menu Options */}
                 <div className="py-2" style={{ userSelect: 'none', WebkitUserSelect: 'none' }}>
                   <button onClick={handleReply} onContextMenu={e => e.preventDefault()} className="w-full flex items-center gap-4 px-6 py-4 hover:bg-black/5 active:bg-black/10" style={{ userSelect: 'none', WebkitUserSelect: 'none' }}>
                     <CornerUpLeft className="w-6 h-6 text-gray-600" />
@@ -1278,7 +1196,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                   )}
                 </div>
 
-                {/* Cancel */}
                 <div className="px-4 pb-6 pt-2">
                   <button
                     onClick={() => { setShowMessageMenu(false); setSelectedMessage(null) }}
@@ -1294,7 +1211,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
           )}
         </AnimatePresence>
 
-        {/* Actions Menu */}
         <AnimatePresence>
           {showActions && (
             <>
@@ -1326,7 +1242,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
           )}
         </AnimatePresence>
 
-        {/* Gifts Modal */}
         <AnimatePresence>
           {showGifts && (
             <motion.div
@@ -1365,7 +1280,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
           )}
         </AnimatePresence>
 
-        {/* Tip modal */}
         <AnimatePresence>
           {showTip && (
             <motion.div
@@ -1419,7 +1333,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
           )}
         </AnimatePresence>
 
-        {/* Reply Preview */}
         <AnimatePresence>
           {replyTo && (
             <motion.div
@@ -1454,7 +1367,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
           )}
         </AnimatePresence>
 
-        {/* Input Area - Glassmorphism */}
         <div
           className="shrink-0 bg-black/40 border-t border-white/5 px-3 py-2 relative z-20 backdrop-blur-xl"
           style={{
@@ -1529,76 +1441,68 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     )
   }
 
-  // Conversations list
   return (
-    <div className="min-h-full text-white relative" style={{ background: 'black' }}>
+    <div className="min-h-screen text-white relative">
+      {/* Stars with black background - THE ONLY background for the entire page */}
       <StarsBackground />
-      
-      {/* Header */}
-      <div className="sticky top-0 z-40 px-5 pt-6 pb-2 bg-gradient-to-b from-black/80 to-transparent backdrop-blur-sm">
-        <div className="flex items-center justify-between mb-6">
-           <h2 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-white/60">
-             Messages
-           </h2>
-           <div className="p-2 rounded-full bg-white/5 border border-white/5 backdrop-blur-md">
-             <div className="w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)] animate-pulse" />
-           </div>
-        </div>
 
-        {/* Search - Ultra modern */}
-        <div className="relative mb-6 group">
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-2xl blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-          <div className="relative bg-white/5 border border-white/5 rounded-2xl flex items-center px-4 py-3 focus-within:bg-white/10 focus-within:border-white/10 transition-all duration-300">
-             <Search className="w-5 h-5 text-white/40 mr-3 group-focus-within:text-white/80 transition-colors" />
-             <input
-               type="text"
-               value={searchQuery}
-               onChange={(e) => setSearchQuery(e.target.value)}
-               placeholder="Search conversations..."
-               className="w-full bg-transparent text-[15px] text-white placeholder:text-white/30 focus:outline-none"
-             />
+      {/* All content sits above the stars with transparent backgrounds */}
+      <div className="relative" style={{ zIndex: 1 }}>
+        {/* Header - semi-transparent so stars peek through */}
+        <div className="sticky top-0 z-40 border-b border-white/10 px-4 pt-4 pb-3 bg-black/80 backdrop-blur-md">
+          <h2 className="text-2xl font-bold mb-4">Messages</h2>
+
+          <div className="flex gap-2 mb-4">
+            {categories.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => setActiveCategory(cat.id)}
+                className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${
+                  activeCategory === cat.id
+                    ? 'bg-white text-black'
+                    : 'bg-white/10 text-gray-300 hover:bg-white/15'
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search messages..."
+              className="w-full pl-11 pr-4 py-3 rounded-xl bg-white/5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/10 backdrop-blur-sm transition-all focus:bg-black/50"
+            />
           </div>
         </div>
 
-        {/* Category Tabs - Minimalist pills */}
-        <div className="flex gap-2 mb-2 overflow-x-auto no-scrollbar pb-2">
-          {categories.map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
-              className={`px-4 py-1.5 rounded-full text-[13px] font-medium transition-all duration-300 border ${
-                activeCategory === cat.id
-                  ? 'bg-white text-black border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]'
-                  : 'bg-transparent text-white/50 border-transparent hover:bg-white/5 hover:text-white/80'
-              }`}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Conversations */}
-      <div className="px-2 pb-24 relative z-10">
-        {loading ? (
-          <div className="text-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto text-white/20" />
-          </div>
-        ) : filteredConversations.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="w-20 h-20 mx-auto bg-gradient-to-br from-white/5 to-transparent rounded-full flex items-center justify-center mb-4 border border-white/5">
-              <div className="w-12 h-12 text-white/20" >
-                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        {/* Content area - transparent background so stars show through */}
+        <div className="px-4 py-4">
+          {loading ? (
+            <div className="text-center py-16">
+              <div className="w-16 h-16 mx-auto rounded-full bg-white/5 flex items-center justify-center mb-4">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
               </div>
+              <p className="text-gray-500 text-sm">Loading conversations...</p>
             </div>
-            <p className="font-medium text-white/60 text-lg">No messages yet</p>
-            <p className="text-sm text-white/30 mt-2">Start chatting with your favorite creators</p>
-          </div>
-        ) : (
-          <div className="space-y-1">
-            {filteredConversations.map((conv) => renderConversationCard(conv))}
-          </div>
-        )}
+          ) : filteredConversations.length === 0 ? (
+            <div className="text-center py-16">
+              <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-white/10 to-white/5 flex items-center justify-center mb-4 border border-white/10">
+                <MessageCircle className="w-10 h-10 text-gray-500" />
+              </div>
+              <p className="font-semibold text-white mb-1">No messages yet</p>
+              <p className="text-sm text-gray-500">Start a conversation from a creator's profile</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredConversations.map((conv) => renderConversationCard(conv))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

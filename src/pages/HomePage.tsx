@@ -36,9 +36,10 @@ interface FeedVideoPlayerProps {
   muted?: boolean
   shouldPlay?: boolean
   onMuteChange?: (muted: boolean) => void
+  poster?: string
 }
 
-function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, shouldPlay = false, onMuteChange }: FeedVideoPlayerProps) {
+function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, shouldPlay = false, onMuteChange, poster }: FeedVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const isInViewport = useInViewport(videoRef, { minimumRatio: aspectRatio === 'full' ? 0.5 : 0.35 })
   const { isSlow, isDataSaver } = useConnectionQuality()
@@ -47,21 +48,30 @@ function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, 
   const [isMuted, setIsMuted] = useState(muted)
   const [isPaused, setIsPaused] = useState(false)
   const [isLoaded, setIsLoaded] = useState(false)
+  const [hasError, setHasError] = useState(false)
   const [naturalAspect, setNaturalAspect] = useState<number | null>(null)
-  const canAutoPlay = !isSlow && !isDataSaver
+  const [hasPlayedOnce, setHasPlayedOnce] = useState(false)
+  // Be aggressive on autoplay; only block when user explicitly enables data saver
+  const canAutoPlay = !isDataSaver || !isSlow
   const resolvedAspect = naturalAspect || (aspectRatio === 'full' ? 9 / 16 : 4 / 5)
 
+  // Reset state when src changes
+  useEffect(() => {
+    setIsLoaded(false)
+    setHasError(false)
+    setHasPlayedOnce(false)
+    videoRef.current?.load()
+  }, [src])
+
   const handlePointerEnter = () => {
-    if (!isPaused && canAutoPlay) {
+    if (!isPaused && canAutoPlay && shouldPlay) {
       requestPlay(videoId || src)
       videoRef.current?.play().catch(() => {})
     }
   }
 
   const handlePointerLeave = () => {
-    if (!isPaused && !isInViewport) {
-      videoRef.current?.pause()
-    }
+    // Don't pause on pointer leave - let visibility control it
   }
 
   const toggleMute = (e: React.MouseEvent) => {
@@ -79,6 +89,7 @@ function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, 
       requestPlay(videoId || src)
       video.play().catch(() => {})
       setIsPaused(false)
+      setHasPlayedOnce(true)
     } else {
       video.pause()
       setIsPaused(true)
@@ -88,29 +99,33 @@ function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, 
     }
   }
 
+  // Main autoplay effect - simpler and more aggressive
   useEffect(() => {
     const video = videoRef.current
-    if (!video) return
+    if (!video || !isLoaded) return
 
-    // Force pause if not the designated active video
-    if (!shouldPlay) {
-      if (!video.paused) video.pause()
-      setIsPaused(true)
-      return
-    }
-
-    if (!isInViewport) {
-      if (!video.paused) video.pause()
-      return
-    }
-
-    if (!isPaused && canAutoPlay) {
-      requestPlay(videoId || src)
-      if (isActive) {
-        video.play().catch(() => {})
+    // Must be the active post and in viewport to play
+    if (shouldPlay && isInViewport) {
+      if (!isPaused) {
+        requestPlay(videoId || src)
+        // Try to play - use promise to handle autoplay blocks
+        const playPromise = video.play()
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            setHasPlayedOnce(true)
+          }).catch(() => {
+            // Autoplay blocked - video stays paused
+            setIsPaused(true)
+          })
+        }
+      }
+    } else {
+      // Not active or not in viewport - pause
+      if (!video.paused) {
+        video.pause()
       }
     }
-  }, [isInViewport, isPaused, canAutoPlay, isActive, requestPlay, videoId, src])
+  }, [shouldPlay, isInViewport, isLoaded, isPaused, requestPlay, videoId, src])
 
   // Pause if another video takes over
   useEffect(() => {
@@ -118,22 +133,15 @@ function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, 
     if (!video) return
     if ((!isActive || !shouldPlay) && !video.paused) {
       video.pause()
-      setIsPaused(true)
     }
   }, [isActive, shouldPlay])
 
-  // Auto-claim active when conditions are right
+  // Reset pause state when becoming active
   useEffect(() => {
-    if (isInViewport && !isPaused && canAutoPlay) {
-      requestPlay(videoId || src)
+    if (shouldPlay && isInViewport && hasPlayedOnce) {
+      setIsPaused(false)
     }
-  }, [isInViewport, isPaused, canAutoPlay, requestPlay, videoId, src])
-
-  useEffect(() => {
-    if (!canAutoPlay) {
-      setIsPaused(true)
-    }
-  }, [canAutoPlay])
+  }, [shouldPlay, isInViewport, hasPlayedOnce])
 
   useEffect(() => {
     setIsMuted(muted)
@@ -148,33 +156,61 @@ function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, 
         aspectRatio: resolvedAspect,
         maxHeight: aspectRatio === 'full' ? '85vh' : undefined
       }}
-    >
-      {/* Loading spinner */}
-      {!isLoaded && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
-          <div className="w-10 h-10 border-3 border-white/30 border-t-white rounded-full animate-spin" />
-        </div>
-      )}
+      >
+        {/* Loading spinner */}
+        {!isLoaded && !hasError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
+            <div className="w-10 h-10 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+          </div>
+        )}
 
-      {/* Video */}
-      <video
-        ref={videoRef}
-        src={src}
-        className={`w-full h-full max-h-full object-contain transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
-        playsInline
-        loop
-        muted={isMuted}
-        preload={canAutoPlay ? 'auto' : 'metadata'}
-        onClick={togglePause}
-        onLoadedMetadata={(e) => {
-          const video = e.currentTarget
-          if (video.videoWidth && video.videoHeight) {
-            setNaturalAspect(video.videoWidth / video.videoHeight)
-          }
-          setIsLoaded(true)
-        }}
-        onCanPlay={() => setIsLoaded(true)}
-      />
+        {/* Video */}
+        <video
+          ref={videoRef}
+          src={src}
+          className={`w-full h-full max-h-full object-contain transition-opacity duration-300 ${isLoaded && !hasError ? 'opacity-100' : 'opacity-0'}`}
+          playsInline
+          loop
+          muted={isMuted}
+          preload={canAutoPlay ? 'auto' : 'metadata'}
+          poster={poster}
+          controls={false}
+          disablePictureInPicture
+          controlsList="nodownload noremoteplayback nofullscreen"
+          onClick={togglePause}
+          onLoadedMetadata={(e) => {
+            const video = e.currentTarget
+            if (video.videoWidth && video.videoHeight) {
+              setNaturalAspect(video.videoWidth / video.videoHeight)
+            }
+            setIsLoaded(true)
+          }}
+          onLoadedData={() => setIsLoaded(true)}
+          onCanPlay={() => setIsLoaded(true)}
+          onError={() => {
+            setHasError(true)
+            setIsLoaded(false)
+          }}
+        />
+
+        {hasError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 text-white text-sm">
+            <span>Video failed to load</span>
+            <button
+              className="px-3 py-1 rounded-full bg-white/10 border border-white/20"
+              onClick={() => {
+                setHasError(false)
+                setIsLoaded(false)
+                videoRef.current?.load()
+                if (shouldPlay) {
+                  videoRef.current?.play().catch(() => setIsPaused(true))
+                }
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
 
       {/* Pause indicator */}
       {isPaused && isLoaded && (
@@ -619,9 +655,10 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   const feedVirtualizer = useVirtualizer({
     count: visiblePosts.length,
     getScrollElement: () => (scrollEl ?? document.documentElement)!,
-    estimateSize: () => 720,
+    estimateSize: () => 800,
     overscan: 4,
     scrollMargin: 120,
+    measureElement: (el) => el.getBoundingClientRect().height + 16,
   })
 
   // Track which post is most visible to drive video playback
@@ -671,7 +708,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   }
 
   const renderPostCard = (post: Post) => (
-    <div key={post.id} className="bg-black border-b border-gray-800">
+    <div key={post.id} className="bg-black pb-4 mb-2 border-b-4 border-gray-800/80">
       {/* Header - Instagram style */}
       <div className="flex items-center justify-between px-3 py-2">
         <button className="flex items-center gap-3" onClick={() => post.creator && onCreatorClick(post.creator)}>
@@ -933,7 +970,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   }
 
   return (
-    <div className="bg-black max-w-lg mx-auto">
+    <div className="bg-black max-w-lg mx-auto relative">
       {/* Live Now Section - Stories style */}
       {(livestreams.length > 0 || user.is_creator) && (
         <div className="border-b border-gray-800 py-3 px-4">
@@ -1058,6 +1095,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
               return (
                 <div
                   key={post.id}
+                  ref={feedVirtualizer.measureElement}
                   data-index={virtualRow.index}
                   style={{
                     position: 'absolute',
@@ -1065,7 +1103,6 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                     left: 0,
                     width: '100%',
                     transform: `translateY(${virtualRow.start}px)`,
-                    paddingBottom: 24,
                   }}
                 >
                   {renderPostCard(post)}
