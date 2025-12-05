@@ -51,9 +51,12 @@ function FeedVideoPlayer({ src, muted = true, shouldPlay = false, onMuteChange }
   const videoRef = useRef<HTMLVideoElement>(null)
   const isInViewport = useInViewport(containerRef, { minimumRatio: 0.5 })
 
-  const [isMuted, setIsMuted] = useState(true) // Always start muted
+  // Touch tracking for distinguishing taps from scrolls
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null)
+
+  const [isMuted, setIsMuted] = useState(true)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [isLoaded, setIsLoaded] = useState(false)
+  const [isBuffering, setIsBuffering] = useState(false)
 
   // Register/unregister video element
   useEffect(() => {
@@ -74,26 +77,22 @@ function FeedVideoPlayer({ src, muted = true, shouldPlay = false, onMuteChange }
     setIsMuted(muted)
   }, [muted])
 
-  // Simple logic: play when in view AND shouldPlay, pause otherwise
+  // Play when in view AND shouldPlay, pause otherwise
   useEffect(() => {
     const video = videoRef.current
-    if (!video || !isLoaded) return
+    if (!video) return
 
     const wantToPlay = shouldPlay && isInViewport
 
     if (wantToPlay && video.paused) {
-      // Pause all other videos first
       pauseAllVideosExcept(video)
-      video.play().catch(() => {
-        // Autoplay blocked - that's ok
-        setIsPlaying(false)
-      })
+      video.play().catch(() => {})
     } else if (!wantToPlay && !video.paused) {
       video.pause()
     }
-  }, [shouldPlay, isInViewport, isLoaded])
+  }, [shouldPlay, isInViewport])
 
-  // Track play/pause state
+  // Track play/pause/buffering state
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
@@ -103,18 +102,28 @@ function FeedVideoPlayer({ src, muted = true, shouldPlay = false, onMuteChange }
       pauseAllVideosExcept(video)
     }
     const handlePause = () => setIsPlaying(false)
+    const handleWaiting = () => setIsBuffering(true)
+    const handlePlaying = () => setIsBuffering(false)
+    const handleCanPlay = () => setIsBuffering(false)
 
     video.addEventListener('play', handlePlay)
     video.addEventListener('pause', handlePause)
+    video.addEventListener('waiting', handleWaiting)
+    video.addEventListener('playing', handlePlaying)
+    video.addEventListener('canplay', handleCanPlay)
+
     return () => {
       video.removeEventListener('play', handlePlay)
       video.removeEventListener('pause', handlePause)
+      video.removeEventListener('waiting', handleWaiting)
+      video.removeEventListener('playing', handlePlaying)
+      video.removeEventListener('canplay', handleCanPlay)
     }
   }, [])
 
-  const handleTap = () => {
+  const togglePlayPause = () => {
     const video = videoRef.current
-    if (!video || !isLoaded) return
+    if (!video) return
 
     if (video.paused) {
       pauseAllVideosExcept(video)
@@ -122,6 +131,29 @@ function FeedVideoPlayer({ src, muted = true, shouldPlay = false, onMuteChange }
     } else {
       video.pause()
     }
+  }
+
+  // Touch handlers - distinguish tap from scroll
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0]
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() }
+  }
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return
+
+    const touch = e.changedTouches[0]
+    const dx = Math.abs(touch.clientX - touchStartRef.current.x)
+    const dy = Math.abs(touch.clientY - touchStartRef.current.y)
+    const dt = Date.now() - touchStartRef.current.time
+
+    // Only trigger tap if: minimal movement (<15px) and quick (<300ms)
+    if (dx < 15 && dy < 15 && dt < 300) {
+      e.preventDefault()
+      togglePlayPause()
+    }
+
+    touchStartRef.current = null
   }
 
   const handleMuteClick = (e: React.MouseEvent | React.TouchEvent) => {
@@ -138,10 +170,13 @@ function FeedVideoPlayer({ src, muted = true, shouldPlay = false, onMuteChange }
   return (
     <div
       ref={containerRef}
-      className="relative w-full bg-black overflow-hidden"
-      style={{ aspectRatio: '4/5' }} // FIXED 4:5 aspect ratio
+      className="relative w-full bg-gray-900 overflow-hidden"
+      style={{ aspectRatio: '4/5' }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onClick={togglePlayPause}
     >
-      {/* Video element */}
+      {/* Video element - always visible, no blocking overlay */}
       <video
         ref={videoRef}
         src={src}
@@ -150,45 +185,31 @@ function FeedVideoPlayer({ src, muted = true, shouldPlay = false, onMuteChange }
         loop
         muted={isMuted}
         preload="auto"
-        onLoadedData={() => setIsLoaded(true)}
-        onCanPlay={() => setIsLoaded(true)}
+        poster=""
       />
 
-      {/* Tap overlay for play/pause - covers entire area */}
-      <div
-        className="absolute inset-0 z-10"
-        onClick={handleTap}
-        onTouchEnd={(e) => {
-          // Prevent double-firing on mobile
-          if (e.target === e.currentTarget) {
-            handleTap()
-          }
-        }}
-      />
-
-      {/* Loading spinner */}
-      {!isLoaded && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black z-20">
-          <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+      {/* Buffering spinner - small, doesn't block video */}
+      {isBuffering && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div className="w-10 h-10 border-2 border-white/40 border-t-white rounded-full animate-spin" />
         </div>
       )}
 
-      {/* Play icon when paused */}
-      {isLoaded && !isPlaying && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-15">
-          <div className="w-16 h-16 bg-black/60 rounded-full flex items-center justify-center">
-            <Play className="w-8 h-8 text-white fill-white ml-1" />
+      {/* Play icon when paused - only shows when not buffering */}
+      {!isPlaying && !isBuffering && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div className="w-14 h-14 bg-black/50 rounded-full flex items-center justify-center">
+            <Play className="w-7 h-7 text-white fill-white ml-0.5" />
           </div>
         </div>
       )}
 
-      {/* MUTE BUTTON - BOTTOM LEFT - Instagram style */}
+      {/* MUTE BUTTON - BOTTOM LEFT */}
       <button
         onClick={handleMuteClick}
         onTouchEnd={(e) => {
           e.stopPropagation()
-          e.preventDefault()
-          handleMuteClick(e)
+          touchStartRef.current = null // Prevent tap from firing
         }}
         className="absolute bottom-4 left-4 w-9 h-9 bg-black/70 rounded-full flex items-center justify-center z-[999] active:scale-90 transition-transform backdrop-blur-sm"
         style={{ touchAction: 'manipulation' }}
