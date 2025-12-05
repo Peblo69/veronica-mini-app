@@ -21,11 +21,14 @@ interface CommentsSheetProps {
 // Quick emoji buttons like Instagram
 const QUICK_EMOJIS = ['❤️', '🙌', '🔥', '👏', '😢', '😍', '😮', '😂']
 
+const REPLIES_PER_PAGE = 4
+
 export default function CommentsSheet({ isOpen, onClose, postId, user }: CommentsSheetProps) {
   const [comments, setComments] = useState<Comment[]>([])
   const [newComment, setNewComment] = useState('')
   const [loading, setLoading] = useState(true)
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null)
+  const [expandedReplies, setExpandedReplies] = useState<Record<string, number>>({}) // commentId -> how many visible
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const commentsListRef = useRef<HTMLDivElement>(null)
@@ -61,6 +64,7 @@ export default function CommentsSheet({ isOpen, onClose, postId, user }: Comment
       setComments([])
       setNewComment('')
       setReplyingTo(null)
+      setExpandedReplies({})
     }
   }, [isOpen, postId])
 
@@ -94,29 +98,37 @@ export default function CommentsSheet({ isOpen, onClose, postId, user }: Comment
   const handleSubmit = async () => {
     if (!newComment.trim() || sending || !postId) return
 
-    const comment = await uploadComment(newComment.trim(), replyingTo?.id)
+    const commentText = newComment.trim()
+    const parentId = replyingTo?.id
+    const parentComment = replyingTo
+
+    // Clear input immediately for smooth UX - don't wait for response
+    setNewComment('')
+    setReplyingTo(null)
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+    }
+
+    const comment = await uploadComment(commentText, parentId)
 
     if (comment) {
-      if (replyingTo) {
+      if (parentComment) {
         setComments(prev => prev.map(c => {
-          if (c.id === replyingTo.id) {
-            return { ...c, replies: [...(c.replies || []), comment] }
+          if (c.id === parentComment.id) {
+            const newReplies = [...(c.replies || []), comment]
+            // Auto-expand to show the new reply
+            setExpandedReplies(exp => ({ ...exp, [c.id]: newReplies.length }))
+            return { ...c, replies: newReplies }
           }
           return c
         }))
       } else {
         setComments(prev => [comment, ...prev])
+        // Scroll to new comment smoothly
+        requestAnimationFrame(() => {
+          commentsListRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+        })
       }
-      setNewComment('')
-      setReplyingTo(null)
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto'
-      }
-
-      // Scroll to new comment
-      setTimeout(() => {
-        commentsListRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
-      }, 100)
     }
   }
 
@@ -145,64 +157,142 @@ export default function CommentsSheet({ isOpen, onClose, postId, user }: Comment
     return `${Math.floor(hours / 24)}d`
   }
 
-  // Instagram-style comment with proper spacing (15px between comments)
-  const renderComment = (comment: Comment, isReply = false) => (
-    <div
-      key={comment.id}
-      className={`flex gap-3 ${isReply ? 'ml-12 mt-4' : 'mt-[15px] first:mt-0'}`}
-    >
+  // Get how many replies to show for a comment
+  const getVisibleRepliesCount = (commentId: string, totalReplies: number) => {
+    return expandedReplies[commentId] ?? Math.min(REPLIES_PER_PAGE, totalReplies)
+  }
+
+  const showMoreReplies = (commentId: string, totalReplies: number) => {
+    const current = getVisibleRepliesCount(commentId, totalReplies)
+    setExpandedReplies(prev => ({
+      ...prev,
+      [commentId]: Math.min(current + REPLIES_PER_PAGE, totalReplies)
+    }))
+  }
+
+  // Render a single reply (smaller than main comment)
+  const renderReply = (reply: Comment, parentComment: Comment) => (
+    <div key={reply.id} className="flex gap-2 mt-3">
       <img
-        src={comment.user?.avatar_url || `https://i.pravatar.cc/150?u=${comment.user_id}`}
+        src={reply.user?.avatar_url || `https://i.pravatar.cc/150?u=${reply.user_id}`}
         alt=""
-        className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-[#333]"
+        className="w-6 h-6 rounded-full object-cover flex-shrink-0 bg-[#333]"
       />
       <div className="flex-1 min-w-0">
-        <div className="flex items-start gap-2">
-          <div className="flex-1">
-            <span className="font-semibold text-[15px] text-white mr-2">
-              {comment.user?.username || comment.user?.first_name}
-            </span>
-            <span className="text-[15px] text-white/90 leading-relaxed whitespace-pre-wrap break-words">
-              {comment.content}
-            </span>
-          </div>
+        <div>
+          <span className="font-semibold text-[13px] text-white mr-1.5">
+            {reply.user?.username || reply.user?.first_name}
+          </span>
+          <span className="text-[13px] text-white/85 leading-snug whitespace-pre-wrap break-words">
+            {reply.content}
+          </span>
         </div>
-
-        <div className="flex items-center gap-4 mt-2">
-          <span className="text-xs text-gray-500">{formatTime(comment.created_at)}</span>
-          {(comment.likes_count || 0) > 0 && (
-            <span className="text-xs text-gray-500 font-semibold">
-              {comment.likes_count} {comment.likes_count === 1 ? 'like' : 'likes'}
+        <div className="flex items-center gap-3 mt-1">
+          <span className="text-[11px] text-gray-500">{formatTime(reply.created_at)}</span>
+          {(reply.likes_count || 0) > 0 && (
+            <span className="text-[11px] text-gray-500 font-medium">
+              {reply.likes_count} {reply.likes_count === 1 ? 'like' : 'likes'}
             </span>
           )}
           <button
-            className="text-xs font-semibold text-gray-500 active:text-gray-300"
+            className="text-[11px] font-semibold text-gray-500 active:text-gray-300"
             onClick={() => {
-              setReplyingTo(comment)
+              setReplyingTo(parentComment)
               textareaRef.current?.focus()
             }}
           >
             Reply
           </button>
         </div>
-
-        {comment.replies && comment.replies.length > 0 && (
-          <div className="mt-3">
-            {comment.replies.map(reply => renderComment(reply, true))}
-          </div>
-        )}
       </div>
-
       <button
-        onClick={() => handleLikeComment(comment)}
-        className="pt-2 active:scale-90 transition-transform"
+        onClick={() => handleLikeComment(reply)}
+        className="pt-1 active:scale-90 transition-transform"
       >
         <Heart
-          className={`w-3 h-3 ${comment.liked ? 'fill-red-500 text-red-500' : 'text-gray-500'}`}
+          className={`w-2.5 h-2.5 ${reply.liked ? 'fill-red-500 text-red-500' : 'text-gray-500'}`}
         />
       </button>
     </div>
   )
+
+  // Instagram-style comment with proper spacing
+  const renderComment = (comment: Comment) => {
+    const replies = comment.replies || []
+    const totalReplies = replies.length
+    const visibleCount = getVisibleRepliesCount(comment.id, totalReplies)
+    const visibleReplies = replies.slice(0, visibleCount)
+    const hiddenCount = totalReplies - visibleCount
+
+    return (
+      <div key={comment.id} className="mt-[15px] first:mt-0">
+        <div className="flex gap-3">
+          <img
+            src={comment.user?.avatar_url || `https://i.pravatar.cc/150?u=${comment.user_id}`}
+            alt=""
+            className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-[#333]"
+          />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start gap-2">
+              <div className="flex-1">
+                <span className="font-semibold text-[15px] text-white mr-2">
+                  {comment.user?.username || comment.user?.first_name}
+                </span>
+                <span className="text-[15px] text-white/90 leading-relaxed whitespace-pre-wrap break-words">
+                  {comment.content}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 mt-2">
+              <span className="text-xs text-gray-500">{formatTime(comment.created_at)}</span>
+              {(comment.likes_count || 0) > 0 && (
+                <span className="text-xs text-gray-500 font-semibold">
+                  {comment.likes_count} {comment.likes_count === 1 ? 'like' : 'likes'}
+                </span>
+              )}
+              <button
+                className="text-xs font-semibold text-gray-500 active:text-gray-300"
+                onClick={() => {
+                  setReplyingTo(comment)
+                  textareaRef.current?.focus()
+                }}
+              >
+                Reply
+              </button>
+            </div>
+          </div>
+
+          <button
+            onClick={() => handleLikeComment(comment)}
+            className="pt-2 active:scale-90 transition-transform"
+          >
+            <Heart
+              className={`w-3 h-3 ${comment.liked ? 'fill-red-500 text-red-500' : 'text-gray-500'}`}
+            />
+          </button>
+        </div>
+
+        {/* Replies section - indented, smaller */}
+        {totalReplies > 0 && (
+          <div className="ml-12 mt-2">
+            {visibleReplies.map(reply => renderReply(reply, comment))}
+
+            {/* View more replies button */}
+            {hiddenCount > 0 && (
+              <button
+                onClick={() => showMoreReplies(comment.id, totalReplies)}
+                className="flex items-center gap-2 mt-3 text-[12px] font-semibold text-gray-500 active:text-gray-300"
+              >
+                <div className="w-6 h-px bg-gray-600" />
+                View {hiddenCount} more {hiddenCount === 1 ? 'reply' : 'replies'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <AnimatePresence mode="sync">
