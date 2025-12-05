@@ -160,7 +160,7 @@ export default function ExploreReelsViewer({
       ref={containerRef}
     >
       {/* HEADER - Back button and title */}
-      <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-4 pt-[max(16px,env(safe-area-inset-top))] pb-3">
+      <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-4 pt-[max(18px,env(safe-area-inset-top)+4px)] pb-2">
         <button
           onClick={handleBack}
           className="flex items-center gap-2 text-white"
@@ -252,9 +252,9 @@ export default function ExploreReelsViewer({
                   </div>
                 )}
 
-                {/* RIGHT SIDE ICONS - Instagram style - smaller */}
+                {/* RIGHT SIDE ICONS - lifted higher for iOS */}
                 {isActive && (
-                  <div className="absolute right-2 bottom-28 flex flex-col items-center gap-4 z-30">
+                  <div className="absolute right-2 bottom-32 flex flex-col items-center gap-4 z-30">
                     {/* Like Button */}
                     <button
                       onClick={handleLikeClick}
@@ -292,7 +292,7 @@ export default function ExploreReelsViewer({
 
                 {/* BOTTOM LEFT - Creator info & caption */}
                 {isActive && (
-                  <div className="absolute left-3 right-14 bottom-6 z-30">
+                  <div className="absolute left-3 right-14 bottom-12 z-30">
                     {/* Creator row */}
                     <div className="flex items-center gap-2 mb-2">
                       <button

@@ -22,7 +22,9 @@
       "Bash(git clone:*)",
       "Bash(npx expo install:*)",
       "WebFetch(domain:core.telegram.org)",
-      "Bash(python -m json.tool:*)"
+      "Bash(python -m json.tool:*)",
+      "Bash(ls:*)",
+      "Bash(git fetch:*)"
     ],
     "deny": [],
     "ask": []

@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Heart, MessageCircle, Bookmark, Share2, MoreHorizontal, CheckCircle, Lock, Eye, X, Users, Trash2, EyeOff, Edit3, Flag, Copy, UserX, Volume2, VolumeX, Play, Star } from 'lucide-react'
 import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, deletePost, getPostLikes, subscribeToFeedUpdates, type User, type Post } from '../lib/api'
@@ -11,8 +10,6 @@ import CommentsSheet from '../components/CommentsSheet'
 import { reportPost } from '../lib/reportApi'
 import { blockUser } from '../lib/settingsApi'
 import { useInViewport } from '../hooks/useInViewport'
-import { useConnectionQuality } from '../hooks/useConnectionQuality'
-import useSharedVideoPlayback from '../hooks/useSharedVideoPlayback'
 
 interface HomePageProps {
   user: User
@@ -28,222 +25,186 @@ const filterLiveStreams = (streams: Livestream[]) =>
 const INITIAL_POST_BATCH = 5
 const LOAD_MORE_BATCH = 3
 
-// Video Player Component with mute/unmute and tap to pause
+// Simple Video Player - FIXED size, tap to pause, bottom-right mute button
 interface FeedVideoPlayerProps {
   src: string
-  aspectRatio?: 'square' | 'full'
-  videoId?: string
   muted?: boolean
   shouldPlay?: boolean
   onMuteChange?: (muted: boolean) => void
-  poster?: string
-  slideIndex?: number
-  activeSlide?: number
 }
 
-function FeedVideoPlayer({ src, aspectRatio = 'square', videoId, muted = false, shouldPlay = false, onMuteChange, poster, slideIndex, activeSlide }: FeedVideoPlayerProps) {
+// Global video registry - only ONE video plays at a time
+const allVideos = new Set<HTMLVideoElement>()
+let currentlyPlaying: HTMLVideoElement | null = null
+
+function pauseAllVideosExcept(except: HTMLVideoElement | null) {
+  allVideos.forEach(video => {
+    if (video !== except && !video.paused) {
+      video.pause()
+    }
+  })
+  currentlyPlaying = except
+}
+
+function FeedVideoPlayer({ src, muted = true, shouldPlay = false, onMuteChange }: FeedVideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const isInViewport = useInViewport(containerRef, { minimumRatio: 0.4 })
-  const { isDataSaver } = useConnectionQuality()
-  const myId = videoId || src
-  const { activeId, requestPlay, clearActive } = useSharedVideoPlayback(myId)
+  const isInViewport = useInViewport(containerRef, { minimumRatio: 0.5 })
 
-  const [isMuted, setIsMuted] = useState(muted)
-  const [isPaused, setIsPaused] = useState(false)
+  const [isMuted, setIsMuted] = useState(true) // Always start muted
+  const [isPlaying, setIsPlaying] = useState(false)
   const [isLoaded, setIsLoaded] = useState(false)
-  const [hasError, setHasError] = useState(false)
-  const [naturalAspect, setNaturalAspect] = useState<number | null>(null)
 
-  const resolvedAspect = naturalAspect || (aspectRatio === 'full' ? 9 / 16 : 4 / 5)
-
-  // Determine if THIS video should be playing right now
-  const isActiveSlide = slideIndex === undefined || activeSlide === undefined || slideIndex === activeSlide
-  const shouldBeActive = shouldPlay && isActiveSlide && isInViewport && !isPaused
-
-  // Reset state when src changes
+  // Register/unregister video element
   useEffect(() => {
-    setIsLoaded(false)
-    setHasError(false)
-    setIsPaused(false)
     const video = videoRef.current
     if (video) {
-      video.load()
+      allVideos.add(video)
+      return () => {
+        allVideos.delete(video)
+        if (currentlyPlaying === video) {
+          currentlyPlaying = null
+        }
+      }
     }
-  }, [src])
+  }, [])
 
-  // Sync muted prop
+  // Sync muted from parent
   useEffect(() => {
     setIsMuted(muted)
   }, [muted])
 
-  // MAIN PLAYBACK CONTROL - Simple and direct
+  // Simple logic: play when in view AND shouldPlay, pause otherwise
   useEffect(() => {
     const video = videoRef.current
     if (!video || !isLoaded) return
 
-    if (shouldBeActive) {
-      // We want to play - claim active status
-      requestPlay(myId)
+    const wantToPlay = shouldPlay && isInViewport
 
-      // Only play if we're the active video
-      if (activeId === myId && video.paused) {
-        video.play().catch(() => {
-          // Autoplay blocked - user needs to tap
-          setIsPaused(true)
-        })
-      }
-    } else {
-      // We shouldn't be playing
-      if (!video.paused) {
-        video.pause()
-      }
-      // Clear active if we were the active one
-      if (activeId === myId) {
-        clearActive()
-      }
+    if (wantToPlay && video.paused) {
+      // Pause all other videos first
+      pauseAllVideosExcept(video)
+      video.play().catch(() => {
+        // Autoplay blocked - that's ok
+        setIsPlaying(false)
+      })
+    } else if (!wantToPlay && !video.paused) {
+      video.pause()
     }
-  }, [shouldBeActive, isLoaded, activeId, myId, requestPlay, clearActive])
+  }, [shouldPlay, isInViewport, isLoaded])
 
-  // When another video becomes active, pause this one
+  // Track play/pause state
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
 
-    if (activeId && activeId !== myId && !video.paused) {
-      video.pause()
+    const handlePlay = () => {
+      setIsPlaying(true)
+      pauseAllVideosExcept(video)
     }
-  }, [activeId, myId])
+    const handlePause = () => setIsPlaying(false)
 
-  const toggleMute = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    const next = !isMuted
-    setIsMuted(next)
-    onMuteChange?.(next)
-  }
+    video.addEventListener('play', handlePlay)
+    video.addEventListener('pause', handlePause)
+    return () => {
+      video.removeEventListener('play', handlePlay)
+      video.removeEventListener('pause', handlePause)
+    }
+  }, [])
 
-  const togglePause = () => {
+  const handleTap = () => {
     const video = videoRef.current
     if (!video || !isLoaded) return
 
     if (video.paused) {
-      setIsPaused(false)
-      requestPlay(myId)
-      video.play().catch(() => setIsPaused(true))
+      pauseAllVideosExcept(video)
+      video.play().catch(() => {})
     } else {
       video.pause()
-      setIsPaused(true)
-      if (activeId === myId) {
-        clearActive()
-      }
     }
   }
 
-  const handleRetry = () => {
-    setHasError(false)
-    setIsLoaded(false)
-    const video = videoRef.current
-    if (video) {
-      video.load()
+  const handleMuteClick = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const newMuted = !isMuted
+    setIsMuted(newMuted)
+    onMuteChange?.(newMuted)
+    if (videoRef.current) {
+      videoRef.current.muted = newMuted
     }
   }
 
   return (
     <div
       ref={containerRef}
-      className="relative w-full bg-black flex items-center justify-center"
-      style={{
-        aspectRatio: resolvedAspect,
-        maxHeight: aspectRatio === 'full' ? '85vh' : undefined
-      }}
+      className="relative w-full bg-black overflow-hidden"
+      style={{ aspectRatio: '4/5' }} // FIXED 4:5 aspect ratio
     >
-      {/* Loading spinner */}
-      {!isLoaded && !hasError && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
-          <div className="w-10 h-10 border-3 border-white/30 border-t-white rounded-full animate-spin" />
-        </div>
-      )}
-
-      {/* Video */}
+      {/* Video element */}
       <video
         ref={videoRef}
         src={src}
-        className={`w-full h-full max-h-full object-contain transition-opacity duration-300 ${isLoaded && !hasError ? 'opacity-100' : 'opacity-0'}`}
+        className="w-full h-full object-cover"
         playsInline
         loop
         muted={isMuted}
-        preload={isDataSaver ? 'metadata' : 'auto'}
-        poster={poster}
-        controls={false}
-        disablePictureInPicture
-        controlsList="nodownload noremoteplayback nofullscreen"
-        onClick={togglePause}
-        onLoadedMetadata={(e) => {
-          const video = e.currentTarget
-          if (video.videoWidth && video.videoHeight) {
-            setNaturalAspect(video.videoWidth / video.videoHeight)
-          }
-          setIsLoaded(true)
-        }}
+        preload="auto"
         onLoadedData={() => setIsLoaded(true)}
         onCanPlay={() => setIsLoaded(true)}
-        onError={() => {
-          setHasError(true)
-          setIsLoaded(false)
+      />
+
+      {/* Tap overlay for play/pause - covers entire area */}
+      <div
+        className="absolute inset-0 z-10"
+        onClick={handleTap}
+        onTouchEnd={(e) => {
+          // Prevent double-firing on mobile
+          if (e.target === e.currentTarget) {
+            handleTap()
+          }
         }}
       />
 
-      {/* Error state with retry */}
-      {hasError && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80 text-white">
-          <span className="text-sm">Video failed to load</span>
-          <button
-            className="px-4 py-2 rounded-full bg-white/10 border border-white/20 text-sm font-medium active:scale-95 transition-transform"
-            onClick={handleRetry}
-          >
-            Tap to retry
-          </button>
+      {/* Loading spinner */}
+      {!isLoaded && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black z-20">
+          <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
         </div>
       )}
 
-      {/* Pause indicator - tap to resume */}
-      {isPaused && isLoaded && !hasError && (
-        <div
-          className="absolute inset-0 flex items-center justify-center bg-black/30 cursor-pointer"
-          onClick={togglePause}
-        >
-          <div className="w-16 h-16 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-sm">
+      {/* Play icon when paused */}
+      {isLoaded && !isPlaying && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-15">
+          <div className="w-16 h-16 bg-black/60 rounded-full flex items-center justify-center">
             <Play className="w-8 h-8 text-white fill-white ml-1" />
           </div>
         </div>
       )}
 
-      {/* Mute/Unmute button - always visible on video */}
-      {isLoaded && !hasError && (
-        <button
-          onClick={toggleMute}
-          className="absolute bottom-3 right-3 p-2 bg-black/60 rounded-full z-20 hover:bg-black/80 active:scale-95 transition-all"
-        >
-          {isMuted ? (
-            <VolumeX className="w-5 h-5 text-white" />
-          ) : (
-            <Volume2 className="w-5 h-5 text-white" />
-          )}
-        </button>
-      )}
-
-      {/* Data saver notice */}
-      {isDataSaver && isLoaded && (
-        <div className="absolute bottom-3 left-3 text-[11px] px-2 py-1 rounded-full bg-black/60 text-white/80">
-          Data saver on
-        </div>
-      )}
+      {/* MUTE BUTTON - BOTTOM LEFT - Instagram style */}
+      <button
+        onClick={handleMuteClick}
+        onTouchEnd={(e) => {
+          e.stopPropagation()
+          e.preventDefault()
+          handleMuteClick(e)
+        }}
+        className="absolute bottom-4 left-4 w-9 h-9 bg-black/70 rounded-full flex items-center justify-center z-[999] active:scale-90 transition-transform backdrop-blur-sm"
+        style={{ touchAction: 'manipulation' }}
+      >
+        {isMuted ? (
+          <VolumeX className="w-4 h-4 text-white" />
+        ) : (
+          <Volume2 className="w-4 h-4 text-white" />
+        )}
+      </button>
     </div>
   )
 }
 
 // Instagram-style carousel for multiple images/videos
-function MediaCarousel({ urls, canView, videoIdPrefix, muted, onMuteChange, shouldPlay, onDoubleTap }: { urls: string[]; canView: boolean; videoIdPrefix?: string; muted?: boolean; onMuteChange?: (muted: boolean) => void; shouldPlay?: boolean; onDoubleTap?: () => void }) {
+function MediaCarousel({ urls, canView, muted, onMuteChange, shouldPlay, onDoubleTap }: { urls: string[]; canView: boolean; muted?: boolean; onMuteChange?: (muted: boolean) => void; shouldPlay?: boolean; onDoubleTap?: () => void }) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
   const [showHeart, setShowHeart] = useState(false)
@@ -284,24 +245,19 @@ function MediaCarousel({ urls, canView, videoIdPrefix, muted, onMuteChange, shou
         {urls.map((url, index) => (
           <div key={index} className="flex-none w-full snap-center">
             {url.match(/\.(mp4|webm)$/i) ? (
-              <div className="w-full flex justify-center bg-black">
-                <FeedVideoPlayer
-                  src={url}
-                  aspectRatio="full"
-                  videoId={`${videoIdPrefix || 'carousel'}-${index}-${url}`}
-                  muted={muted}
-                  onMuteChange={onMuteChange}
-                  shouldPlay={shouldPlay && currentIndex === index}
-                  slideIndex={index}
-                  activeSlide={currentIndex}
-                />
-              </div>
+              <FeedVideoPlayer
+                src={url}
+                muted={muted}
+                onMuteChange={onMuteChange}
+                shouldPlay={shouldPlay && currentIndex === index}
+              />
             ) : (
               <img
                 src={url}
                 alt=""
                 loading="lazy"
-                className="w-full h-full object-contain bg-black select-none"
+                className="w-full object-contain bg-black select-none"
+                style={{ aspectRatio: '4/5' }}
               />
             )}
           </div>
@@ -428,11 +384,6 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
     return () => {
       unsubscribe()
     }
-  }, [])
-
-  const scrollEl = useMemo(() => {
-    if (typeof document === 'undefined') return null
-    return (document.querySelector('main') as HTMLElement | null) ?? document.documentElement
   }, [])
 
   const loadData = async () => {
@@ -649,15 +600,6 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
   const visiblePosts = useMemo(() => posts.slice(0, visibleCount), [posts, visibleCount])
 
-  const feedVirtualizer = useVirtualizer({
-    count: visiblePosts.length,
-    getScrollElement: () => (scrollEl ?? document.documentElement)!,
-    estimateSize: () => 720,
-    overscan: 2,
-    scrollMargin: 96,
-    measureElement: (el) => el.getBoundingClientRect().height + 8,
-  })
-
   // Track which post is most visible to drive video playback
   useEffect(() => {
     if (mediaObserver.current) {
@@ -854,7 +796,6 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
             canView={post.can_view}
             muted={feedMuted}
             onMuteChange={setFeedMuted}
-            videoIdPrefix={post.id.toString()}
             shouldPlay={activePostId === post.id}
             onDoubleTap={() => handleLike(post)}
           />
@@ -1102,7 +1043,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
         </div>
       )}
 
-      {/* Posts Feed - Virtualized for smooth scroll */}
+      {/* Posts Feed - Simple render for smooth scroll */}
       <div className="bg-black">
         {posts.length === 0 ? (
           <div className="px-4 py-16 text-center">
@@ -1113,41 +1054,11 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
             <p className="text-sm text-gray-400">Follow creators to see their posts in your feed.</p>
           </div>
         ) : (
-          <div style={{ position: 'relative', height: feedVirtualizer.getTotalSize() + 120 }}>
-            {feedVirtualizer.getVirtualItems().map((virtualRow) => {
-              const post = visiblePosts[virtualRow.index]
-              if (!post) return null
-
-              return (
-                <div
-                  key={post.id}
-                  ref={feedVirtualizer.measureElement}
-                  data-index={virtualRow.index}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                >
-                  {renderPostCard(post)}
-                </div>
-              )
-            })}
+          <div>
+            {visiblePosts.map((post) => renderPostCard(post))}
 
             {visibleCount < posts.length && (
-              <div
-                ref={loadMoreRef}
-                className="flex items-center justify-center"
-                style={{
-                  position: 'absolute',
-                  top: feedVirtualizer.getTotalSize(),
-                  left: 0,
-                  width: '100%',
-                  padding: '32px 0',
-                }}
-              >
+              <div ref={loadMoreRef} className="flex items-center justify-center py-8">
                 <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
               </div>
             )}
