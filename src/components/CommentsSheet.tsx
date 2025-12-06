@@ -195,30 +195,30 @@ export default function CommentsSheet({ isOpen, onClose, postId, user }: Comment
 
   // Render a single reply (smaller than main comment)
   const renderReply = (reply: Comment, parentComment: Comment) => (
-    <div key={reply.id} className="flex gap-2 mt-3">
+    <div key={reply.id} className="flex gap-1.5 mt-2">
       <img
         src={reply.user?.avatar_url || `https://i.pravatar.cc/150?u=${reply.user_id}`}
         alt=""
-        className="w-6 h-6 rounded-full object-cover flex-shrink-0 bg-[#333]"
+        className="w-5 h-5 rounded-full object-cover flex-shrink-0 bg-[#333]"
       />
       <div className="flex-1 min-w-0">
         <div>
-          <span className="font-semibold text-[13px] text-white mr-1.5">
+          <span className="font-semibold text-[12px] text-white mr-1">
             {reply.user?.username || reply.user?.first_name}
           </span>
-          <span className="text-[13px] text-white/85 leading-snug whitespace-pre-wrap break-words">
+          <span className="text-[12px] text-white/85 leading-snug whitespace-pre-wrap break-words">
             {reply.content}
           </span>
         </div>
-        <div className="flex items-center gap-3 mt-1">
-          <span className="text-[11px] text-gray-500">{formatTime(reply.created_at)}</span>
+        <div className="flex items-center gap-2.5 mt-0.5">
+          <span className="text-[10px] text-gray-500">{formatTime(reply.created_at)}</span>
           {(reply.likes_count || 0) > 0 && (
-            <span className="text-[11px] text-gray-500 font-medium">
+            <span className="text-[10px] text-gray-500 font-medium">
               {reply.likes_count} {reply.likes_count === 1 ? 'like' : 'likes'}
             </span>
           )}
           <button
-            className="text-[11px] font-semibold text-gray-500 active:text-gray-300"
+            className="text-[10px] font-semibold text-gray-500 active:text-gray-300"
             onClick={() => {
               setReplyingTo(parentComment)
               textareaRef.current?.focus()
@@ -230,16 +230,16 @@ export default function CommentsSheet({ isOpen, onClose, postId, user }: Comment
       </div>
       <button
         onClick={() => handleLikeComment(reply)}
-        className="pt-1 active:scale-90 transition-transform"
+        className="pt-0.5 active:scale-90 transition-transform"
       >
         <Heart
-          className={`w-2.5 h-2.5 ${reply.liked ? 'fill-red-500 text-red-500' : 'text-gray-500'}`}
+          className={`w-2 h-2 ${reply.liked ? 'fill-red-500 text-red-500' : 'text-gray-500'}`}
         />
       </button>
     </div>
   )
 
-  // Instagram-style comment with proper spacing
+  // Instagram-style comment with proper spacing (compact version)
   const renderComment = (comment: Comment) => {
     const replies = comment.replies || []
     const totalReplies = replies.length
@@ -248,34 +248,34 @@ export default function CommentsSheet({ isOpen, onClose, postId, user }: Comment
     const hiddenCount = totalReplies - visibleCount
 
     return (
-      <div key={comment.id} className="mt-[15px] first:mt-0">
-        <div className="flex gap-3">
+      <div key={comment.id} className="mt-3 first:mt-0">
+        <div className="flex gap-2.5">
           <img
             src={comment.user?.avatar_url || `https://i.pravatar.cc/150?u=${comment.user_id}`}
             alt=""
-            className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-[#333]"
+            className="w-8 h-8 rounded-full object-cover flex-shrink-0 bg-[#333]"
           />
           <div className="flex-1 min-w-0">
             <div className="flex items-start gap-2">
               <div className="flex-1">
-                <span className="font-semibold text-[15px] text-white mr-2">
+                <span className="font-semibold text-[13px] text-white mr-1.5">
                   {comment.user?.username || comment.user?.first_name}
                 </span>
-                <span className="text-[15px] text-white/90 leading-relaxed whitespace-pre-wrap break-words">
+                <span className="text-[13px] text-white/90 leading-snug whitespace-pre-wrap break-words">
                   {comment.content}
                 </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-4 mt-2">
-              <span className="text-xs text-gray-500">{formatTime(comment.created_at)}</span>
+            <div className="flex items-center gap-3 mt-1">
+              <span className="text-[11px] text-gray-500">{formatTime(comment.created_at)}</span>
               {(comment.likes_count || 0) > 0 && (
-                <span className="text-xs text-gray-500 font-semibold">
+                <span className="text-[11px] text-gray-500 font-semibold">
                   {comment.likes_count} {comment.likes_count === 1 ? 'like' : 'likes'}
                 </span>
               )}
               <button
-                className="text-xs font-semibold text-gray-500 active:text-gray-300"
+                className="text-[11px] font-semibold text-gray-500 active:text-gray-300"
                 onClick={() => {
                   setReplyingTo(comment)
                   textareaRef.current?.focus()
@@ -288,26 +288,26 @@ export default function CommentsSheet({ isOpen, onClose, postId, user }: Comment
 
           <button
             onClick={() => handleLikeComment(comment)}
-            className="pt-2 active:scale-90 transition-transform"
+            className="pt-1 active:scale-90 transition-transform"
           >
             <Heart
-              className={`w-3 h-3 ${comment.liked ? 'fill-red-500 text-red-500' : 'text-gray-500'}`}
+              className={`w-2.5 h-2.5 ${comment.liked ? 'fill-red-500 text-red-500' : 'text-gray-500'}`}
             />
           </button>
         </div>
 
         {/* Replies section - indented, smaller */}
         {totalReplies > 0 && (
-          <div className="ml-12 mt-2">
+          <div className="ml-10 mt-1.5">
             {visibleReplies.map(reply => renderReply(reply, comment))}
 
             {/* View more replies button */}
             {hiddenCount > 0 && (
               <button
                 onClick={() => showMoreReplies(comment.id, totalReplies)}
-                className="flex items-center gap-2 mt-3 text-[12px] font-semibold text-gray-500 active:text-gray-300"
+                className="flex items-center gap-2 mt-2 text-[11px] font-semibold text-gray-500 active:text-gray-300"
               >
-                <div className="w-6 h-px bg-gray-600" />
+                <div className="w-5 h-px bg-gray-600" />
                 View {hiddenCount} more {hiddenCount === 1 ? 'reply' : 'replies'}
               </button>
             )}
