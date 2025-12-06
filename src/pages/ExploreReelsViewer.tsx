@@ -159,20 +159,21 @@ export default function ExploreReelsViewer({
       className="fixed inset-0 bg-black z-[100]"
       ref={containerRef}
     >
-      {/* HEADER - Back button and title */}
-      <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-4 pt-[max(20px,calc(env(safe-area-inset-top)+8px))] pb-2">
+      {/* HEADER - Back button centered, mute on right */}
+      <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-center px-4 pt-[max(48px,calc(env(safe-area-inset-top)+12px))] pb-2">
+        {/* Centered back button - highly visible */}
         <button
           onClick={handleBack}
-          className="flex items-center gap-2 text-white"
+          className="flex items-center gap-2 px-4 py-2 bg-black/60 backdrop-blur-sm rounded-full border border-white/20"
         >
-          <ArrowLeft className="w-6 h-6" />
-          <span className="font-semibold text-lg">Reels</span>
+          <ArrowLeft className="w-5 h-5 text-white" />
+          <span className="font-semibold text-white">Back</span>
         </button>
 
-        {/* Mute button */}
+        {/* Mute button - positioned absolute right */}
         <button
           onClick={toggleMute}
-          className="w-9 h-9 flex items-center justify-center rounded-full bg-black/40"
+          className="absolute right-4 w-10 h-10 flex items-center justify-center rounded-full bg-black/60 backdrop-blur-sm border border-white/20"
         >
           {isMuted ? (
             <VolumeX className="w-5 h-5 text-white" />
@@ -257,11 +258,10 @@ export default function ExploreReelsViewer({
                   </div>
                 )}
 
-                {/* RIGHT SIDE ICONS - positioned above safe area */}
+                {/* RIGHT SIDE ICONS - fixed 120px from bottom */}
                 {isActive && (
                   <div
-                    className="absolute right-3 flex flex-col items-center gap-5 z-30"
-                    style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 100px)' }}
+                    className="absolute right-3 flex flex-col items-center gap-5 z-30 bottom-[120px]"
                   >
                     {/* Like Button */}
                     <button
@@ -298,14 +298,11 @@ export default function ExploreReelsViewer({
                   </div>
                 )}
 
-                {/* BOTTOM LEFT - Creator info & caption - positioned above safe area */}
+                {/* BOTTOM LEFT - Creator info & caption - fixed 24px from bottom */}
                 {isActive && (
-                  <div
-                    className="absolute left-3 right-16 z-30"
-                    style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}
-                  >
+                  <div className="absolute left-4 right-16 z-30 bottom-6">
                     {/* Creator row */}
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex items-center gap-3 mb-2">
                       <button
                         onClick={handleCreatorClick}
                         className="flex items-center gap-2"
@@ -313,9 +310,9 @@ export default function ExploreReelsViewer({
                         <img
                           src={video.creator?.avatar_url || `https://i.pravatar.cc/150?u=${video.creator_id}`}
                           alt=""
-                          className="w-9 h-9 rounded-full border-2 border-white/50 object-cover bg-black"
+                          className="w-10 h-10 rounded-full border-2 border-white object-cover bg-black shadow-lg"
                         />
-                        <span className="text-white font-bold text-[14px] drop-shadow-lg">
+                        <span className="text-white font-bold text-[15px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
                           {video.creator?.username || 'user'}
                         </span>
                         {video.creator?.is_verified && (
@@ -332,9 +329,9 @@ export default function ExploreReelsViewer({
                           e.stopPropagation()
                           // TODO: Add follow/unfollow logic
                         }}
-                        className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition-colors ${
+                        className={`px-4 py-2 rounded-lg text-[13px] font-bold transition-colors shadow-lg ${
                           video.is_following
-                            ? 'bg-white/20 text-white border border-white/30'
+                            ? 'bg-white/20 text-white border border-white/40'
                             : 'bg-white text-black'
                         }`}
                       >
@@ -344,7 +341,7 @@ export default function ExploreReelsViewer({
 
                     {/* Caption */}
                     {video.content && (
-                      <p className="text-white text-[13px] leading-snug line-clamp-2 drop-shadow-lg">
+                      <p className="text-white text-[14px] leading-snug line-clamp-2 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
                         {video.content}
                       </p>
                     )}
@@ -354,8 +351,7 @@ export default function ExploreReelsViewer({
                 {/* GRADIENT OVERLAY - Bottom fade for text readability */}
                 {isActive && (
                   <div
-                    className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none z-20"
-                    style={{ height: 'calc(env(safe-area-inset-bottom, 0px) + 200px)' }}
+                    className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none z-20 h-[180px]"
                   />
                 )}
               </div>
@@ -364,8 +360,8 @@ export default function ExploreReelsViewer({
         </motion.div>
       </motion.div>
 
-      {/* PROGRESS INDICATORS */}
-      <div className="absolute top-[calc(env(safe-area-inset-top)+56px)] left-0 right-0 flex justify-center gap-1 px-4 z-50">
+      {/* PROGRESS INDICATORS - below the back button */}
+      <div className="absolute top-[100px] left-0 right-0 flex justify-center gap-1 px-4 z-50">
         {videos.slice(Math.max(0, currentIndex - 3), currentIndex + 4).map((_, i) => {
           const actualIndex = Math.max(0, currentIndex - 3) + i
           if (actualIndex >= videos.length) return null
