@@ -182,6 +182,23 @@ function App() {
         tg.ready()
         tg.expand()
 
+        // Try to go fullscreen (Bot API 8.0+) - makes header transparent
+        if (tg.requestFullscreen) {
+          try {
+            tg.requestFullscreen()
+          } catch (e) {
+            console.log('Fullscreen not available')
+          }
+        }
+
+        // Set header color to black to blend with our app
+        if (tg.setHeaderColor) {
+          tg.setHeaderColor('#000000')
+        }
+        if (tg.setBackgroundColor) {
+          tg.setBackgroundColor('#000000')
+        }
+
         const dbUser = await getOrCreateUser({
           id: tg.initDataUnsafe.user.id,
           username: tg.initDataUnsafe.user.username,
