@@ -206,42 +206,47 @@ export default function ExploreReelsViewer({
                 key={video.id}
                 className="h-screen w-full relative bg-black flex items-center justify-center"
               >
-                {/* THUMBNAIL - Shows before video loads */}
-                {video.media_thumbnail && (
-                  <img
-                    src={video.media_thumbnail}
-                    alt=""
-                    className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
-                      showThumbnail ? 'opacity-100' : 'opacity-0'
-                    }`}
-                    onLoad={() => handleThumbnailLoaded(index)}
-                  />
-                )}
+                {/* VIDEO CONTAINER - Centered, maintains 9:16 aspect ratio */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  {/* THUMBNAIL - Shows before video loads */}
+                  {video.media_thumbnail && (
+                    <img
+                      src={video.media_thumbnail}
+                      alt=""
+                      className={`max-w-full max-h-full w-auto h-full object-contain transition-opacity duration-300 ${
+                        showThumbnail ? 'opacity-100' : 'opacity-0'
+                      }`}
+                      style={{ aspectRatio: '9/16' }}
+                      onLoad={() => handleThumbnailLoaded(index)}
+                    />
+                  )}
 
-                {/* LOADING SPINNER - Only when no thumbnail */}
-                {!loadedVideos.has(index) && !thumbnailsLoaded.has(index) && isNearby && (
-                  <div className="absolute inset-0 flex items-center justify-center z-10">
-                    <div className="w-10 h-10 border-3 border-white/20 border-t-white rounded-full animate-spin" />
-                  </div>
-                )}
+                  {/* LOADING SPINNER - Only when no thumbnail */}
+                  {!loadedVideos.has(index) && !thumbnailsLoaded.has(index) && isNearby && (
+                    <div className="absolute inset-0 flex items-center justify-center z-10">
+                      <div className="w-10 h-10 border-3 border-white/20 border-t-white rounded-full animate-spin" />
+                    </div>
+                  )}
 
-                {/* VIDEO PLAYER */}
-                {isNearby && (
-                  <video
-                    ref={el => registerVideo(index, el)}
-                    src={video.media_url}
-                    className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${
-                      loadedVideos.has(index) ? 'opacity-100' : 'opacity-0'
-                    }`}
-                    loop
-                    playsInline
-                    muted={isMuted}
-                    preload="auto"
-                    poster={video.media_thumbnail || undefined}
-                    onLoadedData={() => handleVideoLoaded(index)}
-                    onCanPlay={() => handleVideoLoaded(index)}
-                  />
-                )}
+                  {/* VIDEO PLAYER - Full height, maintains aspect ratio */}
+                  {isNearby && (
+                    <video
+                      ref={el => registerVideo(index, el)}
+                      src={video.media_url}
+                      className={`absolute max-w-full max-h-full w-auto h-full object-contain transition-opacity duration-200 ${
+                        loadedVideos.has(index) ? 'opacity-100' : 'opacity-0'
+                      }`}
+                      style={{ aspectRatio: '9/16' }}
+                      loop
+                      playsInline
+                      muted={isMuted}
+                      preload="auto"
+                      poster={video.media_thumbnail || undefined}
+                      onLoadedData={() => handleVideoLoaded(index)}
+                      onCanPlay={() => handleVideoLoaded(index)}
+                    />
+                  )}
+                </div>
 
                 {/* PAUSED OVERLAY */}
                 {isPaused && isActive && (
