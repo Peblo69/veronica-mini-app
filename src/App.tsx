@@ -419,10 +419,10 @@ function App() {
       {/* Global toast notifications */}
       <ToastContainer />
 
-      {/* Main content area - top padding for Telegram fullscreen buttons */}
+      {/* Main content area - top padding for Telegram fullscreen buttons (larger on Android) */}
       <main
         className="flex-1 overflow-y-auto overflow-x-hidden overscroll-none"
-        style={{ paddingTop: 'max(12px, env(safe-area-inset-top, 0px))' }}
+        style={{ paddingTop: 'max(44px, calc(env(safe-area-inset-top, 0px) + 8px))' }}
       >
         <AnimatePresence mode="wait">
           <motion.div
@@ -457,10 +457,11 @@ function App() {
             transition={{ duration: 0.2, ease: 'easeOut' }}
             className="flex-shrink-0 bg-black border-t border-gray-800/50 relative z-50"
             style={{
-              paddingBottom: 'max(8px, env(safe-area-inset-bottom, 0px))'
+              paddingBottom: 'max(12px, env(safe-area-inset-bottom, 0px))',
+              paddingTop: '4px'
             }}
           >
-            <div className="flex items-center justify-around h-14">
+            <div className="flex items-center justify-around h-12">
               {navItems.map((item) => {
                 const isActive = activeNav === item.id
                 return (
