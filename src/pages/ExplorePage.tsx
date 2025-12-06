@@ -2,8 +2,6 @@ import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Play, Search, X } from 'lucide-react'
 import { type User, type Post, getVideoPosts, likePost, unlikePost, searchUsers } from '../lib/api'
-import { useInViewport } from '../hooks/useInViewport'
-import { useConnectionQuality } from '../hooks/useConnectionQuality'
 const ReelsViewer = lazy(() => import('./ExploreReelsViewer'))
 
 interface ExplorePageProps {
@@ -11,80 +9,134 @@ interface ExplorePageProps {
   onCreatorClick: (creator: any) => void
 }
 
-// Video Thumbnail Component with loading state
+// Video Thumbnail Component - shows thumbnail image immediately, no video loading
 function VideoThumbnail({ video, onClick }: { video: Post; onClick: () => void }) {
-  const [isLoaded, setIsLoaded] = useState(false)
-  const [isHovering, setIsHovering] = useState(false)
-  const videoRef = useRef<HTMLVideoElement>(null)
+  const [thumbnailLoaded, setThumbnailLoaded] = useState(false)
+  const [thumbnailError, setThumbnailError] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const isVisible = useInViewport(containerRef, { minimumRatio: 0.4 })
-  const { isSlow, isDataSaver } = useConnectionQuality()
-  const enablePreview = isVisible && !isSlow && !isDataSaver
 
-  useEffect(() => {
-    const videoEl = videoRef.current
-    if (!videoEl) return
-
-    const handleLoaded = () => setIsLoaded(true)
-    if (videoEl.readyState >= 2) {
-      setIsLoaded(true)
-      return
-    }
-    videoEl.addEventListener('loadeddata', handleLoaded)
-    return () => videoEl.removeEventListener('loadeddata', handleLoaded)
-  }, [])
-
-  useEffect(() => {
-    const videoEl = videoRef.current
-    if (!videoEl) return
-
-    if (!enablePreview || !isHovering) {
-      videoEl.pause()
-      videoEl.currentTime = 0
-      return
-    }
-
-    videoEl.play().catch(() => {})
-  }, [enablePreview, isHovering])
+  const hasThumbnail = !!video.media_thumbnail
 
   return (
     <motion.div
       ref={containerRef}
-      className="relative aspect-[9/16] bg-gray-900 cursor-pointer overflow-hidden"
+      className="relative aspect-[9/16] bg-[#1a1a1a] cursor-pointer overflow-hidden"
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
-      onMouseEnter={() => enablePreview && setIsHovering(true)}
-      onMouseLeave={() => setIsHovering(false)}
     >
-      {!isLoaded && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
-          <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+      {/* Thumbnail Image - shows immediately if available */}
+      {hasThumbnail && !thumbnailError && (
+        <img
+          src={video.media_thumbnail!}
+          alt=""
+          className={`w-full h-full object-cover transition-opacity duration-200 ${thumbnailLoaded ? 'opacity-100' : 'opacity-0'}`}
+          onLoad={() => setThumbnailLoaded(true)}
+          onError={() => setThumbnailError(true)}
+          loading="lazy"
+        />
+      )}
+
+      {/* Fallback: Generate thumbnail on-the-fly from video (only if no stored thumbnail) */}
+      {(!hasThumbnail || thumbnailError) && video.media_url && (
+        <VideoFallbackThumbnail videoUrl={video.media_url} />
+      )}
+
+      {/* Loading spinner - only show if no thumbnail AND fallback hasn't loaded */}
+      {!hasThumbnail && !thumbnailLoaded && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[#1a1a1a]">
+          <div className="w-6 h-6 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
         </div>
       )}
 
-      <video
-        ref={videoRef}
-        src={video.media_url}
-        className={`w-full h-full object-cover transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
-        muted
-        playsInline
-        preload="metadata"
-        poster={video.media_thumbnail || undefined}
-      />
+      {/* Play icon overlay */}
+      <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+        <Play className="w-8 h-8 text-white/80 fill-white/80" />
+      </div>
 
-      {isLoaded && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-          <Play className="w-8 h-8 text-white/80 fill-white/80" />
-        </div>
-      )}
-
-      {isLoaded && (
-        <div className="absolute bottom-2 left-2 flex items-center gap-1">
-          <Play className="w-3 h-3 text-white fill-white" />
-          <span className="text-xs text-white font-medium">{video.likes_count || 0}</span>
-        </div>
-      )}
+      {/* Likes count */}
+      <div className="absolute bottom-2 left-2 flex items-center gap-1">
+        <Play className="w-3 h-3 text-white fill-white" />
+        <span className="text-xs text-white font-medium">{video.likes_count || 0}</span>
+      </div>
     </motion.div>
+  )
+}
+
+// Fallback component that generates thumbnail from video frame
+function VideoFallbackThumbnail({ videoUrl }: { videoUrl: string }) {
+  const [frameUrl, setFrameUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const video = document.createElement('video')
+    video.crossOrigin = 'anonymous'
+    video.preload = 'metadata'
+    video.muted = true
+    video.playsInline = true
+
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+
+    const captureFrame = () => {
+      if (!ctx) return
+      canvas.width = video.videoWidth || 320
+      canvas.height = video.videoHeight || 568
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.7)
+      setFrameUrl(dataUrl)
+      setLoading(false)
+      URL.revokeObjectURL(video.src)
+    }
+
+    video.onloadeddata = () => {
+      // Seek to 0.5 seconds or 10% of duration
+      const seekTime = Math.min(0.5, video.duration * 0.1)
+      video.currentTime = seekTime
+    }
+
+    video.onseeked = captureFrame
+
+    video.onerror = () => {
+      setLoading(false)
+      URL.revokeObjectURL(video.src)
+    }
+
+    // Timeout fallback
+    const timeout = setTimeout(() => {
+      if (loading) {
+        setLoading(false)
+      }
+    }, 5000)
+
+    video.src = videoUrl
+
+    return () => {
+      clearTimeout(timeout)
+      video.src = ''
+    }
+  }, [videoUrl])
+
+  if (frameUrl) {
+    return (
+      <img
+        src={frameUrl}
+        alt=""
+        className="w-full h-full object-cover"
+      />
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-[#1a1a1a]">
+        <div className="w-6 h-6 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  // Fallback gradient if everything fails
+  return (
+    <div className="w-full h-full bg-gradient-to-b from-gray-800 to-gray-900" />
   )
 }
 
