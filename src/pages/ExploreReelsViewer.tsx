@@ -252,64 +252,70 @@ export default function ExploreReelsViewer({
                   </div>
                 )}
 
-                {/* RIGHT SIDE ICONS - lifted higher for iOS */}
+                {/* RIGHT SIDE ICONS - positioned above safe area */}
                 {isActive && (
-                  <div className="absolute right-2 bottom-32 flex flex-col items-center gap-4 z-30">
+                  <div
+                    className="absolute right-3 flex flex-col items-center gap-5 z-30"
+                    style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 100px)' }}
+                  >
                     {/* Like Button */}
                     <button
                       onClick={handleLikeClick}
-                      className="flex flex-col items-center gap-0.5 active:scale-90 transition-transform"
+                      className="flex flex-col items-center gap-1 active:scale-90 transition-transform"
                     >
                       <Heart
-                        className={`w-6 h-6 ${
+                        className={`w-7 h-7 ${
                           video.liked ? 'fill-red-500 text-red-500' : 'text-white'
                         }`}
                       />
-                      <span className="text-white text-[10px] font-semibold">
+                      <span className="text-white text-[11px] font-semibold">
                         {video.likes_count || 0}
                       </span>
                     </button>
 
                     {/* Comment Button */}
-                    <button className="flex flex-col items-center gap-0.5 active:scale-90 transition-transform">
-                      <MessageCircle className="w-6 h-6 text-white" />
-                      <span className="text-white text-[10px] font-semibold">
+                    <button className="flex flex-col items-center gap-1 active:scale-90 transition-transform">
+                      <MessageCircle className="w-7 h-7 text-white" />
+                      <span className="text-white text-[11px] font-semibold">
                         {video.comments_count || 0}
                       </span>
                     </button>
 
                     {/* Share Button */}
-                    <button className="flex flex-col items-center gap-0.5 active:scale-90 transition-transform">
-                      <Send className="w-5 h-5 text-white rotate-12" />
+                    <button className="flex flex-col items-center gap-1 active:scale-90 transition-transform">
+                      <Send className="w-6 h-6 text-white rotate-12" />
                     </button>
 
                     {/* More Options */}
-                    <button className="flex flex-col items-center gap-0.5 active:scale-90 transition-transform">
-                      <MoreHorizontal className="w-6 h-6 text-white" />
+                    <button className="flex flex-col items-center gap-1 active:scale-90 transition-transform">
+                      <MoreHorizontal className="w-7 h-7 text-white" />
                     </button>
                   </div>
                 )}
 
-                {/* BOTTOM LEFT - Creator info & caption */}
+                {/* BOTTOM LEFT - Creator info & caption - positioned above safe area */}
                 {isActive && (
-                  <div className="absolute left-3 right-14 bottom-12 z-30">
+                  <div
+                    className="absolute left-3 right-16 z-30"
+                    style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}
+                  >
                     {/* Creator row */}
                     <div className="flex items-center gap-2 mb-2">
                       <button
                         onClick={handleCreatorClick}
-                        className="flex items-center gap-1.5"
+                        className="flex items-center gap-2"
                       >
                         <img
                           src={video.creator?.avatar_url || `https://i.pravatar.cc/150?u=${video.creator_id}`}
                           alt=""
-                          className="w-7 h-7 rounded-full border border-white/40 object-cover bg-black"
+                          className="w-9 h-9 rounded-full border-2 border-white/50 object-cover bg-black"
                         />
-                        <span className="text-white font-semibold text-[13px]">
+                        <span className="text-white font-bold text-[14px] drop-shadow-lg">
                           {video.creator?.username || 'user'}
                         </span>
                         {video.creator?.is_verified && (
-                          <div className="w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center">
-                            <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                            <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
                               <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" />
                             </svg>
                           </div>
@@ -321,9 +327,9 @@ export default function ExploreReelsViewer({
                           e.stopPropagation()
                           // TODO: Add follow/unfollow logic
                         }}
-                        className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors ${
+                        className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition-colors ${
                           video.is_following
-                            ? 'bg-white/20 text-white/90'
+                            ? 'bg-white/20 text-white border border-white/30'
                             : 'bg-white text-black'
                         }`}
                       >
@@ -333,7 +339,7 @@ export default function ExploreReelsViewer({
 
                     {/* Caption */}
                     {video.content && (
-                      <p className="text-white text-[12px] leading-snug line-clamp-2 opacity-90">
+                      <p className="text-white text-[13px] leading-snug line-clamp-2 drop-shadow-lg">
                         {video.content}
                       </p>
                     )}
@@ -342,7 +348,10 @@ export default function ExploreReelsViewer({
 
                 {/* GRADIENT OVERLAY - Bottom fade for text readability */}
                 {isActive && (
-                  <div className="absolute bottom-0 left-0 right-0 h-48 bg-gradient-to-t from-black/70 via-black/30 to-transparent pointer-events-none z-20" />
+                  <div
+                    className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none z-20"
+                    style={{ height: 'calc(env(safe-area-inset-bottom, 0px) + 200px)' }}
+                  />
                 )}
               </div>
             )
