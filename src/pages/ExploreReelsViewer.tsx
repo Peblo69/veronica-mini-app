@@ -30,6 +30,9 @@ export default function ExploreReelsViewer({
   const videoIdForIndex = useCallback((idx: number) => `reel-${idx}-${videos[idx]?.id ?? idx}`, [videos])
   const { activeId, requestPlay, clearActive } = useSharedVideoPlayback()
 
+  // Current video data
+  const currentVideo = videos[currentIndex]
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -132,13 +135,11 @@ export default function ExploreReelsViewer({
 
   const handleLikeClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    const currentVideo = videos[currentIndex]
     if (currentVideo) onLike(currentVideo.id)
   }
 
   const handleCreatorClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    const currentVideo = videos[currentIndex]
     if (currentVideo?.creator) {
       onCreatorClick(currentVideo.creator)
     }
@@ -159,44 +160,20 @@ export default function ExploreReelsViewer({
       className="fixed inset-0 bg-black z-[100]"
       ref={containerRef}
     >
-      {/* HEADER - Back button centered, mute on right */}
-      <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-center px-4 pt-[max(48px,calc(env(safe-area-inset-top)+12px))] pb-2">
-        {/* Centered back button - highly visible */}
-        <button
-          onClick={handleBack}
-          className="flex items-center gap-2 px-4 py-2 bg-black/60 backdrop-blur-sm rounded-full border border-white/20"
-        >
-          <ArrowLeft className="w-5 h-5 text-white" />
-          <span className="font-semibold text-white">Back</span>
-        </button>
-
-        {/* Mute button - positioned absolute right */}
-        <button
-          onClick={toggleMute}
-          className="absolute right-4 w-10 h-10 flex items-center justify-center rounded-full bg-black/60 backdrop-blur-sm border border-white/20"
-        >
-          {isMuted ? (
-            <VolumeX className="w-5 h-5 text-white" />
-          ) : (
-            <Volume2 className="w-5 h-5 text-white" />
-          )}
-        </button>
-      </div>
-
-      {/* REELS CONTAINER - Swipeable */}
+      {/* ===== VIDEO LAYER - Swipeable videos ===== */}
       <motion.div
-      className="absolute inset-0"
-      drag="y"
-      dragConstraints={{ top: 0, bottom: 0 }}
-      dragElastic={0.02}
-      onDragEnd={handleDragEnd}
-      onClick={togglePause}
-    >
-      <motion.div
-        className="h-full"
-        animate={{ y: -currentIndex * containerHeight }}
-        transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+        className="absolute inset-0"
+        drag="y"
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={0.02}
+        onDragEnd={handleDragEnd}
+        onClick={togglePause}
       >
+        <motion.div
+          className="h-full"
+          animate={{ y: -currentIndex * containerHeight }}
+          transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+        >
           {videos.map((video, index) => {
             const isActive = index === currentIndex
             const isNearby = Math.abs(index - currentIndex) <= 1
@@ -207,9 +184,9 @@ export default function ExploreReelsViewer({
                 key={video.id}
                 className="h-screen w-full relative bg-black flex items-center justify-center"
               >
-                {/* VIDEO CONTAINER - Centered, maintains 9:16 aspect ratio */}
+                {/* VIDEO CONTAINER */}
                 <div className="absolute inset-0 flex items-center justify-center">
-                  {/* THUMBNAIL - Shows before video loads */}
+                  {/* THUMBNAIL */}
                   {video.media_thumbnail && (
                     <img
                       src={video.media_thumbnail}
@@ -222,14 +199,14 @@ export default function ExploreReelsViewer({
                     />
                   )}
 
-                  {/* LOADING SPINNER - Only when no thumbnail */}
+                  {/* LOADING SPINNER */}
                   {!loadedVideos.has(index) && !thumbnailsLoaded.has(index) && isNearby && (
                     <div className="absolute inset-0 flex items-center justify-center z-10">
                       <div className="w-10 h-10 border-3 border-white/20 border-t-white rounded-full animate-spin" />
                     </div>
                   )}
 
-                  {/* VIDEO PLAYER - Full height, maintains aspect ratio */}
+                  {/* VIDEO PLAYER */}
                   {isNearby && (
                     <video
                       ref={el => registerVideo(index, el)}
@@ -252,107 +229,10 @@ export default function ExploreReelsViewer({
                 {/* PAUSED OVERLAY */}
                 {isPaused && isActive && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-                    <div className="w-20 h-20 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-sm">
-                      <Play className="w-10 h-10 text-white fill-white ml-1" />
+                    <div className="w-16 h-16 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-sm">
+                      <Play className="w-8 h-8 text-white fill-white ml-1" />
                     </div>
                   </div>
-                )}
-
-                {/* RIGHT SIDE ICONS - fixed 120px from bottom */}
-                {isActive && (
-                  <div
-                    className="absolute right-3 flex flex-col items-center gap-5 z-30 bottom-[120px]"
-                  >
-                    {/* Like Button */}
-                    <button
-                      onClick={handleLikeClick}
-                      className="flex flex-col items-center gap-1 active:scale-90 transition-transform"
-                    >
-                      <Heart
-                        className={`w-7 h-7 ${
-                          video.liked ? 'fill-red-500 text-red-500' : 'text-white'
-                        }`}
-                      />
-                      <span className="text-white text-[11px] font-semibold">
-                        {video.likes_count || 0}
-                      </span>
-                    </button>
-
-                    {/* Comment Button */}
-                    <button className="flex flex-col items-center gap-1 active:scale-90 transition-transform">
-                      <MessageCircle className="w-7 h-7 text-white" />
-                      <span className="text-white text-[11px] font-semibold">
-                        {video.comments_count || 0}
-                      </span>
-                    </button>
-
-                    {/* Share Button */}
-                    <button className="flex flex-col items-center gap-1 active:scale-90 transition-transform">
-                      <Send className="w-6 h-6 text-white rotate-12" />
-                    </button>
-
-                    {/* More Options */}
-                    <button className="flex flex-col items-center gap-1 active:scale-90 transition-transform">
-                      <MoreHorizontal className="w-7 h-7 text-white" />
-                    </button>
-                  </div>
-                )}
-
-                {/* BOTTOM LEFT - Creator info & caption - fixed 24px from bottom */}
-                {isActive && (
-                  <div className="absolute left-4 right-16 z-30 bottom-6">
-                    {/* Creator row */}
-                    <div className="flex items-center gap-3 mb-2">
-                      <button
-                        onClick={handleCreatorClick}
-                        className="flex items-center gap-2"
-                      >
-                        <img
-                          src={video.creator?.avatar_url || `https://i.pravatar.cc/150?u=${video.creator_id}`}
-                          alt=""
-                          className="w-10 h-10 rounded-full border-2 border-white object-cover bg-black shadow-lg"
-                        />
-                        <span className="text-white font-bold text-[15px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
-                          {video.creator?.username || 'user'}
-                        </span>
-                        {video.creator?.is_verified && (
-                          <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                            <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                              <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" />
-                            </svg>
-                          </div>
-                        )}
-                      </button>
-                      {/* Follow/Following button */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          // TODO: Add follow/unfollow logic
-                        }}
-                        className={`px-4 py-2 rounded-lg text-[13px] font-bold transition-colors shadow-lg ${
-                          video.is_following
-                            ? 'bg-white/20 text-white border border-white/40'
-                            : 'bg-white text-black'
-                        }`}
-                      >
-                        {video.is_following ? 'Following' : 'Follow'}
-                      </button>
-                    </div>
-
-                    {/* Caption */}
-                    {video.content && (
-                      <p className="text-white text-[14px] leading-snug line-clamp-2 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
-                        {video.content}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* GRADIENT OVERLAY - Bottom fade for text readability */}
-                {isActive && (
-                  <div
-                    className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none z-20 h-[180px]"
-                  />
                 )}
               </div>
             )
@@ -360,27 +240,98 @@ export default function ExploreReelsViewer({
         </motion.div>
       </motion.div>
 
-      {/* PROGRESS INDICATORS - below the back button */}
-      <div className="absolute top-[100px] left-0 right-0 flex justify-center gap-1 px-4 z-50">
-        {videos.slice(Math.max(0, currentIndex - 3), currentIndex + 4).map((_, i) => {
-          const actualIndex = Math.max(0, currentIndex - 3) + i
-          if (actualIndex >= videos.length) return null
-          return (
-            <div
-              key={actualIndex}
-              className={`h-0.5 flex-1 max-w-6 rounded-full transition-all duration-200 ${
-                actualIndex === currentIndex ? 'bg-white' : 'bg-white/30'
-              }`}
-            />
-          )
-        })}
+      {/* ===== FIXED UI LAYER - Does NOT scroll ===== */}
+
+      {/* GRADIENT at bottom for text readability */}
+      <div className="absolute bottom-0 left-0 right-0 h-[200px] bg-gradient-to-t from-black via-black/50 to-transparent pointer-events-none z-30" />
+
+      {/* BACK BUTTON - small, top center */}
+      <button
+        onClick={handleBack}
+        className="absolute top-12 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 px-3 py-1.5 bg-black/50 backdrop-blur-sm rounded-full border border-white/20"
+      >
+        <ArrowLeft className="w-4 h-4 text-white" />
+        <span className="text-sm font-medium text-white">Back</span>
+      </button>
+
+      {/* MUTE BUTTON - top right */}
+      <button
+        onClick={toggleMute}
+        className="absolute top-12 right-4 z-50 w-8 h-8 flex items-center justify-center rounded-full bg-black/50 backdrop-blur-sm border border-white/20"
+      >
+        {isMuted ? (
+          <VolumeX className="w-4 h-4 text-white" />
+        ) : (
+          <Volume2 className="w-4 h-4 text-white" />
+        )}
+      </button>
+
+      {/* RIGHT SIDE ACTION BUTTONS - fixed position */}
+      <div className="absolute right-3 bottom-28 flex flex-col items-center gap-4 z-50">
+        {/* Like */}
+        <button
+          onClick={handleLikeClick}
+          className="flex flex-col items-center gap-0.5 active:scale-90 transition-transform"
+        >
+          <Heart
+            className={`w-7 h-7 ${
+              currentVideo?.liked ? 'fill-red-500 text-red-500' : 'text-white'
+            }`}
+          />
+          <span className="text-white text-[10px] font-semibold">
+            {currentVideo?.likes_count || 0}
+          </span>
+        </button>
+
+        {/* Comment */}
+        <button className="flex flex-col items-center gap-0.5 active:scale-90 transition-transform">
+          <MessageCircle className="w-7 h-7 text-white" />
+          <span className="text-white text-[10px] font-semibold">
+            {currentVideo?.comments_count || 0}
+          </span>
+        </button>
+
+        {/* Share */}
+        <button className="flex flex-col items-center gap-0.5 active:scale-90 transition-transform">
+          <Send className="w-6 h-6 text-white rotate-12" />
+        </button>
+
+        {/* More */}
+        <button className="flex flex-col items-center gap-0.5 active:scale-90 transition-transform">
+          <MoreHorizontal className="w-7 h-7 text-white" />
+        </button>
       </div>
 
-      {/* SAFE AREA BOTTOM SPACER */}
-      <div
-        className="absolute bottom-0 left-0 right-0 bg-black z-40"
-        style={{ height: 'env(safe-area-inset-bottom, 0px)' }}
-      />
+      {/* CREATOR INFO - FIXED at bottom, above everything */}
+      <div className="absolute bottom-20 left-3 right-14 z-50">
+        <button
+          onClick={handleCreatorClick}
+          className="flex items-center gap-2"
+        >
+          <img
+            src={currentVideo?.creator?.avatar_url || `https://i.pravatar.cc/150?u=${currentVideo?.creator_id}`}
+            alt=""
+            className="w-9 h-9 rounded-full border-2 border-white object-cover bg-gray-800"
+          />
+          <span className="text-white font-bold text-[14px] drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
+            @{currentVideo?.creator?.username || 'user'}
+          </span>
+          {currentVideo?.creator?.is_verified && (
+            <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+              <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" />
+              </svg>
+            </div>
+          )}
+        </button>
+
+        {/* Caption - one line only */}
+        {currentVideo?.content && (
+          <p className="text-white text-[13px] mt-1.5 truncate drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
+            {currentVideo.content}
+          </p>
+        )}
+      </div>
     </motion.div>
   )
 }
