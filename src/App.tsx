@@ -419,8 +419,11 @@ function App() {
       {/* Global toast notifications */}
       <ToastContainer />
 
-      {/* Main content area */}
-      <main className="flex-1 overflow-y-auto overflow-x-hidden overscroll-none">
+      {/* Main content area - top padding for Telegram fullscreen buttons */}
+      <main
+        className="flex-1 overflow-y-auto overflow-x-hidden overscroll-none"
+        style={{ paddingTop: 'max(12px, env(safe-area-inset-top, 0px))' }}
+      >
         <AnimatePresence mode="wait">
           <motion.div
             key={showAdmin ? 'admin' : showApplication ? 'application' : viewingCreator ? 'creator' : showLivestream ? 'livestream' : location.pathname}
@@ -452,12 +455,12 @@ function App() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 100, opacity: 0 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="flex-shrink-0 bg-black border-t border-gray-800/50 safe-area-bottom relative z-50"
+            className="flex-shrink-0 bg-black border-t border-gray-800/50 relative z-50"
             style={{
-              paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+              paddingBottom: 'max(8px, env(safe-area-inset-bottom, 0px))'
             }}
           >
-            <div className="flex items-center justify-around h-12">
+            <div className="flex items-center justify-around h-14">
               {navItems.map((item) => {
                 const isActive = activeNav === item.id
                 return (

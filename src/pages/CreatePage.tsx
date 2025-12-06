@@ -460,14 +460,8 @@ export default function CreatePage({ user }: CreatePageProps) {
          <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }} />
       </div>
 
-      {/* Top safe area spacer for Telegram fullscreen mode buttons */}
-      <div
-        className="w-full relative z-10"
-        style={{ height: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
-      />
-
       {/* Header */}
-      <div className="relative z-20 flex items-center justify-between px-6 pb-4">
+      <div className="relative z-20 flex items-center justify-between px-6 pt-2 pb-4">
         {step !== 'select' ? (
           <button 
              onClick={() => {

@@ -151,12 +151,6 @@ export default function ProfilePage({ user, setUser, onBecomeCreator, onSettings
 
   return (
     <div className="bg-[#050505] min-h-screen text-white pb-16 relative">
-      {/* Top safe area spacer for Telegram fullscreen mode buttons */}
-      <div
-        className="w-full bg-[#050505]"
-        style={{ height: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
-      />
-
       {/* Top Bar */}
       <div className="sticky top-0 z-50 bg-[#0c0c0c]/90 border-b border-white/5 px-4 py-2 flex items-center justify-between backdrop-blur-md">
         <div className="flex items-center gap-2 text-white/60 text-sm">
