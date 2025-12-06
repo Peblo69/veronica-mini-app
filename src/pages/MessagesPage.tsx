@@ -1448,6 +1448,12 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
       {/* All content sits above the stars with transparent backgrounds */}
       <div className="relative" style={{ zIndex: 1 }}>
+        {/* Top safe area spacer for Telegram fullscreen mode buttons */}
+        <div
+          className="w-full"
+          style={{ height: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+        />
+
         {/* Header - semi-transparent so stars peek through */}
         <div className="sticky top-0 z-40 border-b border-white/10 px-4 pt-4 pb-3 bg-black/80 backdrop-blur-md">
           <h2 className="text-2xl font-bold mb-4">Messages</h2>

@@ -276,6 +276,12 @@ export default function ExplorePage({ user, onCreatorClick }: ExplorePageProps) 
 
   return (
     <div className="min-h-full bg-black">
+      {/* Top safe area spacer for Telegram fullscreen mode buttons */}
+      <div
+        className="w-full bg-black"
+        style={{ height: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+      />
+
       {/* Instagram-style Search Header */}
       <div className="sticky top-0 z-40 bg-black px-4 py-2">
         <div className="flex items-center gap-3">

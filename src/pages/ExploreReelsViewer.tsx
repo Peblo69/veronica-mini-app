@@ -159,8 +159,8 @@ export default function ExploreReelsViewer({
       className="fixed inset-0 bg-black z-[100]"
       ref={containerRef}
     >
-      {/* HEADER - Back button and title */}
-      <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-4 pt-[max(18px,env(safe-area-inset-top)+4px)] pb-2">
+      {/* HEADER - Back button and title - extra padding for Telegram fullscreen buttons */}
+      <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-4 pt-[max(30px,calc(env(safe-area-inset-top)+16px))] pb-2">
         <button
           onClick={handleBack}
           className="flex items-center gap-2 text-white"

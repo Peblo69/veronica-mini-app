@@ -959,6 +959,12 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
   return (
     <div className="bg-black max-w-lg mx-auto relative">
+      {/* Top safe area spacer for Telegram fullscreen mode buttons */}
+      <div
+        className="w-full bg-black"
+        style={{ height: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+      />
+
       {/* Live Now Section - Stories style */}
       {(livestreams.length > 0 || user.is_creator) && (
         <div className="border-b border-gray-800 py-3 px-4">
