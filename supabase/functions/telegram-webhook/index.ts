@@ -4,11 +4,32 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? ''
+const confirmOrderUrl = `${supabaseUrl}/functions/v1/confirm-order`
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
+// Call confirm-order function to complete an order
+async function confirmOrder(orderId: number, providerPaymentId?: string) {
+  try {
+    const res = await fetch(confirmOrderUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify({ orderId, providerPaymentId }),
+    })
+    const data = await res.json()
+    console.log('confirm-order response:', data)
+    return data.ok
+  } catch (err) {
+    console.error('Error calling confirm-order:', err)
+    return false
+  }
 }
 
 // Answer pre-checkout query
@@ -83,24 +104,48 @@ serve(async (req) => {
     console.log('Pre-checkout query:', query)
 
     try {
-      const payload = JSON.parse(query.invoice_payload)
-      const { transaction_id } = payload
+      const invoicePayload = query.invoice_payload
 
-      // Verify transaction exists and is pending
-      const { data: transaction } = await supabase
-        .from('stars_transactions')
-        .select('*')
-        .eq('id', transaction_id)
-        .eq('status', 'pending')
-        .single()
+      // New order system: payload is just the order ID as a string
+      const orderId = parseInt(invoicePayload, 10)
+      if (!isNaN(orderId)) {
+        // Check if order exists and is pending
+        const { data: order } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('id', orderId)
+          .eq('status', 'pending')
+          .single()
 
-      if (!transaction) {
-        await answerPreCheckoutQuery(query.id, false, 'Transaction not found or already processed')
-        return new Response('OK')
+        if (order) {
+          await answerPreCheckoutQuery(query.id, true)
+          return new Response('OK')
+        }
       }
 
-      // All good, approve the payment
-      await answerPreCheckoutQuery(query.id, true)
+      // Legacy system: try parsing as JSON
+      try {
+        const payload = JSON.parse(invoicePayload)
+        const { transaction_id } = payload
+
+        // Verify transaction exists and is pending
+        const { data: transaction } = await supabase
+          .from('stars_transactions')
+          .select('*')
+          .eq('id', transaction_id)
+          .eq('status', 'pending')
+          .single()
+
+        if (!transaction) {
+          await answerPreCheckoutQuery(query.id, false, 'Transaction not found or already processed')
+          return new Response('OK')
+        }
+
+        // All good, approve the payment
+        await answerPreCheckoutQuery(query.id, true)
+      } catch {
+        await answerPreCheckoutQuery(query.id, false, 'Order not found or already processed')
+      }
 
     } catch (err) {
       console.error('Error processing pre-checkout:', err)
@@ -119,7 +164,32 @@ serve(async (req) => {
     console.log('Successful payment:', payment)
 
     try {
-      const payload = JSON.parse(payment.invoice_payload)
+      const invoicePayload = payment.invoice_payload
+      const providerPaymentId = payment.telegram_payment_charge_id
+
+      // New order system: payload is just the order ID as a string
+      const orderId = parseInt(invoicePayload, 10)
+      if (!isNaN(orderId)) {
+        // Check if this is a new-style order
+        const { data: order } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('id', orderId)
+          .single()
+
+        if (order) {
+          // Call confirm-order to complete the payment
+          const success = await confirmOrder(orderId, providerPaymentId)
+          if (success) {
+            // Send confirmation to buyer
+            await sendMessage(userId, `Payment successful! Your ${order.reference_type} has been processed.`)
+          }
+          return new Response('OK')
+        }
+      }
+
+      // Legacy system: parse JSON payload
+      const payload = JSON.parse(invoicePayload)
       const { type, transaction_id, post_id, to_user_id, message } = payload
 
       // Get transaction

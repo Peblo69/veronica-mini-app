@@ -190,6 +190,7 @@ export async function updateProfile(userId: number, updates: {
   username?: string
   bio?: string
   subscription_price?: number
+  avatar_url?: string
 }): Promise<boolean> {
   const { error } = await supabase
     .from('users')

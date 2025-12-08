@@ -235,5 +235,66 @@ export async function sendTipWithPayment(
   }
 }
 
+// ============================================
+// WITHDRAWAL / CASH OUT
+// ============================================
+
+interface Withdrawal {
+  id: number
+  user_id: number
+  amount: number
+  status: 'pending' | 'processing' | 'completed' | 'rejected' | 'cancelled'
+  payout_method: string
+  payout_details: Record<string, any>
+  admin_notes: string | null
+  requested_at: string
+  processed_at: string | null
+  completed_at: string | null
+}
+
+/**
+ * Request a withdrawal (cash out)
+ */
+export async function requestWithdrawal(
+  userId: number,
+  amount: number,
+  payoutMethod: string = 'telegram_stars',
+  payoutDetails: Record<string, any> = {}
+): Promise<{ withdrawal_id?: number; error?: string }> {
+  return callPaymentsApi({
+    action: 'request_withdrawal',
+    user_id: userId,
+    amount,
+    payout_method: payoutMethod,
+    payout_details: payoutDetails,
+  })
+}
+
+/**
+ * Get user's withdrawal history
+ */
+export async function getWithdrawals(
+  userId: number
+): Promise<{ withdrawals?: Withdrawal[]; error?: string }> {
+  return callPaymentsApi({
+    action: 'get_withdrawals',
+    user_id: userId,
+  })
+}
+
+/**
+ * Cancel a pending withdrawal
+ */
+export async function cancelWithdrawal(
+  userId: number,
+  withdrawalId: number
+): Promise<{ success?: boolean; error?: string }> {
+  return callPaymentsApi({
+    action: 'cancel_withdrawal',
+    user_id: userId,
+    withdrawal_id: withdrawalId,
+  })
+}
+
 // Export types
-export type { PaymentResponse, Wallet, Transaction }
+export type { PaymentResponse, Wallet, Transaction, Withdrawal }

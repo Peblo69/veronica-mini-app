@@ -6,6 +6,7 @@ import './index.css'
 
 import { useViewport } from './hooks/useViewport'
 import { getOrCreateUser, getUser, subscribeToUserUpdates, type User as UserType } from './lib/api'
+import { getTotalUnreadCount, subscribeToConversations } from './lib/chatApi'
 import { registerSession } from './lib/settingsApi'
 import ToastContainer from './components/Toast'
 
@@ -93,6 +94,7 @@ function App() {
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
   void secretBuffer
 
   useViewport()
@@ -134,6 +136,27 @@ function App() {
 
     const unsubscribe = subscribeToUserUpdates(user.telegram_id, (updatedUser) => {
       setUser(prev => prev ? { ...prev, ...updatedUser } : null)
+    })
+
+    return () => unsubscribe()
+  }, [user?.telegram_id])
+
+  // Fetch unread message count and subscribe to conversation updates
+  useEffect(() => {
+    if (!user) return
+
+    // Initial fetch
+    const fetchUnread = async () => {
+      const count = await getTotalUnreadCount(user.telegram_id)
+      setUnreadCount(count)
+    }
+    void fetchUnread()
+
+    // Subscribe to conversation updates to keep unread count in sync
+    const unsubscribe = subscribeToConversations(user.telegram_id, async () => {
+      // Re-fetch total unread when any conversation changes
+      const count = await getTotalUnreadCount(user.telegram_id)
+      setUnreadCount(count)
     })
 
     return () => unsubscribe()
@@ -210,10 +233,14 @@ function App() {
         if (dbUser) {
           setUser(dbUser)
         } else {
+          // Use @username as display name if available
+          const displayName = tg.initDataUnsafe.user.username
+            ? `@${tg.initDataUnsafe.user.username}`
+            : tg.initDataUnsafe.user.first_name || 'New User'
           setUser({
             telegram_id: tg.initDataUnsafe.user.id,
             username: tg.initDataUnsafe.user.username || 'user',
-            first_name: tg.initDataUnsafe.user.first_name || 'User',
+            first_name: displayName,
             balance: 0,
             is_creator: false,
             is_verified: false,
@@ -395,6 +422,7 @@ function App() {
             currentUser={user}
             onBack={closeCreatorProfile}
             onMessage={handleMessageCreator}
+            onUserUpdate={(updates) => setUser(prev => prev ? { ...prev, ...updates } : null)}
           />
         </Suspense>
       )
@@ -419,10 +447,10 @@ function App() {
       {/* Global toast notifications */}
       <ToastContainer />
 
-      {/* Main content area - top padding for Telegram fullscreen buttons (larger on Android) */}
+      {/* Main content area - top padding for Telegram header buttons (iOS needs ~70px to clear buttons) */}
       <main
         className="flex-1 overflow-y-auto overflow-x-hidden overscroll-none"
-        style={{ paddingTop: 'max(44px, calc(env(safe-area-inset-top, 0px) + 8px))' }}
+        style={{ paddingTop: 'max(70px, calc(env(safe-area-inset-top, 0px) + 50px))' }}
       >
         <AnimatePresence mode="wait">
           <motion.div
@@ -455,13 +483,15 @@ function App() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 100, opacity: 0 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="flex-shrink-0 bg-black border-t border-gray-800/50 relative z-50"
+            className="flex-shrink-0 bg-black relative z-50"
             style={{
               paddingBottom: 'max(12px, env(safe-area-inset-bottom, 0px))',
-              paddingTop: '4px'
+              paddingTop: '0px'
             }}
           >
-            <div className="flex items-center justify-around h-12">
+            {/* Divider line */}
+            <div className="h-[1px] bg-white/10 w-full" />
+            <div className="flex items-center justify-around h-12 mt-1">
               {navItems.map((item) => {
                 const isActive = activeNav === item.id
                 return (
@@ -477,6 +507,24 @@ function App() {
                           className="w-6 h-6 text-white"
                           strokeWidth={1.5}
                         />
+                      </div>
+                    ) : item.id === 'messages' ? (
+                      // Messages icon with unread badge
+                      <div className="relative">
+                        <item.icon
+                          className="w-6 h-6 text-white transition-transform duration-150"
+                          strokeWidth={isActive ? 2.5 : 1.5}
+                          style={{
+                            transform: isActive ? 'scale(1.05)' : 'scale(1)'
+                          }}
+                        />
+                        {unreadCount > 0 && (
+                          <div className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 rounded-full flex items-center justify-center px-1">
+                            <span className="text-[10px] font-bold text-white">
+                              {unreadCount > 99 ? '99+' : unreadCount}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       // Regular nav items

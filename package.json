@@ -14,12 +14,17 @@
     "@tanstack/react-virtual": "^3.13.12",
     "@tma.js/sdk": "^3.1.2",
     "@tma.js/sdk-react": "^3.0.11",
+    "@types/react-dropzone": "^4.2.2",
     "agora-rtc-react": "^2.5.0",
     "agora-rtc-sdk-ng": "^4.24.1",
     "framer-motion": "^12.23.24",
+    "i18next": "^23.15.1",
     "lucide-react": "^0.555.0",
+    "pixelarticons": "^1.8.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-dropzone": "^14.3.8",
+    "react-i18next": "^15.5.2",
     "react-router-dom": "^6.30.2"
   },
   "devDependencies": {

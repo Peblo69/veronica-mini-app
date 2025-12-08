@@ -275,9 +275,9 @@ export default function ExplorePage({ user, onCreatorClick }: ExplorePageProps) 
   }
 
   return (
-    <div className="min-h-full bg-black">
-      {/* Instagram-style Search Header */}
-      <div className="sticky top-0 z-40 bg-black px-4 py-2">
+    <div className="min-h-full bg-black pb-20">
+      {/* Instagram-style Search Header - not sticky to avoid issues with Telegram header */}
+      <div className="relative z-40 bg-black px-4 pt-2 pb-2">
         <div className="flex items-center gap-3">
           {/* Animated Search Bar Container */}
           <motion.div
@@ -432,6 +432,12 @@ export default function ExplorePage({ user, onCreatorClick }: ExplorePageProps) 
               onClose={closeReels}
               onLike={handleLike}
               onCreatorClick={onCreatorClick}
+              user={user}
+              onCommentCountUpdate={(postId, count) => {
+                setVideos(prev => prev.map(v =>
+                  v.id === postId ? { ...v, comments_count: count } : v
+                ))
+              }}
             />
           </Suspense>
         )}

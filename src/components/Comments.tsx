@@ -149,26 +149,26 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
       <img
         src={comment.user?.avatar_url || `https://i.pravatar.cc/150?u=${comment.user_id}`}
         alt=""
-        className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+        className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-white/10"
       />
       <div className="flex-1">
-        <div className="bg-gray-100 rounded-2xl px-3 py-2">
+        <div className="bg-white/5 rounded-2xl px-3 py-2 border border-white/5">
           <div className="flex items-center gap-1">
-            <span className="font-semibold text-sm">
+            <span className="font-semibold text-sm text-white">
               {comment.user?.first_name || 'User'}
             </span>
             {comment.user?.is_verified && (
-              <CheckCircle className="w-3 h-3 text-of-blue fill-of-blue" />
+              <CheckCircle className="w-3 h-3 text-blue-400 fill-blue-400" />
             )}
           </div>
-          <p className="text-sm">{comment.content}</p>
+          <p className="text-sm text-white/90">{comment.content}</p>
         </div>
 
         <div className="flex items-center gap-3 mt-1 px-2">
-          <span className="text-xs text-gray-400">{formatTime(comment.created_at)}</span>
+          <span className="text-xs text-white/30">{formatTime(comment.created_at)}</span>
           <button
             onClick={() => handleLike(comment)}
-            className={`text-xs font-medium ${comment.liked ? 'text-red-500' : 'text-gray-500'}`}
+            className={`text-xs font-medium ${comment.liked ? 'text-red-500' : 'text-white/40 hover:text-white/60'}`}
           >
             {comment.likes_count > 0 && comment.likes_count} Like
           </button>
@@ -177,7 +177,7 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
               setReplyingTo(comment)
               inputRef.current?.focus()
             }}
-            className="text-xs font-medium text-gray-500"
+            className="text-xs font-medium text-white/40 hover:text-white/60"
           >
             Reply
           </button>
@@ -185,7 +185,7 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
             <div className="relative">
               <button
                 onClick={() => setMenuOpen(menuOpen === comment.id ? null : comment.id)}
-                className="text-gray-400"
+                className="text-white/30 hover:text-white/50"
               >
                 <MoreHorizontal className="w-4 h-4" />
               </button>
@@ -195,11 +195,11 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    className="absolute right-0 top-6 bg-white shadow-lg rounded-lg py-1 z-10 min-w-[100px]"
+                    className="absolute right-0 top-6 bg-[#1c1c1e] shadow-lg rounded-lg py-1 z-10 min-w-[100px] border border-white/10"
                   >
                     <button
                       onClick={() => handleDelete(comment, parentId)}
-                      className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-gray-50 flex items-center gap-2"
+                      className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-white/5 flex items-center gap-2"
                     >
                       <Trash2 className="w-4 h-4" /> Delete
                     </button>
@@ -221,27 +221,41 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
   )
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b">
-        <h3 className="font-bold">Comments</h3>
+    <div className="flex flex-col h-full bg-[#0a0a0a]">
+      {/* Header with drag handle */}
+      <div className="sticky top-0 z-10 bg-[#0a0a0a] safe-area-top">
+        {/* Drag handle */}
         {onClose && (
-          <button onClick={onClose}>
-            <X className="w-6 h-6" />
-          </button>
+          <div className="flex justify-center pt-3 pb-1">
+            <div
+              className="w-10 h-1 bg-white/30 rounded-full cursor-pointer"
+              onClick={onClose}
+            />
+          </div>
         )}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+          <h3 className="font-semibold text-white">Comments</h3>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-white/10 rounded-full transition-colors active:scale-95"
+            >
+              <X className="w-6 h-6 text-white" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Comments list */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {loading ? (
           <div className="flex justify-center py-8">
-            <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            <Loader2 className="w-6 h-6 animate-spin text-white/30" />
           </div>
         ) : comments.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-white/40">
             <p>No comments yet</p>
-            <p className="text-sm">Be the first to comment!</p>
+            <p className="text-sm text-white/25 mt-1">Be the first to comment!</p>
           </div>
         ) : (
           comments.map(comment => renderComment(comment))
@@ -255,25 +269,25 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="px-4 py-2 bg-gray-50 border-t flex items-center justify-between"
+            className="px-4 py-2 bg-white/5 border-t border-white/5 flex items-center justify-between"
           >
-            <span className="text-sm text-gray-600">
-              Replying to <strong>{replyingTo.user?.first_name}</strong>
+            <span className="text-sm text-white/60">
+              Replying to <strong className="text-white">{replyingTo.user?.first_name}</strong>
             </span>
-            <button onClick={() => setReplyingTo(null)}>
-              <X className="w-4 h-4 text-gray-400" />
+            <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-white/10 rounded-full">
+              <X className="w-4 h-4 text-white/40" />
             </button>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Input */}
-      <div className="p-3 border-t bg-white/95 backdrop-blur-lg pb-8">
+      <div className="p-3 border-t border-white/5 bg-black/50 backdrop-blur-lg pb-8">
         <div className="flex items-center gap-2">
           <img
             src={user.avatar_url || `https://i.pravatar.cc/150?u=${user.telegram_id}`}
             alt=""
-            className="w-8 h-8 rounded-full object-cover ring-2 ring-white shadow-sm"
+            className="w-8 h-8 rounded-full object-cover border border-white/10"
           />
           <input
             ref={inputRef}
@@ -282,12 +296,12 @@ export default function Comments({ postId, user, onClose }: CommentsProps) {
             onChange={(e) => setNewComment(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSubmit()}
             placeholder={replyingTo ? `Reply to ${replyingTo.user?.first_name}...` : 'Add a comment...'}
-            className="flex-1 px-4 py-2.5 rounded-full bg-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-of-blue/20 transition-all"
+            className="flex-1 px-4 py-2.5 rounded-full bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/20 transition-all"
           />
           <button
             onClick={handleSubmit}
             disabled={!newComment.trim() || sending}
-            className="p-2.5 bg-of-blue rounded-full text-white disabled:opacity-50 shadow-md shadow-blue-500/30 hover:scale-105 transition-transform"
+            className="p-2.5 bg-blue-500 rounded-full text-white disabled:opacity-50 hover:bg-blue-600 transition-colors"
           >
             {sending ? (
               <Loader2 className="w-4 h-4 animate-spin" />

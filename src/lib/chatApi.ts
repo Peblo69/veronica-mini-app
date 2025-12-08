@@ -13,10 +13,13 @@ export interface Conversation {
   last_message_preview: string
   participant_1_unread: number
   participant_2_unread: number
+  // Request status: null = accepted, telegram_id = pending approval from that user
+  pending_approval_from: number | null
   created_at: string
   // Joined data
   other_user?: User
   unread_count?: number
+  is_request?: boolean
 }
 
 export interface Message {
@@ -41,6 +44,10 @@ export interface Message {
   sender?: User
   gift?: Gift
   reply_to?: Message | null
+  // Translation (client-side only, not stored in DB)
+  _translatedContent?: string | null
+  _isTranslating?: boolean
+  _translationError?: string | null
 }
 
 export interface Gift {
@@ -55,19 +62,26 @@ export interface Gift {
 }
 
 async function ensureMessagingAllowed(conversationId: string, senderId: number): Promise<void> {
+  // Validate inputs
+  if (!conversationId || !senderId || senderId <= 0) {
+    throw new Error('Invalid conversation or sender ID')
+  }
+
   const { data: conversation } = await supabase
     .from('conversations')
     .select('participant_1, participant_2')
     .eq('id', conversationId)
     .single()
 
-  if (!conversation) return
+  if (!conversation) {
+    throw new Error('Conversation not found')
+  }
 
   const receiverId =
     conversation.participant_1 === senderId ? conversation.participant_2 : conversation.participant_1
 
   if (!receiverId || receiverId === senderId) {
-    return
+    throw new Error('Invalid conversation participants')
   }
 
   const { data: settings } = await supabase
@@ -119,6 +133,23 @@ async function ensureMessagingAllowed(conversationId: string, senderId: number):
 // CONVERSATIONS API
 // ============================================
 
+// Get total unread message count for a user (for navbar badge)
+export async function getTotalUnreadCount(userId: number): Promise<number> {
+  const { data } = await supabase
+    .from('conversations')
+    .select('participant_1, participant_2, participant_1_unread, participant_2_unread')
+    .or(`participant_1.eq.${userId},participant_2.eq.${userId}`)
+
+  if (!data) return 0
+
+  return data.reduce((total, conv) => {
+    const unread = conv.participant_1 === userId
+      ? conv.participant_1_unread
+      : conv.participant_2_unread
+    return total + (unread || 0)
+  }, 0)
+}
+
 // Get all conversations for a user
 export async function getConversations(userId: number): Promise<Conversation[]> {
   const { data } = await supabase
@@ -148,12 +179,15 @@ export async function getConversations(userId: number): Promise<Conversation[]> 
     ),
     unread_count: conv.participant_1 === userId
       ? conv.participant_1_unread
-      : conv.participant_2_unread
+      : conv.participant_2_unread,
+    // A conversation is a request if it's pending approval from this user
+    is_request: conv.pending_approval_from === userId
   }))
 }
 
 // Get or create conversation between two users
-export async function getOrCreateConversation(userId1: number, userId2: number): Promise<Conversation | null> {
+// initiatorId is the user who is starting the conversation (for request system)
+export async function getOrCreateConversation(userId1: number, userId2: number, initiatorId?: number): Promise<Conversation | null> {
   // Ensure consistent ordering
   const [p1, p2] = userId1 < userId2 ? [userId1, userId2] : [userId2, userId1]
 
@@ -167,12 +201,16 @@ export async function getOrCreateConversation(userId1: number, userId2: number):
 
   if (existing) return existing
 
+  // New conversation - set pending_approval_from to the other user (not the initiator)
+  const receiverId = initiatorId ? (initiatorId === userId1 ? userId2 : userId1) : null
+
   // Create new
   const { data: newConv } = await supabase
     .from('conversations')
     .insert({
       participant_1: p1,
-      participant_2: p2
+      participant_2: p2,
+      pending_approval_from: receiverId
     })
     .select()
     .single()
@@ -360,15 +398,38 @@ export async function sendGift(
     return { message: null, error: (err as Error).message || 'Messaging not allowed' }
   }
 
-  // Check balance
-  const { data: user } = await supabase
-    .from('users')
-    .select('balance')
-    .eq('telegram_id', senderId)
+  // Get conversation to find receiver
+  const { data: conv } = await supabase
+    .from('conversations')
+    .select('participant_1, participant_2')
+    .eq('id', conversationId)
     .single()
 
-  if (!user || user.balance < giftPrice) {
-    return { message: null, error: 'Insufficient balance' }
+  if (!conv) {
+    return { message: null, error: 'Conversation not found' }
+  }
+
+  const receiverId = conv.participant_1 === senderId ? conv.participant_2 : conv.participant_1
+
+  // Validate receiver
+  if (!receiverId || receiverId === senderId) {
+    return { message: null, error: 'Cannot determine recipient' }
+  }
+
+  // Atomic balance check and transfer
+  const { data: result, error: rpcError } = await supabase.rpc('atomic_send_gift', {
+    p_sender_id: senderId,
+    p_receiver_id: receiverId,
+    p_gift_price: giftPrice
+  })
+
+  if (rpcError) {
+    console.error('[sendGift] RPC error:', rpcError)
+    return { message: null, error: rpcError.message }
+  }
+
+  if (!result?.success) {
+    return { message: null, error: result?.error || 'Payment failed' }
   }
 
   // Get gift info
@@ -392,27 +453,6 @@ export async function sendGift(
 
   if (error) return { message: null, error: error.message }
 
-  // Deduct from sender
-  await supabase
-    .from('users')
-    .update({ balance: user.balance - giftPrice })
-    .eq('telegram_id', senderId)
-
-  // Get receiver and add to their balance (90%)
-  const { data: conv } = await supabase
-    .from('conversations')
-    .select('participant_1, participant_2')
-    .eq('id', conversationId)
-    .single()
-
-  if (conv) {
-    const receiverId = conv.participant_1 === senderId ? conv.participant_2 : conv.participant_1
-    await supabase.rpc('add_to_balance', {
-      user_telegram_id: receiverId,
-      amount_to_add: Math.floor(giftPrice * 0.9)
-    })
-  }
-
   await updateConversationLastMessage(conversationId, senderId, `🎁 ${gift?.name || 'Gift'}`)
 
   return { message: message as Message, error: null }
@@ -430,15 +470,38 @@ export async function sendTip(
     return { message: null, error: (err as Error).message || 'Messaging not allowed' }
   }
 
-  // Check balance
-  const { data: user } = await supabase
-    .from('users')
-    .select('balance')
-    .eq('telegram_id', senderId)
+  // Get conversation to find receiver
+  const { data: conv } = await supabase
+    .from('conversations')
+    .select('participant_1, participant_2')
+    .eq('id', conversationId)
     .single()
 
-  if (!user || user.balance < amount) {
-    return { message: null, error: 'Insufficient balance' }
+  if (!conv) {
+    return { message: null, error: 'Conversation not found' }
+  }
+
+  const receiverId = conv.participant_1 === senderId ? conv.participant_2 : conv.participant_1
+
+  // Validate receiver
+  if (!receiverId || receiverId === senderId) {
+    return { message: null, error: 'Cannot determine recipient' }
+  }
+
+  // Atomic balance check and transfer
+  const { data: result, error: rpcError } = await supabase.rpc('atomic_send_tip', {
+    p_sender_id: senderId,
+    p_receiver_id: receiverId,
+    p_tip_amount: amount
+  })
+
+  if (rpcError) {
+    console.error('[sendTip] RPC error:', rpcError)
+    return { message: null, error: rpcError.message }
+  }
+
+  if (!result?.success) {
+    return { message: null, error: result?.error || 'Payment failed' }
   }
 
   // Create message
@@ -455,27 +518,6 @@ export async function sendTip(
 
   if (error) return { message: null, error: error.message }
 
-  // Deduct from sender
-  await supabase
-    .from('users')
-    .update({ balance: user.balance - amount })
-    .eq('telegram_id', senderId)
-
-  // Add to receiver (90%)
-  const { data: conv } = await supabase
-    .from('conversations')
-    .select('participant_1, participant_2')
-    .eq('id', conversationId)
-    .single()
-
-  if (conv) {
-    const receiverId = conv.participant_1 === senderId ? conv.participant_2 : conv.participant_1
-    await supabase.rpc('add_to_balance', {
-      user_telegram_id: receiverId,
-      amount_to_add: Math.floor(amount * 0.9)
-    })
-  }
-
   await updateConversationLastMessage(conversationId, senderId, `💰 Tip - $${amount}`)
 
   return { message: message as Message, error: null }
@@ -486,49 +528,20 @@ export async function unlockPPV(
   messageId: string,
   userId: number
 ): Promise<{ success: boolean, error: string | null }> {
-  // Get message
-  const { data: message } = await supabase
-    .from('messages')
-    .select('ppv_price, ppv_unlocked_by, sender_id')
-    .eq('id', messageId)
-    .single()
-
-  if (!message) return { success: false, error: 'Message not found' }
-
-  // Check if already unlocked
-  if (message.ppv_unlocked_by?.includes(userId)) {
-    return { success: true, error: null }
-  }
-
-  // Check balance
-  const { data: user } = await supabase
-    .from('users')
-    .select('balance')
-    .eq('telegram_id', userId)
-    .single()
-
-  if (!user || user.balance < message.ppv_price) {
-    return { success: false, error: 'Insufficient balance' }
-  }
-
-  // Unlock
-  const newUnlockedBy = [...(message.ppv_unlocked_by || []), userId]
-  await supabase
-    .from('messages')
-    .update({ ppv_unlocked_by: newUnlockedBy })
-    .eq('id', messageId)
-
-  // Deduct balance
-  await supabase
-    .from('users')
-    .update({ balance: user.balance - message.ppv_price })
-    .eq('telegram_id', userId)
-
-  // Add to creator (90%)
-  await supabase.rpc('add_to_balance', {
-    user_telegram_id: message.sender_id,
-    amount_to_add: Math.floor(message.ppv_price * 0.9)
+  // Atomic unlock - checks balance, checks if already unlocked, updates all in one transaction
+  const { data: result, error: rpcError } = await supabase.rpc('atomic_unlock_ppv', {
+    p_user_id: userId,
+    p_message_id: messageId
   })
+
+  if (rpcError) {
+    console.error('[unlockPPV] RPC error:', rpcError)
+    return { success: false, error: rpcError.message }
+  }
+
+  if (!result?.success) {
+    return { success: false, error: result?.error || 'Unlock failed' }
+  }
 
   return { success: true, error: null }
 }
@@ -779,13 +792,91 @@ export async function deleteMessage(
 }
 
 // ============================================
+// CHAT REQUEST API
+// ============================================
+
+// Approve a chat request (set pending_approval_from to null)
+export async function approveChatRequest(
+  conversationId: string,
+  userId: number
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    // Verify the user is the one who needs to approve
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('pending_approval_from')
+      .eq('id', conversationId)
+      .single()
+
+    if (!conv) {
+      return { success: false, error: 'Conversation not found' }
+    }
+
+    if (conv.pending_approval_from !== userId) {
+      return { success: false, error: 'You cannot approve this request' }
+    }
+
+    const { error } = await supabase
+      .from('conversations')
+      .update({ pending_approval_from: null })
+      .eq('id', conversationId)
+
+    return { success: !error, error: error?.message || null }
+  } catch (err) {
+    console.error('approveChatRequest error:', err)
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+// Delete a conversation (and all its messages)
+export async function deleteConversation(
+  conversationId: string,
+  userId: number
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    // Verify user is a participant
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('participant_1, participant_2')
+      .eq('id', conversationId)
+      .single()
+
+    if (!conv) {
+      return { success: false, error: 'Conversation not found' }
+    }
+
+    if (conv.participant_1 !== userId && conv.participant_2 !== userId) {
+      return { success: false, error: 'You are not a participant in this conversation' }
+    }
+
+    // Delete all messages first
+    await supabase
+      .from('messages')
+      .delete()
+      .eq('conversation_id', conversationId)
+
+    // Delete the conversation
+    const { error } = await supabase
+      .from('conversations')
+      .delete()
+      .eq('id', conversationId)
+
+    return { success: !error, error: error?.message || null }
+  } catch (err) {
+    console.error('deleteConversation error:', err)
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+// ============================================
 // REALTIME SUBSCRIPTIONS
 // ============================================
 
 // Subscribe to new messages in a conversation
 export function subscribeToMessages(
   conversationId: string,
-  onMessage: (message: Message) => void
+  onMessage: (message: Message) => void,
+  onMessageUpdate?: (messageId: string, updates: Partial<Message>) => void
 ) {
   const channel = supabase
     .channel(`messages:${conversationId}`)
@@ -798,15 +889,64 @@ export function subscribeToMessages(
         filter: `conversation_id=eq.${conversationId}`
       },
       async (payload) => {
-        // Fetch full message with relations
-        const { data } = await supabase
-          .from('messages')
-          .select('*, sender:users!sender_id(*), gift:gifts(*)')
-          .eq('id', payload.new.id)
-          .single()
+        try {
+          // Fetch full message with relations
+          const { data, error } = await supabase
+            .from('messages')
+            .select('*, sender:users!sender_id(*), gift:gifts(*)')
+            .eq('id', payload.new.id)
+            .single()
 
-        if (data) {
-          onMessage(data as Message)
+          if (error) {
+            console.error('[subscribeToMessages] Failed to fetch message:', error)
+            return
+          }
+
+          if (data) {
+            const message = data as Message
+
+            // If message has reply_to_id, fetch the reply message
+            if (message.reply_to_id) {
+              const { data: replyData, error: replyError } = await supabase
+                .from('messages')
+                .select('*, sender:users!sender_id(*)')
+                .eq('id', message.reply_to_id)
+                .single()
+
+              if (replyError) {
+                console.warn('[subscribeToMessages] Failed to fetch reply:', replyError)
+              } else if (replyData) {
+                message.reply_to = replyData as Message
+              }
+            }
+
+            onMessage(message)
+          }
+        } catch (err) {
+          console.error('[subscribeToMessages] Error in INSERT callback:', err)
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'messages',
+        filter: `conversation_id=eq.${conversationId}`
+      },
+      (payload) => {
+        try {
+          // Handle message updates (read status, etc.)
+          if (onMessageUpdate && payload.new) {
+            const updated = payload.new as any
+            onMessageUpdate(updated.id, {
+              is_read: updated.is_read,
+              is_deleted: updated.is_deleted
+            })
+          }
+        } catch (err) {
+          console.error('[subscribeToMessages] Error in UPDATE callback:', err)
         }
       }
     )
@@ -817,7 +957,7 @@ export function subscribeToMessages(
   }
 }
 
-// Subscribe to conversation updates
+// Subscribe to conversation updates AND new messages
 export function subscribeToConversations(
   userId: number,
   onUpdate: (conversation: Conversation) => void
@@ -832,23 +972,80 @@ export function subscribeToConversations(
         table: 'conversations'
       },
       async (payload) => {
-        const conv = payload.new as any
-        if (conv.participant_1 === userId || conv.participant_2 === userId) {
-          // Fetch with user data
-          const otherId = conv.participant_1 === userId ? conv.participant_2 : conv.participant_1
-          const { data: otherUser } = await supabase
-            .from('users')
+        try {
+          const conv = payload.new as any
+          if (conv.participant_1 === userId || conv.participant_2 === userId) {
+            // Fetch with user data
+            const otherId = conv.participant_1 === userId ? conv.participant_2 : conv.participant_1
+            const { data: otherUser, error } = await supabase
+              .from('users')
+              .select('*')
+              .eq('telegram_id', otherId)
+              .single()
+
+            if (error) {
+              console.warn('[subscribeToConversations] Failed to fetch other user:', error)
+            }
+
+            onUpdate({
+              ...conv,
+              other_user: otherUser,
+              unread_count: conv.participant_1 === userId
+                ? conv.participant_1_unread
+                : conv.participant_2_unread
+            })
+          }
+        } catch (err) {
+          console.error('[subscribeToConversations] Error in conversations callback:', err)
+        }
+      }
+    )
+    // Also listen to new messages for better real-time unread updates
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages'
+      },
+      async (payload) => {
+        try {
+          const msg = payload.new as any
+          // When a new message arrives, trigger update to refresh unread counts
+          // Check if this message is for a conversation the user is part of
+          const { data: conv, error: convError } = await supabase
+            .from('conversations')
             .select('*')
-            .eq('telegram_id', otherId)
+            .eq('id', msg.conversation_id)
             .single()
 
-          onUpdate({
-            ...conv,
-            other_user: otherUser,
-            unread_count: conv.participant_1 === userId
-              ? conv.participant_1_unread
-              : conv.participant_2_unread
-          })
+          if (convError) {
+            console.warn('[subscribeToConversations] Failed to fetch conversation:', convError)
+            return
+          }
+
+          if (conv && (conv.participant_1 === userId || conv.participant_2 === userId)) {
+            const otherId = conv.participant_1 === userId ? conv.participant_2 : conv.participant_1
+            const { data: otherUser, error: userError } = await supabase
+              .from('users')
+              .select('*')
+              .eq('telegram_id', otherId)
+              .single()
+
+            if (userError) {
+              console.warn('[subscribeToConversations] Failed to fetch other user:', userError)
+            }
+
+            onUpdate({
+              ...conv,
+              other_user: otherUser,
+              unread_count: conv.participant_1 === userId
+                ? conv.participant_1_unread
+                : conv.participant_2_unread
+            })
+          }
+        } catch (err) {
+          console.error('[subscribeToConversations] Error in messages callback:', err)
         }
       }
     )

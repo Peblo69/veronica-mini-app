@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import AgoraRTC from 'agora-rtc-sdk-ng'
 import type { IAgoraRTCClient, ICameraVideoTrack, IMicrophoneAudioTrack, IRemoteVideoTrack, IRemoteAudioTrack } from 'agora-rtc-sdk-ng'
-import { ArrowLeft, Video, VideoOff, Mic, MicOff, Users, Gift, Send, X, Clock, Loader2, Radio } from 'lucide-react'
+import { ArrowLeft, Video, VideoOff, Mic, MicOff, Users, Gift, Send, X, Clock, Loader2, Image as ImageIcon, Shield } from 'lucide-react'
 import { type User } from '../lib/api'
 import { getGifts, type Gift as GiftType } from '../lib/chatApi'
 import {
@@ -25,6 +25,7 @@ import {
   type LivestreamMessage,
   type LivestreamAccessState
 } from '../lib/livestreamApi'
+import { uploadLivestreamMedia } from '../lib/storage'
 
 interface LivestreamPageProps {
   user: User
@@ -60,6 +61,12 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
 
   // Stream title for creator
   const [streamTitle, setStreamTitle] = useState('')
+  const [streamDescription, setStreamDescription] = useState('')
+  const [streamPrivate, setStreamPrivate] = useState(false)
+  const [streamPrice, setStreamPrice] = useState(0)
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null)
+  const [thumbnailUploading, setThumbnailUploading] = useState(false)
+  const thumbnailInputRef = useRef<HTMLInputElement>(null)
   const [isStarting, setIsStarting] = useState(true)
 
   const videoRef = useRef<HTMLDivElement>(null)
@@ -69,12 +76,40 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
   const messageUnsubscribeRef = useRef<(() => void) | null>(null)
   const viewerCountUnsubscribeRef = useRef<(() => void) | null>(null)
   const hasLeftRef = useRef(false)
+  const initialSettingsRef = useRef({
+    title: '',
+    description: '',
+    entry_price: 0,
+    is_private: false,
+  })
+
+  // Fetch Agora token if configured
+  const fetchAgoraToken = async (channel: string, uid: number) => {
+    const tokenUrl = import.meta.env.VITE_AGORA_TOKEN_URL
+    if (!tokenUrl) return null
+    try {
+      const res = await fetch(`${tokenUrl}?channel=${encodeURIComponent(channel)}&uid=${uid}`)
+      if (!res.ok) return null
+      const data = await res.json()
+      return data.token || null
+    } catch (err) {
+      console.warn('[Agora] token fetch failed', err)
+      return null
+    }
+  }
 
   // Initialize
   useEffect(() => {
     loadGifts()
 
     if (isCreator) {
+      // Pre-fill defaults if already had a scheduled title
+      initialSettingsRef.current = {
+        title: streamTitle,
+        description: streamDescription,
+        entry_price: streamPrice,
+        is_private: streamPrivate,
+      }
       checkStreamingLimit()
     } else if (livestreamId) {
       initViewer()
@@ -218,8 +253,8 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
         setRemoteAudioTrack(null)
       })
 
-      // Join with null token for testing (need real token in production)
-      await agoraClient.join(AGORA_APP_ID, channel, null, user.telegram_id)
+      const token = await fetchAgoraToken(channel, user.telegram_id)
+      await agoraClient.join(AGORA_APP_ID, channel, token, user.telegram_id)
       setClient(agoraClient)
     } catch (err) {
       console.error('Agora viewer init error:', err)
@@ -259,8 +294,26 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
     setLoading(true)
 
     try {
+      let thumbnailUrl: string | null = null
+      if (thumbnailFile) {
+        setThumbnailUploading(true)
+        const upload = await uploadLivestreamMedia(thumbnailFile, user.telegram_id)
+        setThumbnailUploading(false)
+        if (upload.error || !upload.url) {
+          alert('Failed to upload thumbnail')
+          setLoading(false)
+          return
+        }
+        thumbnailUrl = upload.url
+      }
+
       // Create livestream in database
-      const stream = await createLivestream(user.telegram_id, streamTitle)
+      const stream = await createLivestream(user.telegram_id, streamTitle, {
+        description: streamDescription || undefined,
+        is_private: streamPrivate,
+        entry_price: Math.max(0, Math.floor(streamPrice)),
+        thumbnail_url: thumbnailUrl
+      })
       if (!stream) {
         setError('Failed to create stream')
         setLoading(false)
@@ -301,7 +354,8 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
       }
 
       // Join and publish
-      await agoraClient.join(AGORA_APP_ID, channel, null, user.telegram_id)
+      const token = await fetchAgoraToken(channel, user.telegram_id)
+      await agoraClient.join(AGORA_APP_ID, channel, token, user.telegram_id)
       await agoraClient.publish([audioTrack, videoTrack])
 
       setClient(agoraClient)
@@ -440,38 +494,105 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
   // Creator starting screen
   if (isCreator && isStarting && !loading) {
     return (
-      <div className="fixed inset-0 bg-black">
-        <div className="p-4">
-          <button onClick={onExit} className="text-white mb-4">
+      <div className="fixed inset-0 bg-black overflow-y-auto">
+        <div className="p-4 flex items-center gap-3">
+          <button onClick={onExit} className="text-white">
             <ArrowLeft className="w-6 h-6" />
           </button>
+          <div>
+            <p className="text-xs text-white/60">Livestream setup</p>
+            <h2 className="text-white text-xl font-bold">Go Live</h2>
+          </div>
+          <div className="ml-auto text-sm text-white/70">{remainingMinutes} min left today</div>
         </div>
 
-        <div className="flex flex-col items-center justify-center h-[80vh] px-6">
-          <div className="w-20 h-20 rounded-full bg-red-500 flex items-center justify-center mb-6">
-            <Radio className="w-10 h-10 text-white" />
+        <div className="max-w-2xl mx-auto px-4 pb-10 space-y-4">
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs text-white/60">Title</label>
+              <input
+                type="text"
+                value={streamTitle}
+                onChange={(e) => setStreamTitle(e.target.value)}
+                placeholder="Enter stream title..."
+                className="w-full px-4 py-3 rounded-xl bg-gray-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs text-white/60">Description (optional)</label>
+              <textarea
+                value={streamDescription}
+                onChange={(e) => setStreamDescription(e.target.value)}
+                placeholder="What will you stream?"
+                className="w-full px-4 py-3 rounded-xl bg-gray-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500"
+                rows={3}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+                  <Shield className="w-5 h-5 text-white/70" />
+                </div>
+                <div>
+                  <p className="text-white font-semibold text-sm">Private stream</p>
+                  <p className="text-xs text-white/60">Only subscribers/ticket holders can watch</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setStreamPrivate(!streamPrivate)}
+                className={`w-12 h-7 rounded-full p-0.5 transition ${streamPrivate ? 'bg-blue-500' : 'bg-white/20'}`}
+              >
+                <div className={`w-6 h-6 bg-white rounded-full shadow transition ${streamPrivate ? 'translate-x-5' : ''}`} />
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-4">
+              <div className="flex-1 min-w-[180px] space-y-2">
+                <label className="text-xs text-white/60">Ticket price (Stars)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={streamPrice}
+                  onChange={(e) => setStreamPrice(Number(e.target.value))}
+                  className="w-full px-4 py-3 rounded-xl bg-gray-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs text-white/60">Thumbnail</label>
+                <button
+                  onClick={() => thumbnailInputRef.current?.click()}
+                  className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white/10 border border-white/10 text-sm"
+                  disabled={thumbnailUploading}
+                >
+                  <ImageIcon className="w-4 h-4" />
+                  {thumbnailFile ? 'Change' : 'Upload'}
+                </button>
+                <input
+                  ref={thumbnailInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) setThumbnailFile(file)
+                  }}
+                />
+                {thumbnailUploading && <p className="text-[11px] text-yellow-400">Uploading...</p>}
+              </div>
+            </div>
+
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={startStream}
+              className="w-full py-3 bg-red-500 text-white rounded-xl font-semibold disabled:opacity-60"
+              disabled={loading || thumbnailUploading}
+            >
+              {loading ? 'Starting...' : 'Start Streaming'}
+            </motion.button>
+            {error && <p className="text-xs text-red-400">{error}</p>}
           </div>
-
-          <h2 className="text-white text-2xl font-bold mb-2">Go Live</h2>
-          <p className="text-gray-400 text-sm mb-6">
-            {remainingMinutes} minutes remaining today
-          </p>
-
-          <input
-            type="text"
-            value={streamTitle}
-            onChange={(e) => setStreamTitle(e.target.value)}
-            placeholder="Enter stream title..."
-            className="w-full max-w-sm px-4 py-3 rounded-xl bg-gray-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 mb-4"
-          />
-
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={startStream}
-            className="w-full max-w-sm py-3 bg-red-500 text-white rounded-xl font-semibold"
-          >
-            Start Streaming
-          </motion.button>
         </div>
       </div>
     )
@@ -648,7 +769,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
 
         {/* Input */}
         <div className="p-3 border-t border-gray-800">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
             {!isCreator && (
               <button
                 onClick={() => setShowGifts(true)}
@@ -661,7 +782,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
               placeholder="Send a message..."
               className="flex-1 px-4 py-2 bg-gray-800 rounded-full text-white text-sm placeholder-gray-500 focus:outline-none"
             />
@@ -726,7 +847,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
                 <p className="text-xs font-semibold text-gray-500 mb-2">Exclusive Access</p>
                 <h3 className="text-2xl font-bold text-gray-900 mb-1">{livestream?.title || 'Livestream Access'}</h3>
                 <p className="text-gray-600 text-sm">
-                  Unlock this livestream for {ticketPrice} tokens. Tokens go directly to the creator minus platform fees.
+                  Unlock this livestream for {ticketPrice} Stars. Stars go directly to the creator minus platform fees.
                 </p>
               </div>
               <motion.button
@@ -735,7 +856,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
                 disabled={unlocking}
                 className="w-full py-3 rounded-2xl bg-gradient-to-r from-red-500 to-pink-500 text-white font-semibold disabled:opacity-60"
               >
-                {unlocking ? 'Unlocking...' : `Unlock for ${ticketPrice} tokens`}
+                {unlocking ? 'Unlocking...' : `Unlock for ${ticketPrice} Stars`}
               </motion.button>
               <button
                 onClick={() => {

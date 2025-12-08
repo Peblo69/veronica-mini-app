@@ -38,6 +38,7 @@ export interface Post {
   unlock_price: number
   likes_count: number
   comments_count: number
+  gifts_count?: number  // Total stars gifted on this post
   created_at: string
   creator?: User
   liked?: boolean
@@ -69,12 +70,17 @@ export async function getOrCreateUser(telegramUser: any): Promise<User | null> {
   }
 
   // Create new user
+  // Use @username as display name (first_name) if available, otherwise use actual first_name
+  const displayName = telegramUser.username
+    ? `@${telegramUser.username}`
+    : telegramUser.first_name || 'New User'
+
   const { data: newUser, error } = await supabase
     .from('users')
     .insert({
       telegram_id: telegramUser.id,
       username: telegramUser.username,
-      first_name: telegramUser.first_name,
+      first_name: displayName,
       last_name: telegramUser.last_name,
       avatar_url: telegramUser.photo_url,
       balance: 50, // Welcome bonus
@@ -230,15 +236,48 @@ export async function getCreatorPosts(creatorId: number, userId: number): Promis
   }
 }
 
-// Get suggested creators
-export async function getSuggestedCreators(limit = 10): Promise<User[]> {
+// Get suggested creators with smart logic
+// - Excludes creators the user already follows
+// - Excludes the user themselves
+// - Prioritizes: verified creators, recent activity, follower count
+export async function getSuggestedCreators(limit = 10, currentUserId?: number): Promise<User[]> {
+  // First get list of who the user already follows
+  let followingIds: number[] = []
+  if (currentUserId) {
+    const { data: followingData } = await supabase
+      .from('follows')
+      .select('following_id')
+      .eq('follower_id', currentUserId)
+    followingIds = (followingData || []).map(f => f.following_id)
+  }
+
+  // Get creators, excluding already followed ones
   const { data } = await supabase
     .from('users')
     .select('*')
     .eq('is_creator', true)
-    .order('followers_count', { ascending: false })
-    .limit(limit)
-  return (data || []) as User[]
+    .not('telegram_id', 'in', currentUserId ? `(${[currentUserId, ...followingIds].join(',')})` : '(0)')
+    .order('is_verified', { ascending: false }) // Verified first
+    .order('followers_count', { ascending: false }) // Then by popularity
+    .limit(limit * 2) // Get extra to filter
+
+  if (!data || data.length === 0) {
+    // Fallback: just get top creators if no suggestions found
+    const { data: fallbackData } = await supabase
+      .from('users')
+      .select('*')
+      .eq('is_creator', true)
+      .order('followers_count', { ascending: false })
+      .limit(limit)
+    return (fallbackData || []) as User[]
+  }
+
+  // Mix: some popular, some random for discovery
+  const popular = data.slice(0, Math.ceil(limit * 0.6))
+  const others = data.slice(Math.ceil(limit * 0.6))
+  const randomOthers = others.sort(() => Math.random() - 0.5).slice(0, Math.floor(limit * 0.4))
+
+  return [...popular, ...randomOthers].slice(0, limit) as User[]
 }
 
 // Get video posts for Explore/Reels
@@ -497,7 +536,8 @@ export async function likePost(userId: number, postId: number) {
     p_post_id: postId
   })
 
-  if (!error && data) return true
+  // RPC returns true (liked) or false (already liked) - both are success
+  if (!error && data !== null) return true
 
   // Fallback: direct insert + count increment (for cases where RPC is missing)
   console.warn('[likePost] atomic_like_post failed, falling back to direct insert', error)
@@ -527,7 +567,8 @@ export async function unlikePost(userId: number, postId: number) {
     p_post_id: postId
   })
 
-  if (!error && data === true) return true
+  // RPC returns true (unliked) or false (wasn't liked) - both are success
+  if (!error && data !== null) return true
 
   // Fallback: direct delete + count decrement
   console.warn('[unlikePost] atomic_unlike_post failed, falling back to direct delete', error)
@@ -621,42 +662,147 @@ export async function getPostCommenters(postId: number): Promise<User[]> {
 // FOLLOWS / SUBSCRIPTIONS API
 // ============================================
 
-// Follow user (atomic)
+// Follow user (atomic with fallback)
 export async function followUser(followerId: number, followingId: number) {
+  // Can't follow yourself
+  if (followerId === followingId) {
+    return false
+  }
+
+  // Primary: atomic RPC
   const { data, error } = await supabase.rpc('atomic_follow_user', {
     p_follower_id: followerId,
     p_following_id: followingId
   })
 
-  if (error) {
-    console.error('Follow user error:', error)
+  // RPC returns true (followed) or false (already following) - both are success
+  if (!error && data !== null) {
+    if (data) toast.success('Following!')
+    return data === true
+  }
+
+  // Fallback: direct insert + count updates (for cases where RPC is missing)
+  console.warn('[followUser] atomic_follow_user failed, falling back to direct insert', error)
+
+  // Check if already following
+  const { data: existing } = await supabase
+    .from('follows')
+    .select('id')
+    .eq('follower_id', followerId)
+    .eq('following_id', followingId)
+    .single()
+
+  if (existing) {
+    // Already following
+    return false
+  }
+
+  // Insert follow
+  const { error: insertError } = await supabase
+    .from('follows')
+    .insert({ follower_id: followerId, following_id: followingId })
+
+  if (insertError) {
+    console.error('Follow user error:', insertError)
     toast.error('Failed to follow user')
     return false
   }
 
-  if (!data) {
-    // Already following or trying to follow self
-    return false
+  // Best-effort count updates - use raw increment on users table
+  try {
+    // Increment follower's following_count
+    const { data: follower } = await supabase
+      .from('users')
+      .select('following_count')
+      .eq('telegram_id', followerId)
+      .single()
+    if (follower) {
+      await supabase
+        .from('users')
+        .update({ following_count: (follower.following_count || 0) + 1 })
+        .eq('telegram_id', followerId)
+    }
+
+    // Increment following's followers_count
+    const { data: following } = await supabase
+      .from('users')
+      .select('followers_count')
+      .eq('telegram_id', followingId)
+      .single()
+    if (following) {
+      await supabase
+        .from('users')
+        .update({ followers_count: (following.followers_count || 0) + 1 })
+        .eq('telegram_id', followingId)
+    }
+  } catch {
+    // ignore best-effort failures
   }
 
   toast.success('Following!')
   return true
 }
 
-// Unfollow user (atomic)
+// Unfollow user (atomic with fallback)
 export async function unfollowUser(followerId: number, followingId: number) {
+  // Primary: atomic RPC
   const { data, error } = await supabase.rpc('atomic_unfollow_user', {
     p_follower_id: followerId,
     p_following_id: followingId
   })
 
-  if (error) {
-    console.error('Unfollow user error:', error)
+  // RPC returns true (unfollowed) or false (wasn't following) - both are success
+  if (!error && data !== null) {
+    return data === true
+  }
+
+  // Fallback: direct delete + count updates (for cases where RPC is missing)
+  console.warn('[unfollowUser] atomic_unfollow_user failed, falling back to direct delete', error)
+
+  const { error: deleteError } = await supabase
+    .from('follows')
+    .delete()
+    .eq('follower_id', followerId)
+    .eq('following_id', followingId)
+
+  if (deleteError) {
+    console.error('Unfollow user error:', deleteError)
     toast.error('Failed to unfollow user')
     return false
   }
 
-  return data === true
+  // Best-effort count updates - use raw decrement on users table
+  try {
+    // Decrement follower's following_count
+    const { data: follower } = await supabase
+      .from('users')
+      .select('following_count')
+      .eq('telegram_id', followerId)
+      .single()
+    if (follower) {
+      await supabase
+        .from('users')
+        .update({ following_count: Math.max(0, (follower.following_count || 0) - 1) })
+        .eq('telegram_id', followerId)
+    }
+
+    // Decrement following's followers_count
+    const { data: following } = await supabase
+      .from('users')
+      .select('followers_count')
+      .eq('telegram_id', followingId)
+      .single()
+    if (following) {
+      await supabase
+        .from('users')
+        .update({ followers_count: Math.max(0, (following.followers_count || 0) - 1) })
+        .eq('telegram_id', followingId)
+    }
+  } catch {
+    // ignore best-effort failures
+  }
+
+  return true
 }
 
 // Check if following
@@ -668,6 +814,48 @@ export async function isFollowing(followerId: number, followingId: number): Prom
     .eq('following_id', followingId)
     .single()
   return !!data
+}
+
+/**
+ * Subscribe to follow changes for a specific user (as the one being followed)
+ * This allows real-time follower count updates
+ */
+export function subscribeToFollowerChanges(
+  userId: number,
+  callbacks: {
+    onNewFollower?: (followerId: number) => void
+    onUnfollow?: (followerId: number) => void
+  }
+): () => void {
+  const channel = supabase
+    .channel(`followers-${userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'follows',
+        filter: `following_id=eq.${userId}`,
+      },
+      (payload) => {
+        callbacks.onNewFollower?.(payload.new.follower_id)
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'follows',
+        filter: `following_id=eq.${userId}`,
+      },
+      (payload) => {
+        callbacks.onUnfollow?.(payload.old.follower_id)
+      }
+    )
+    .subscribe()
+
+  return () => removeChannel(channel)
 }
 
 // Subscribe to creator

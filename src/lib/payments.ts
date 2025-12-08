@@ -170,34 +170,47 @@ interface StarsInvoiceRequest {
   metadata?: Record<string, any>
 }
 
-interface StarsInvoiceResponse {
-  invoice_url: string
-  transaction_id: number
+// Create an order via the new order system
+interface CreateOrderResponse {
+  ok: boolean
+  orderId: number
+  invoiceUrl: string
+  error?: string
 }
 
-// Create an invoice via Supabase Functions (server-side must exist)
 async function createStarsInvoice(
   payload: StarsInvoiceRequest
 ): Promise<{ success: boolean; invoiceUrl?: string; transactionId?: number; error?: string }> {
   try {
-    const { data, error } = await supabase.functions.invoke<StarsInvoiceResponse>('create-stars-invoice', {
-      body: payload,
-    })
-
-    if (error || !data?.invoice_url || !data.transaction_id) {
-      return { success: false, error: error?.message || 'Failed to create Stars invoice' }
+    // Map the old payload format to the new order format
+    const orderPayload = {
+      userId: payload.fromUserId,
+      creatorId: payload.toUserId,
+      referenceType: payload.referenceType,
+      referenceId: payload.referenceId,
+      amount: payload.amount,
     }
 
-    return { success: true, invoiceUrl: data.invoice_url, transactionId: data.transaction_id }
+    const { data, error } = await supabase.functions.invoke<CreateOrderResponse>('create-order', {
+      body: orderPayload,
+    })
+
+    if (error || !data?.ok || !data.invoiceUrl || !data.orderId) {
+      return { success: false, error: error?.message || data?.error || 'Failed to create Stars invoice' }
+    }
+
+    return { success: true, invoiceUrl: data.invoiceUrl, transactionId: data.orderId }
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : 'Stars invoice error' }
   }
 }
 
-async function markStarsPaymentCompleted(transactionId: number): Promise<void> {
+async function markStarsPaymentCompleted(orderId: number): Promise<void> {
   try {
-    await supabase.functions.invoke('confirm-stars-payment', {
-      body: { transactionId },
+    // Call confirm-order to complete the payment
+    // Note: The webhook should also handle this, so this is just a backup
+    await supabase.functions.invoke('confirm-order', {
+      body: { orderId },
     })
   } catch (e) {
     console.warn('[Stars] confirm failed (will rely on webhook):', e)

@@ -224,6 +224,11 @@ export async function uploadStoryMedia(file: File, userId: number): Promise<Uplo
   return uploadFile('stories', file, userId)
 }
 
+// Upload livestream assets (thumbnails, promo)
+export async function uploadLivestreamMedia(file: File, userId: number): Promise<UploadResult> {
+  return uploadFile('livestreams', file, userId)
+}
+
 // Get file type from file
 export function getMediaType(file: File): 'image' | 'video' | 'audio' | 'unknown' {
   if (file.type.startsWith('image/')) return 'image'

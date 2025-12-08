@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import type { User } from './api'
-import { processLivestreamTicket, type PaymentResult } from './payments'
+import { processLivestreamTicket, processTip, type PaymentResult } from './payments'
 
 // ============================================
 // LIVESTREAM TYPES
@@ -114,6 +114,7 @@ export async function createLivestream(
     description?: string
     is_private?: boolean
     entry_price?: number
+    thumbnail_url?: string | null
   }
 ): Promise<Livestream | null> {
   // Generate unique channel name
@@ -127,6 +128,7 @@ export async function createLivestream(
       description: options?.description,
       is_private: options?.is_private || false,
       entry_price: options?.entry_price || 0,
+      thumbnail_url: options?.thumbnail_url || null,
       agora_channel: channelName,
       room_name: channelName,
       status: 'live',
@@ -383,25 +385,24 @@ export async function sendLivestreamGift(
   giftId: string,
   giftPrice: number
 ): Promise<{ message: LivestreamMessage | null; error: string | null }> {
-  // Check balance
-  const { data: user } = await supabase
-    .from('users')
-    .select('balance')
-    .eq('telegram_id', userId)
-    .single()
-
-  if (!user || user.balance < giftPrice) {
-    return { message: null, error: 'Insufficient balance' }
+  // Use Stars flow (processTip with referenceType tip)
+  const stream = await getLivestream(livestreamId)
+  if (!stream) {
+    return { message: null, error: 'Stream not found' }
   }
 
-  // Get gift info
+  const payResult = await processTip(userId, stream.creator_id, giftPrice, 'stars')
+  if (!payResult.success) {
+    return { message: null, error: payResult.error || 'Gift payment failed' }
+  }
+
+  // Create chat message noting the gift
   const { data: gift } = await supabase
     .from('gifts')
-    .select('name')
+    .select('name, price')
     .eq('id', giftId)
     .single()
 
-  // Create message
   const { data: message, error } = await supabase
     .from('livestream_messages')
     .insert({
@@ -416,31 +417,13 @@ export async function sendLivestreamGift(
 
   if (error) return { message: null, error: error.message }
 
-  // Deduct from sender
+  // Track totals
   await supabase
-    .from('users')
-    .update({ balance: user.balance - giftPrice })
-    .eq('telegram_id', userId)
-
-  // Add to creator (90%)
-  const { data: stream } = await supabase
     .from('livestreams')
-    .select('creator_id, total_gifts_received')
-    .eq('id', livestreamId)
-    .single()
-
-  if (stream) {
-    await supabase.rpc('add_to_balance', {
-      user_telegram_id: stream.creator_id,
-      amount_to_add: Math.floor(giftPrice * 0.9)
+    .update({
+      total_gifts_received: (stream.total_gifts_received || 0) + (gift?.price || giftPrice)
     })
-
-    // Update stream gift total
-    await supabase
-      .from('livestreams')
-      .update({ total_gifts_received: (stream.total_gifts_received || 0) + giftPrice })
-      .eq('id', livestreamId)
-  }
+    .eq('id', livestreamId)
 
   return { message: message as LivestreamMessage, error: null }
 }

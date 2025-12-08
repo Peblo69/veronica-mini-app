@@ -149,13 +149,18 @@ serve(async (req) => {
 
   let user = existingUser
   if (!existingUser) {
+    // Use @username as display name (first_name) if available
+    const displayName = telegramUser.username
+      ? `@${telegramUser.username}`
+      : telegramUser.first_name || 'New User'
+
     // Create user
     const { data: newUser, error: createError } = await supabase
       .from('users')
       .insert({
         telegram_id: telegramId,
         username: telegramUser.username || null,
-        first_name: telegramUser.first_name || null,
+        first_name: displayName,
         last_name: telegramUser.last_name || null,
         photo_url: telegramUser.photo_url || null,
         is_premium: telegramUser.is_premium || false,

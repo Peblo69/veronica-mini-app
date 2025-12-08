@@ -13,6 +13,7 @@ import {
   languages, accentColors, getBlockedUsers, unblockUser, requestDataExport,
   requestAccountDeletion, updateProfile, getActiveSessions, terminateSession
 } from '../lib/settingsApi'
+import i18n from '../i18n'
 
 interface SettingsPageProps {
   user: UserType
@@ -74,6 +75,9 @@ export default function SettingsPage({ user, setUser, onClose }: SettingsPagePro
     const previousValue = settings[key]
     const newSettings = { ...settings, [key]: value }
     setSettings(newSettings)
+    if (key === 'language' && typeof value === 'string') {
+      i18n.changeLanguage(value)
+    }
     setSaving(true)
     const success = await updateUserSettings(user.telegram_id, { [key]: value })
     setSaving(false)

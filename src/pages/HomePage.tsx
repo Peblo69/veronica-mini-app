@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Heart, MessageCircle, Bookmark, Share2, MoreHorizontal, CheckCircle, Lock, Eye, X, Users, Trash2, EyeOff, Edit3, Flag, Copy, UserX, Volume2, VolumeX, Play, Star } from 'lucide-react'
+import { Heart, MoreHorizontal, CheckCircle, Lock, Eye, X, Users, Trash2, EyeOff, Edit3, Flag, Copy, UserX, Volume2, VolumeX, Play, Star, Image } from 'lucide-react'
+import { PixelHeart, PixelComment, PixelShare, PixelBookmark, PixelStar } from '../components/PixelIcons'
 import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, deletePost, getPostLikes, subscribeToFeedUpdates, type User, type Post } from '../lib/api'
 import { unlockPostWithPayment } from '../lib/paymentsApi'
 import { getLivestreams, subscribeToLivestreams, type Livestream } from '../lib/livestreamApi'
@@ -10,6 +11,7 @@ import CommentsSheet from '../components/CommentsSheet'
 import { reportPost } from '../lib/reportApi'
 import { blockUser } from '../lib/settingsApi'
 import { useInViewport } from '../hooks/useInViewport'
+import { useTranslation } from 'react-i18next'
 
 interface HomePageProps {
   user: User
@@ -44,6 +46,42 @@ function pauseAllVideosExcept(except: HTMLVideoElement | null) {
     }
   })
   currentlyPlaying = except
+}
+
+// Feed image with error handling and loading state
+function FeedImage({ url }: { url: string }) {
+  const [error, setError] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+
+  if (error) {
+    return (
+      <div
+        className="w-full flex items-center justify-center bg-white/5"
+        style={{ aspectRatio: '4/5' }}
+      >
+        <div className="text-center">
+          <Image className="w-10 h-10 text-white/30 mx-auto mb-2" />
+          <p className="text-sm text-white/40">Failed to load image</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative w-full" style={{ aspectRatio: '4/5' }}>
+      {!loaded && (
+        <div className="absolute inset-0 bg-white/5 animate-pulse" />
+      )}
+      <img
+        src={url}
+        alt=""
+        loading="lazy"
+        className={`w-full h-full object-contain bg-black select-none transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        onLoad={() => setLoaded(true)}
+        onError={() => setError(true)}
+      />
+    </div>
+  )
 }
 
 function FeedVideoPlayer({ src, muted = true, shouldPlay = false, onMuteChange }: FeedVideoPlayerProps) {
@@ -273,13 +311,7 @@ function MediaCarousel({ urls, canView, muted, onMuteChange, shouldPlay, onDoubl
                 shouldPlay={shouldPlay && currentIndex === index}
               />
             ) : (
-              <img
-                src={url}
-                alt=""
-                loading="lazy"
-                className="w-full object-contain bg-black select-none"
-                style={{ aspectRatio: '4/5' }}
-              />
+              <FeedImage url={url} />
             )}
           </div>
         ))}
@@ -327,6 +359,7 @@ function MediaCarousel({ urls, canView, muted, onMuteChange, shouldPlay, onDoubl
 }
 
 export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGoLive, onSheetStateChange }: HomePageProps) {
+  const { t } = useTranslation()
   const [posts, setPosts] = useState<Post[]>([])
   const [suggestions, setSuggestions] = useState<User[]>([])
   const [livestreams, setLivestreams] = useState<Livestream[]>([])
@@ -351,11 +384,11 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   const [commentsSheetOpen, setCommentsSheetOpen] = useState(false)
   const [commentsSheetPost, setCommentsSheetPost] = useState<number | null>(null)
 
-  // Notify parent when any bottom sheet is open
+  // Notify parent when any bottom sheet is open OR post detail is open
   useEffect(() => {
-    const anySheetOpen = commentsSheetOpen || likesSheetOpen || !!purchaseModal || postMenuOpen !== null
+    const anySheetOpen = commentsSheetOpen || likesSheetOpen || !!purchaseModal || postMenuOpen !== null || !!selectedPost
     onSheetStateChange?.(anySheetOpen)
-  }, [commentsSheetOpen, likesSheetOpen, purchaseModal, postMenuOpen, onSheetStateChange])
+  }, [commentsSheetOpen, likesSheetOpen, purchaseModal, postMenuOpen, selectedPost, onSheetStateChange])
 
   useEffect(() => {
     loadData()
@@ -410,7 +443,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   const loadData = async () => {
     const [feedPosts, suggestedCreators, liveStreams] = await Promise.all([
       getFeed(user.telegram_id),
-      getSuggestedCreators(6),
+      getSuggestedCreators(6, user.telegram_id),
       getLivestreams()
     ])
     setPosts(feedPosts)
@@ -538,13 +571,13 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   }
 
   const handleDeletePost = async (post: Post) => {
-    if (!window.confirm('Are you sure you want to delete this post?')) return
+    if (!window.confirm(t('feed.confirm.deletePost'))) return
     
     const result = await deletePost(post.id, post.creator_id)
     if (result.success) {
       setPosts(posts.filter(p => p.id !== post.id))
     } else {
-      alert('Failed to delete post')
+      alert(t('feed.errors.deleteFailed'))
     }
     setPostMenuOpen(null)
   }
@@ -556,20 +589,20 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   }
 
   const handleReportPost = async (post: Post) => {
-    const reason = window.prompt('Let us know why you are reporting this post:', 'Inappropriate content')
+    const reason = window.prompt(t('feed.report.promptReason'), t('feed.report.defaultReason'))
     const trimmedReason = reason?.trim()
     if (!trimmedReason) {
       setPostMenuOpen(null)
       return
     }
 
-    const description = window.prompt('Add any additional details (optional):')?.trim()
+    const description = window.prompt(t('feed.report.promptDescription'))?.trim()
     const result = await reportPost(user.telegram_id, post.id, trimmedReason, description || undefined)
 
     if (result.success) {
-      alert('Post reported. Thank you for helping keep the community safe.')
+      alert(t('feed.report.success'))
     } else {
-      alert(`Unable to submit report: ${result.error || 'Please try again later.'}`)
+      alert(t('feed.report.error', { error: result.error || t('feed.errors.tryAgain') }))
     }
     setPostMenuOpen(null)
   }
@@ -577,12 +610,12 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   const handleCopyLink = (post: Post) => {
     const link = `${window.location.origin}/post/${post.id}`
     navigator.clipboard.writeText(link)
-    alert('Link copied to clipboard!')
+    alert(t('feed.linkCopied'))
     setPostMenuOpen(null)
   }
 
   const handleBlockUser = async (post: Post) => {
-    if (!window.confirm(`Block @${post.creator?.username || 'this user'}? You won't see their content anymore.`)) {
+    if (!window.confirm(t('feed.confirm.blockUser', { user: post.creator?.username || t('feed.userFallback') }))) {
       return
     }
 
@@ -591,9 +624,9 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
     if (success) {
       setPosts(prev => prev.filter(p => p.creator_id !== post.creator_id))
       setSuggestions(prev => prev.filter(creator => creator.telegram_id !== post.creator_id))
-      alert('User blocked successfully.')
+      alert(t('feed.blockedSuccess'))
     } else {
-      alert('Failed to block this user. Please try again later.')
+      alert(t('feed.errors.blockFailed'))
     }
     setPostMenuOpen(null)
   }
@@ -691,9 +724,9 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   const formatTime = (date: string) => {
     const diff = Date.now() - new Date(date).getTime()
     const hours = Math.floor(diff / 3600000)
-    if (hours < 1) return 'Just now'
-    if (hours < 24) return hours + 'h'
-    return Math.floor(hours / 24) + 'd'
+    if (hours < 1) return t('feed.time.justNow')
+    if (hours < 24) return t('feed.time.hours', { count: hours })
+    return t('feed.time.days', { count: Math.floor(hours / 24) })
   }
 
   const renderPostCard = (post: Post) => (
@@ -709,7 +742,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
             />
           </div>
           <div className="flex items-center gap-1">
-            <span className="font-semibold text-sm text-white">{post.creator?.username || 'creator'}</span>
+            <span className="font-semibold text-sm text-white">{post.creator?.username || t('feed.userFallback')}</span>
             {post.creator?.is_verified && (
               <CheckCircle className="w-3.5 h-3.5 text-blue-500 fill-blue-500" />
             )}
@@ -752,13 +785,13 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                         }}
                         className="w-full px-4 py-2.5 text-left text-sm text-white hover:bg-white/10 flex items-center gap-2"
                       >
-                        <Edit3 className="w-4 h-4" /> Edit
+                        <Edit3 className="w-4 h-4" /> {t('feed.actions.edit')}
                       </button>
                       <button
                         onClick={() => handleDeletePost(post)}
                         className="w-full px-4 py-2.5 text-left text-sm text-red-500 hover:bg-white/10 flex items-center gap-2"
                       >
-                        <Trash2 className="w-4 h-4" /> Delete
+                        <Trash2 className="w-4 h-4" /> {t('feed.actions.delete')}
                       </button>
                       <div className="h-px bg-gray-100 mx-4 my-1" />
                     </>
@@ -767,13 +800,13 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                     onClick={() => handleCopyLink(post)}
                     className="w-full px-5 py-3 text-left text-[14px] font-semibold text-gray-700 hover:bg-gray-900 flex items-center gap-3"
                   >
-                    <Copy className="w-4 h-4" /> Copy link
+                    <Copy className="w-4 h-4" /> {t('feed.actions.copyLink')}
                   </button>
                   <button
                     onClick={() => handleHidePost(post)}
                     className="w-full px-5 py-3 text-left text-[14px] font-semibold text-gray-700 hover:bg-gray-900 flex items-center gap-3"
                   >
-                    <EyeOff className="w-4 h-4" /> Not interested
+                    <EyeOff className="w-4 h-4" /> {t('feed.actions.notInterested')}
                   </button>
                   {Number(post.creator_id) !== Number(user.telegram_id) && (
                     <>
@@ -782,13 +815,13 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                         onClick={() => handleBlockUser(post)}
                         className="w-full px-4 py-2.5 text-left text-sm text-white hover:bg-white/10 flex items-center gap-2"
                       >
-                        <UserX className="w-4 h-4" /> Block
+                        <UserX className="w-4 h-4" /> {t('feed.actions.block')}
                       </button>
                       <button
                         onClick={() => handleReportPost(post)}
                         className="w-full px-4 py-2.5 text-left text-sm text-red-500 hover:bg-white/10 flex items-center gap-2"
                       >
-                        <Flag className="w-4 h-4" /> Report
+                        <Flag className="w-4 h-4" /> {t('feed.actions.report')}
                       </button>
                     </>
                   )}
@@ -833,7 +866,9 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
             </div>
             
             <h3 className="text-2xl font-bold mb-3 tracking-tight">{getLockReason(post)}</h3>
-            <p className="text-white/60 mb-8 leading-relaxed">Unlock premium content from <span className="text-white font-semibold">{post.creator?.first_name}</span> and support their work.</p>
+            <p className="text-white/60 mb-8 leading-relaxed">
+              {t('feed.lock.subtitle', { name: post.creator?.first_name })}
+            </p>
             
             {post.unlock_price > 0 ? (
               <motion.button
@@ -843,7 +878,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
                 <Star className="w-5 h-5 fill-current" />
-                Unlock for {Math.ceil(post.unlock_price)} Stars
+                {t('feed.lock.unlockFor', { amount: Math.ceil(post.unlock_price) })}
               </motion.button>
             ) : (
               <motion.button
@@ -852,9 +887,9 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                 onClick={() => post.creator && onCreatorClick(post.creator)}
               >
                 {post.visibility === 'followers' ? (
-                  <><Eye className="w-5 h-5" /> Follow to View</>
+                  <><Eye className="w-5 h-5" /> {t('feed.lock.followToView')}</>
                 ) : (
-                  <><CheckCircle className="w-5 h-5" /> Subscribe to View</>
+                  <><CheckCircle className="w-5 h-5" /> {t('feed.lock.subscribeToView')}</>
                 )}
               </motion.button>
             )}
@@ -862,37 +897,54 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
         </div>
       ) : null}
 
-      {/* Action Bar - Instagram style */}
+      {/* Action Bar - 8-bit Pixel Style */}
       <div className="px-3 py-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-5">
             <button className="active:scale-90 transition-transform" onClick={() => handleLike(post)}>
-              <Heart className={`w-6 h-6 ${post.liked ? 'text-red-500 fill-red-500' : 'text-white'}`} />
+              <PixelHeart className={`w-7 h-7 ${post.liked ? 'text-red-500' : 'text-white'}`} filled={post.liked} />
             </button>
             <button className="active:scale-90 transition-transform" onClick={() => handleViewCommenters(post)}>
-              <MessageCircle className="w-6 h-6 text-white" />
+              <PixelComment className="w-7 h-7 text-white" />
             </button>
             <button className="active:scale-90 transition-transform">
-              <Share2 className="w-6 h-6 text-white" />
+              <PixelShare className="w-7 h-7 text-white" />
             </button>
           </div>
-          <button onClick={() => handleSave(post)} className="active:scale-90 transition-transform">
-            <Bookmark className={`w-6 h-6 ${post.saved ? 'text-white fill-white' : 'text-white'}`} />
-          </button>
+          <div className="flex items-center gap-4">
+            <button onClick={() => handleSave(post)} className="active:scale-90 transition-transform">
+              <PixelBookmark className={`w-7 h-7 text-white`} filled={post.saved} />
+            </button>
+            {/* Gift Star Button */}
+            <button
+              className="flex flex-col items-center active:scale-90 transition-transform"
+              onClick={() => {/* TODO: Open gift modal */}}
+            >
+              <PixelStar
+                className={`w-7 h-7 ${(post.gifts_count || 0) > 0 ? 'text-sky-400' : 'text-yellow-400'}`}
+                filled={(post.gifts_count || 0) > 0}
+              />
+              {(post.gifts_count || 0) > 0 && (
+                <span className="text-[10px] font-bold text-sky-400 -mt-0.5">{post.gifts_count}</span>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Likes Count */}
         {(post.likes_count || 0) > 0 && (
-          <button className="mt-2" onClick={() => handleViewLikes(post)}>
-            <span className="text-sm font-semibold text-white">{post.likes_count.toLocaleString()} likes</span>
+          <button className="block mt-2" onClick={() => handleViewLikes(post)}>
+            <span className="text-sm font-semibold text-white">
+              {t('feed.likesCount', { count: post.likes_count || 0 })}
+            </span>
           </button>
         )}
 
         {/* Caption */}
         {post.content && (
-          <div className="mt-1">
+          <div className="mt-2">
             <span className="text-sm text-white">
-              <span className="font-semibold mr-1">{post.creator?.username}</span>
+              <span className="font-semibold mr-1">{post.creator?.username || t('feed.userFallback')}</span>
               {post.content}
             </span>
           </div>
@@ -900,15 +952,17 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
         {/* View comments */}
         {post.comments_count > 0 && (
-          <button className="mt-1" onClick={() => handleViewCommenters(post)}>
-            <span className="text-sm text-gray-400">View all {post.comments_count} comments</span>
+          <button className="block mt-2" onClick={() => handleViewCommenters(post)}>
+            <span className="text-sm text-gray-400">
+              {t('feed.viewComments', { count: post.comments_count })}
+            </span>
           </button>
         )}
 
         {/* Add comment row */}
         <button className="flex items-center gap-2 mt-2 w-full" onClick={() => handleViewCommenters(post)}>
           <img src={user.avatar_url || 'https://i.pravatar.cc/150?u=' + user.telegram_id} className="w-6 h-6 rounded-full object-cover" alt="" />
-          <span className="text-sm text-gray-500">Add a comment...</span>
+          <span className="text-sm text-gray-500">{t('feed.addComment')}</span>
         </button>
 
         {/* Timestamp */}
@@ -921,18 +975,18 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
   const getLockReason = (post: Post) => {
     if (post.unlock_price > 0 && !post.is_purchased) {
-      return `Unlock for ${Math.ceil(post.unlock_price)} Stars`
+      return t('feed.lock.unlockFor', { amount: Math.ceil(post.unlock_price) })
     }
     if (post.is_nsfw && !post.is_subscribed) {
-      return 'Subscribe to see NSFW content'
+      return t('feed.lock.nsfw')
     }
     if (post.visibility === 'subscribers' && !post.is_subscribed) {
-      return 'Subscribe to see exclusive content'
+      return t('feed.lock.subscribers')
     }
     if (post.visibility === 'followers' && !post.is_following && !post.is_subscribed) {
-      return 'Follow to see this content'
+      return t('feed.lock.followers')
     }
-    return 'Content locked'
+    return t('feed.lock.default')
   }
 
   if (loading) {
@@ -958,21 +1012,21 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   }
 
   return (
-    <div className="bg-black max-w-lg mx-auto relative">
+    <div className="bg-black max-w-lg mx-auto relative pb-20">
       {/* Live Now Section - Stories style */}
       {(livestreams.length > 0 || user.is_creator) && (
         <div className="border-b border-gray-800 py-3 px-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-              <span className="text-[13px] font-semibold text-white">Live</span>
+              <span className="text-[13px] font-semibold text-white">{t('feed.live.title')}</span>
             </div>
             {user.is_creator && onGoLive && (
               <button
                 onClick={onGoLive}
                 className="text-[13px] font-semibold text-blue-500"
               >
-                Go Live
+                {t('feed.live.goLive')}
               </button>
             )}
           </div>
@@ -996,7 +1050,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                       </div>
                     </div>
                     <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded border-2 border-white">
-                      LIVE
+                      {t('feed.live.badge')}
                     </div>
                   </div>
                   <span className="text-[11px] text-white mt-1.5 truncate w-full text-center">
@@ -1007,7 +1061,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
             </div>
           ) : (
             <p className="text-[13px] text-gray-400 text-center py-4">
-              No one is live right now
+              {t('feed.live.none')}
             </p>
           )}
         </div>
@@ -1017,46 +1071,43 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
       {suggestions.length > 0 && (
         <div className="border-b border-gray-800 py-4 px-4">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-[14px] font-semibold text-gray-500">Suggested for you</span>
+            <span className="text-[14px] font-semibold text-gray-500">{t('feed.suggested.title')}</span>
             <button className="text-[13px] font-semibold text-white">
-              See All
+              {t('feed.suggested.seeAll')}
             </button>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+          <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1">
             {suggestions.map((creator) => (
               <div
                 key={creator.telegram_id}
-                className="min-w-[150px] bg-gray-900 rounded-lg p-4 flex flex-col items-center"
+                className="min-w-[100px] flex flex-col items-center"
               >
                 <button
                   onClick={() => onCreatorClick(creator)}
                   className="flex flex-col items-center"
                 >
-                  <div className="relative mb-3">
+                  <div className="relative mb-2">
                     <img
                       src={creator.avatar_url || `https://i.pravatar.cc/150?u=${creator.telegram_id}`}
-                      className="w-14 h-14 rounded-full object-cover"
+                      className="w-16 h-16 rounded-full object-cover border-2 border-white/10"
                       alt={creator.first_name}
                     />
                     {creator.is_verified && (
-                      <div className="absolute bottom-0 right-0 bg-white rounded-full p-[2px]">
+                      <div className="absolute bottom-0 right-0 bg-black rounded-full p-[2px]">
                         <CheckCircle className="w-3.5 h-3.5 text-blue-500 fill-blue-500" />
                       </div>
                     )}
                   </div>
-                  <span className="text-[13px] font-semibold text-white truncate w-full text-center">
-                    {creator.username}
-                  </span>
-                  <span className="text-[12px] text-gray-500 truncate w-full text-center">
-                    {creator.first_name}
+                  <span className="text-[12px] font-medium text-white truncate w-full text-center max-w-[90px]">
+                    {creator.username || creator.first_name}
                   </span>
                 </button>
                 <button
                   onClick={() => onCreatorClick(creator)}
-                  className="mt-3 w-full py-1.5 bg-blue-500 text-white text-[13px] font-semibold rounded-lg"
+                  className="mt-2 px-4 py-1 bg-blue-500 text-white text-[11px] font-semibold rounded-md"
                 >
-                  Follow
+                  {t('feed.actions.follow')}
                 </button>
               </div>
             ))}
@@ -1071,8 +1122,8 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
             <div className="w-16 h-16 border-2 border-white rounded-full flex items-center justify-center mx-auto mb-4">
               <Users className="w-8 h-8 text-white" />
             </div>
-            <h3 className="text-xl font-semibold text-white mb-2">Welcome to Veronica</h3>
-            <p className="text-sm text-gray-400">Follow creators to see their posts in your feed.</p>
+            <h3 className="text-xl font-semibold text-white mb-2">{t('feed.empty.title')}</h3>
+            <p className="text-sm text-gray-400">{t('feed.empty.subtitle')}</p>
           </div>
         ) : (
           <div>
@@ -1106,7 +1157,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
               onClick={e => e.stopPropagation()}
             >
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold text-white">Unlock Content</h3>
+                <h3 className="text-xl font-bold text-white">{t('feed.purchase.title')}</h3>
                 <button onClick={() => !purchasing && setPurchaseModal(null)} className="p-1 rounded-full hover:bg-white/10 transition-colors">
                   <X className="w-6 h-6 text-gray-400" />
                 </button>
@@ -1117,7 +1168,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                 <div className="relative w-20 h-20 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
                   <Star className="w-10 h-10 text-white fill-white" />
                 </div>
-                <p className="text-gray-400 text-sm font-medium mb-2">Pay with Telegram Stars</p>
+                <p className="text-gray-400 text-sm font-medium mb-2">{t('feed.purchase.payWithStars')}</p>
                 <div className="flex items-center justify-center gap-2">
                   <Star className="w-6 h-6 text-yellow-400 fill-yellow-400" />
                   <span className="text-4xl font-bold text-white tracking-tight">{Math.ceil(purchaseModal.unlock_price)}</span>
@@ -1133,7 +1184,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                   />
                   <div className="flex-1">
                     <p className="text-white font-medium">{purchaseModal.creator?.first_name || purchaseModal.creator?.username}</p>
-                    <p className="text-gray-500 text-sm">Creator receives 85%</p>
+                    <p className="text-gray-500 text-sm">{t('feed.purchase.creatorShare')}</p>
                   </div>
                 </div>
               </div>
@@ -1150,13 +1201,13 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
                 ) : (
                   <>
                     <Star className="w-5 h-5 fill-current" />
-                    Pay {Math.ceil(purchaseModal.unlock_price)} Stars
+                    {t('feed.purchase.payAmount', { amount: Math.ceil(purchaseModal.unlock_price) })}
                   </>
                 )}
               </motion.button>
 
               <p className="text-center text-gray-500 text-xs mt-4">
-                Payment powered by Telegram Stars
+                {t('feed.purchase.poweredBy')}
               </p>
             </motion.div>
           </motion.div>
@@ -1180,7 +1231,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
       <BottomSheet
         isOpen={likesSheetOpen}
         onClose={() => setLikesSheetOpen(false)}
-        title="Likes"
+        title={t('feed.likesTitle')}
         users={likesSheetUsers}
         loading={likesSheetLoading}
         onUserClick={(user) => {

@@ -13,6 +13,12 @@ type AdminAction =
   | { action: 'set_post_visibility'; postId: number; visibility: string }
   | { action: 'list_users'; limit?: number }
   | { action: 'list_posts'; limit?: number }
+  | { action: 'list_audit'; limit?: number }
+  | { action: 'list_orders'; limit?: number }
+  | { action: 'stats_overview' }
+  | { action: 'sales_by_day' }
+  | { action: 'top_creators' }
+  | { action: 'top_buyers' }
   | { action: 'stats' }
 
 const ADMIN_HEADER = 'x-admin-token'
@@ -119,6 +125,36 @@ async function handleListPosts(limit = 50) {
   return jsonResponse({ success: true, data })
 }
 
+async function handleListAudit(limit = 50) {
+  const safeLimit = Math.min(Math.max(limit, 1), 200)
+  const { data, error } = await supabase
+    .from('admin_audit_logs')
+    .select('id, actor, action, metadata, created_at')
+    .order('created_at', { ascending: false })
+    .limit(safeLimit)
+
+  if (error) return jsonResponse({ success: false, error: error.message }, 400)
+  return jsonResponse({ success: true, data })
+}
+
+async function handleListOrders(limit = 50) {
+  const safeLimit = Math.min(Math.max(limit, 1), 200)
+  const { data, error } = await supabase
+    .from('orders')
+    .select('id, user_id, creator_id, reference_type, reference_id, amount, fee, net, status, created_at, completed_at')
+    .order('created_at', { ascending: false })
+    .limit(safeLimit)
+
+  if (error) return jsonResponse({ success: false, error: error.message }, 400)
+  return jsonResponse({ success: true, data })
+}
+
+async function handleView(viewName: string) {
+  const { data, error } = await supabase.from(viewName).select('*')
+  if (error) return jsonResponse({ success: false, error: error.message }, 400)
+  return jsonResponse({ success: true, data })
+}
+
 Deno.serve(async (req) => {
   // Auth check
   const provided = req.headers.get(ADMIN_HEADER)
@@ -181,9 +217,45 @@ Deno.serve(async (req) => {
     return res
   }
 
+  if (payload.action === 'list_audit') {
+    const res = await handleListAudit(payload.limit)
+    await logAudit(actor, 'list_audit', { limit: payload.limit ?? 50 })
+    return res
+  }
+
+  if (payload.action === 'list_orders') {
+    const res = await handleListOrders(payload.limit)
+    await logAudit(actor, 'list_orders', { limit: payload.limit ?? 50 })
+    return res
+  }
+
   if (payload.action === 'stats') {
     const res = await handleStats()
     await logAudit(actor, 'stats')
+    return res
+  }
+
+  if (payload.action === 'stats_overview') {
+    const res = await handleView('admin_order_summary')
+    await logAudit(actor, 'stats_overview')
+    return res
+  }
+
+  if (payload.action === 'sales_by_day') {
+    const res = await handleView('admin_sales_by_day')
+    await logAudit(actor, 'sales_by_day')
+    return res
+  }
+
+  if (payload.action === 'top_creators') {
+    const res = await handleView('admin_top_creators')
+    await logAudit(actor, 'top_creators')
+    return res
+  }
+
+  if (payload.action === 'top_buyers') {
+    const res = await handleView('admin_top_buyers')
+    await logAudit(actor, 'top_buyers')
     return res
   }
 
