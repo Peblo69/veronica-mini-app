@@ -1,7 +1,7 @@
-import { useState, useEffect, Suspense, lazy } from 'react'
+import { useState, useEffect, Suspense, lazy, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Home, Search, PlusSquare, MessageCircle, User } from 'lucide-react'
-import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Home, Search, PlusSquare, MessageCircle, User, Plus } from 'lucide-react'
+import { Routes, Route, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import './index.css'
 
 import { useViewport } from './hooks/useViewport'
@@ -70,6 +70,57 @@ function useKeyboardVisible() {
   return visible
 }
 
+// Hook to detect scroll idle state - smooth show/hide for FAB
+function useScrollIdle(delay = 150) {
+  const [isIdle, setIsIdle] = useState(true)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const rafRef = useRef<number | null>(null)
+  const lastScrollY = useRef(0)
+
+  useEffect(() => {
+    let ticking = false
+
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY
+
+      // Only react if we actually moved
+      if (Math.abs(currentScrollY - lastScrollY.current) < 2) return
+      lastScrollY.current = currentScrollY
+
+      if (!ticking) {
+        rafRef.current = requestAnimationFrame(() => {
+          // Immediately hide when scrolling starts
+          setIsIdle(false)
+
+          // Clear any existing timeout
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current)
+          }
+
+          // Set new timeout to show after idle
+          timeoutRef.current = setTimeout(() => {
+            setIsIdle(true)
+          }, delay)
+
+          ticking = false
+        })
+        ticking = true
+      }
+    }
+
+    // Use passive listener for performance
+    window.addEventListener('scroll', handleScroll, { passive: true })
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll)
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    }
+  }, [delay])
+
+  return isIdle
+}
+
 const LoadingOverlay = ({ message }: { message?: string }) => (
   <div className="fixed inset-0 bg-black flex items-center justify-center z-[200]">
     <div className="flex flex-col items-center gap-3">
@@ -79,13 +130,22 @@ const LoadingOverlay = ({ message }: { message?: string }) => (
   </div>
 )
 
+// Wrapper to pass mode from URL to CreatePage
+function CreatePageWrapper({ user, onBecomeCreator }: { user: UserType; onBecomeCreator: () => void }) {
+  const [searchParams] = useSearchParams()
+  const mode = searchParams.get('mode') as 'text' | 'media' | null
+  return <CreatePage user={user} onBecomeCreator={onBecomeCreator} mode={mode || 'media'} />
+}
+
 function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const keyboardVisible = useKeyboardVisible()
+  const scrollIdle = useScrollIdle(200) // Show FAB after 200ms of no scrolling
   const [viewingCreator, setViewingCreator] = useState<any>(null)
-  const [user, setUser] = useState<UserType | null>(null)
+  const [user, setUserInternal] = useState<UserType | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadingError, setLoadingError] = useState<string | null>(null)
   const [showApplication, setShowApplication] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
   const [secretBuffer, setSecretBuffer] = useState('')
@@ -96,6 +156,41 @@ function App() {
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   void secretBuffer
+
+  // CRITICAL: Lock the telegram_id once set - it can NEVER change during a session
+  // This prevents profile corruption bugs from realtime events or race conditions
+  const lockedTelegramIdRef = useRef<number | null>(null)
+
+  // Safe user setter that validates telegram_id matches locked value
+  const setUser = useCallback((newUser: UserType | null | ((prev: UserType | null) => UserType | null)) => {
+    setUserInternal((prev) => {
+      const resolved = typeof newUser === 'function' ? newUser(prev) : newUser
+
+      // If setting to null, that's fine
+      if (resolved === null) {
+        return null
+      }
+
+      // First time setting user - lock the telegram_id
+      if (lockedTelegramIdRef.current === null) {
+        lockedTelegramIdRef.current = resolved.telegram_id
+        console.log('[USER SECURITY] Locked telegram_id:', resolved.telegram_id)
+        return resolved
+      }
+
+      // CRITICAL: Validate telegram_id matches locked value
+      if (resolved.telegram_id !== lockedTelegramIdRef.current) {
+        console.error('[USER SECURITY] BLOCKED attempt to change user!', {
+          locked: lockedTelegramIdRef.current,
+          attempted: resolved.telegram_id,
+        })
+        // Return previous user unchanged - DO NOT allow the change
+        return prev
+      }
+
+      return resolved
+    })
+  }, [])
 
   useViewport()
 
@@ -198,10 +293,36 @@ function App() {
   }, [user])
 
   const initUser = async () => {
+    setLoading(true)
+    setLoadingError(null)
+
+    // Wait briefly for Telegram to populate initDataUnsafe; never seed a fake user in production
+    const waitForTelegramUser = async (timeoutMs = 4000, intervalMs = 120) => {
+      const tgApp = (window as any).Telegram?.WebApp
+      if (!tgApp) return null
+
+      const start = Date.now()
+      let userData = tgApp.initDataUnsafe?.user
+
+      while (!userData && Date.now() - start < timeoutMs) {
+        await new Promise(resolve => setTimeout(resolve, intervalMs))
+        userData = tgApp.initDataUnsafe?.user
+      }
+      return userData ?? null
+    }
+
     try {
       const tg = (window as any).Telegram?.WebApp
 
-      if (tg?.initDataUnsafe?.user) {
+      if (!tg) {
+        setLoadingError('Telegram session not detected. Please open the bot inside Telegram to continue.')
+        setLoading(false)
+        return
+      }
+
+      const telegramUserData = await waitForTelegramUser()
+
+      if (telegramUserData?.id) {
         tg.ready()
         tg.expand()
 
@@ -222,24 +343,40 @@ function App() {
           tg.setBackgroundColor('#000000')
         }
 
+        // CRITICAL: Get telegram_id from the source of truth - Telegram WebApp
+        const telegramUserId = telegramUserData.id
+        console.log('[USER INIT] Telegram user ID:', telegramUserId)
+        console.log('[USER INIT] Telegram username:', telegramUserData.username)
+
         const dbUser = await getOrCreateUser({
-          id: tg.initDataUnsafe.user.id,
-          username: tg.initDataUnsafe.user.username,
-          first_name: tg.initDataUnsafe.user.first_name,
-          last_name: tg.initDataUnsafe.user.last_name,
-          photo_url: tg.initDataUnsafe.user.photo_url,
+          id: telegramUserId,
+          username: telegramUserData.username,
+          first_name: telegramUserData.first_name,
+          last_name: telegramUserData.last_name,
+          photo_url: telegramUserData.photo_url,
         })
 
         if (dbUser) {
+          // CRITICAL: Verify database returned correct user
+          if (dbUser.telegram_id !== telegramUserId) {
+            console.error('[USER SECURITY] Database returned WRONG user!', {
+              expected: telegramUserId,
+              received: dbUser.telegram_id,
+            })
+            // Force correct telegram_id
+            dbUser.telegram_id = telegramUserId
+          }
+          console.log('[USER INIT] Setting user from DB:', dbUser.telegram_id, dbUser.username)
           setUser(dbUser)
         } else {
           // Use @username as display name if available
-          const displayName = tg.initDataUnsafe.user.username
-            ? `@${tg.initDataUnsafe.user.username}`
-            : tg.initDataUnsafe.user.first_name || 'New User'
+          const displayName = telegramUserData.username
+            ? `@${telegramUserData.username}`
+            : telegramUserData.first_name || 'New User'
+          console.log('[USER INIT] Creating fallback user:', telegramUserId)
           setUser({
-            telegram_id: tg.initDataUnsafe.user.id,
-            username: tg.initDataUnsafe.user.username || 'user',
+            telegram_id: telegramUserId, // Use the variable, not re-read
+            username: telegramUserData.username || 'user',
             first_name: displayName,
             balance: 0,
             is_creator: false,
@@ -252,45 +389,15 @@ function App() {
           })
         }
       } else {
-        const fallbackTelegramUser = {
-          id: 123456789,
-          username: 'testuser',
-          first_name: 'Test',
-          last_name: 'User',
-          photo_url: 'https://i.pravatar.cc/150?u=testuser',
-        }
-        const seededUser = await getOrCreateUser(fallbackTelegramUser)
-
-        setUser(seededUser || {
-          telegram_id: fallbackTelegramUser.id,
-          username: fallbackTelegramUser.username,
-          first_name: fallbackTelegramUser.first_name,
-          last_name: fallbackTelegramUser.last_name,
-          balance: 100,
-          is_creator: false,
-          is_verified: false,
-          subscription_price: 0,
-          followers_count: 0,
-          following_count: 0,
-          posts_count: 0,
-          likes_received: 0,
-        })
+        setLoadingError('Telegram user data was not available. Close Telegram and reopen the mini app.')
+        setLoading(false)
+        return
       }
     } catch (error) {
       console.error('Failed to init user:', error)
-      setUser({
-        telegram_id: 123456789,
-        username: 'guest',
-        first_name: 'Guest',
-        balance: 0,
-        is_creator: false,
-        is_verified: false,
-        subscription_price: 0,
-        followers_count: 0,
-        following_count: 0,
-        posts_count: 0,
-        likes_received: 0,
-      })
+      setLoadingError('Could not load your profile. Please try again or reopen Telegram.')
+      setLoading(false)
+      return
     }
     setLoading(false)
   }
@@ -316,14 +423,24 @@ function App() {
     if (user) {
       const updatedUser = await getUser(user.telegram_id)
       if (updatedUser) {
+        // CRITICAL: Verify telegram_id matches before setting
+        if (updatedUser.telegram_id !== user.telegram_id) {
+          console.error('[USER SECURITY] getUser returned wrong user in handleApplicationSuccess!', {
+            expected: user.telegram_id,
+            received: updatedUser.telegram_id,
+          })
+          return // Don't update with wrong user
+        }
+        console.log('[USER UPDATE] handleApplicationSuccess:', updatedUser.telegram_id)
         setUser(updatedUser)
       }
     }
   }
 
-  const openLivestream = (isCreator: boolean, livestreamId?: string) => {
-    setShowLivestream({ isCreator, livestreamId })
-  }
+  // Livestream feature disabled
+  // const openLivestream = (isCreator: boolean, livestreamId?: string) => {
+  //   setShowLivestream({ isCreator, livestreamId })
+  // }
 
   const handleMessageCreator = (conversationId: string) => {
     setViewingCreator(null)
@@ -346,14 +463,12 @@ function App() {
             <HomePage
               user={user}
               onCreatorClick={openCreatorProfile}
-              onLivestreamClick={(livestreamId) => openLivestream(false, livestreamId)}
-              onGoLive={() => openLivestream(true)}
               onSheetStateChange={setIsSheetOpen}
             />
           )}
         />
         <Route path="/explore" element={<ExplorePage user={user} onCreatorClick={openCreatorProfile} />} />
-        <Route path="/create" element={<CreatePage user={user} onBecomeCreator={openApplication} />} />
+        <Route path="/create" element={<CreatePageWrapper user={user} onBecomeCreator={openApplication} />} />
         <Route
           path="/messages/*"
           element={(
@@ -374,6 +489,7 @@ function App() {
               setUser={setUser}
               onBecomeCreator={openApplication}
               onSettingsClick={() => setShowSettings(true)}
+              onViewProfile={openCreatorProfile}
             />
           )}
         />
@@ -423,12 +539,30 @@ function App() {
             onBack={closeCreatorProfile}
             onMessage={handleMessageCreator}
             onUserUpdate={(updates) => setUser(prev => prev ? { ...prev, ...updates } : null)}
+            onViewProfile={openCreatorProfile}
           />
         </Suspense>
       )
     }
 
     return routeContent
+  }
+
+  if (loadingError && (!user || loading)) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center px-6">
+        <div className="text-center space-y-4 max-w-sm">
+          <div className="text-white text-lg font-semibold">Couldn&apos;t load your profile</div>
+          <p className="text-gray-400 text-sm leading-relaxed">{loadingError}</p>
+          <button
+            onClick={() => { void initUser() }}
+            className="px-4 py-2 rounded-full bg-white text-black font-semibold active:scale-95 transition"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (loading || !user) {
@@ -472,6 +606,32 @@ function App() {
           <Suspense fallback={<LoadingOverlay message="Loading settings..." />}>
             <SettingsPage user={user} setUser={setUser} onClose={() => setShowSettings(false)} />
           </Suspense>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Action Button - Quick thoughts (text only) - hides on scroll, shows when idle */}
+      <AnimatePresence>
+        {showBottomNav && location.pathname !== '/create' && scrollIdle && (
+          <motion.button
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.8, opacity: 0 }}
+            transition={{
+              duration: 0.25,
+              ease: [0.4, 0, 0.2, 1], // smooth easing
+            }}
+            onClick={() => navigate('/create?mode=text')}
+            className="fixed right-4 z-50 w-14 h-14 rounded-full flex items-center justify-center shadow-lg active:scale-95"
+            style={{
+              bottom: 'calc(80px + max(12px, env(safe-area-inset-bottom, 0px)))',
+              background: 'rgba(255, 255, 255, 0.1)',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+            }}
+          >
+            <Plus className="w-7 h-7 text-white" strokeWidth={2} />
+          </motion.button>
         )}
       </AnimatePresence>
 

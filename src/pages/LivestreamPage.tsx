@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import AgoraRTC from 'agora-rtc-sdk-ng'
 import type { IAgoraRTCClient, ICameraVideoTrack, IMicrophoneAudioTrack, IRemoteVideoTrack, IRemoteAudioTrack } from 'agora-rtc-sdk-ng'
-import { ArrowLeft, Video, VideoOff, Mic, MicOff, Users, Gift, Send, X, Clock, Loader2, Image as ImageIcon, Shield } from 'lucide-react'
+import { ArrowLeft, Video, VideoOff, Mic, MicOff, Users, Gift, Send, X, Clock, Loader2, Image as ImageIcon, Shield, MonitorSmartphone, Pin, Trash2, Ban } from 'lucide-react'
 import { type User } from '../lib/api'
 import { getGifts, type Gift as GiftType } from '../lib/chatApi'
 import {
@@ -26,6 +26,7 @@ import {
   type LivestreamAccessState
 } from '../lib/livestreamApi'
 import { uploadLivestreamMedia } from '../lib/storage'
+import { useTranslation } from 'react-i18next'
 
 interface LivestreamPageProps {
   user: User
@@ -35,6 +36,7 @@ interface LivestreamPageProps {
 }
 
 export default function LivestreamPage({ user, livestreamId, isCreator, onExit }: LivestreamPageProps) {
+  const { t } = useTranslation()
   const [client, setClient] = useState<IAgoraRTCClient | null>(null)
   const [localVideoTrack, setLocalVideoTrack] = useState<ICameraVideoTrack | null>(null)
   const [localAudioTrack, setLocalAudioTrack] = useState<IMicrophoneAudioTrack | null>(null)
@@ -58,6 +60,12 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
   const [accessState, setAccessState] = useState<LivestreamAccessState | null>(null)
   const [showTicketPrompt, setShowTicketPrompt] = useState(false)
   const [unlocking, setUnlocking] = useState(false)
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([])
+  const [selectedAudioDevice, setSelectedAudioDevice] = useState<string | null>(null)
+  const [selectedVideoDevice, setSelectedVideoDevice] = useState<string | null>(null)
+  const [pinMessageId, setPinMessageId] = useState<string | null>(null)
+  const [permissionStatus, setPermissionStatus] = useState<'checking' | 'granted' | 'denied' | 'prompt'>('checking')
 
   // Stream title for creator
   const [streamTitle, setStreamTitle] = useState('')
@@ -84,16 +92,24 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
   })
 
   // Fetch Agora token if configured
-  const fetchAgoraToken = async (channel: string, uid: number) => {
+  const fetchAgoraToken = async (channel: string, uid: string, role: 'publisher' | 'subscriber' = 'publisher') => {
     const tokenUrl = import.meta.env.VITE_AGORA_TOKEN_URL
-    if (!tokenUrl) return null
+    if (!tokenUrl) {
+      console.warn('[Agora] No token URL configured - connection may fail if tokens are required')
+      return null
+    }
     try {
-      const res = await fetch(`${tokenUrl}?channel=${encodeURIComponent(channel)}&uid=${uid}`)
-      if (!res.ok) return null
+      console.log('[Agora] Fetching token for channel:', channel, 'uid:', uid, 'role:', role)
+      const res = await fetch(`${tokenUrl}?channel=${encodeURIComponent(channel)}&uid=${encodeURIComponent(uid)}&role=${role}`)
+      if (!res.ok) {
+        console.error('[Agora] Token fetch failed with status:', res.status)
+        return null
+      }
       const data = await res.json()
+      console.log('[Agora] Token fetched successfully')
       return data.token || null
     } catch (err) {
-      console.warn('[Agora] token fetch failed', err)
+      console.warn('[Agora] Token fetch failed:', err)
       return null
     }
   }
@@ -103,6 +119,8 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
     loadGifts()
 
     if (isCreator) {
+      // For creators, request permissions immediately to show device options
+      requestPermissionsAndLoadDevices()
       // Pre-fill defaults if already had a scheduled title
       initialSettingsRef.current = {
         title: streamTitle,
@@ -112,6 +130,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
       }
       checkStreamingLimit()
     } else if (livestreamId) {
+      // Viewers don't need camera/mic permissions
       initViewer()
     }
 
@@ -157,12 +176,84 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
     setGifts(data)
   }
 
+  // Check permission status using the Permission API (where available)
+  const checkPermissionStatus = async () => {
+    try {
+      // Try the Permissions API first (Chrome/Edge)
+      if (navigator.permissions && navigator.permissions.query) {
+        const [cameraPermission, micPermission] = await Promise.all([
+          navigator.permissions.query({ name: 'camera' as PermissionName }),
+          navigator.permissions.query({ name: 'microphone' as PermissionName })
+        ])
+
+        if (cameraPermission.state === 'granted' && micPermission.state === 'granted') {
+          return 'granted'
+        } else if (cameraPermission.state === 'denied' || micPermission.state === 'denied') {
+          return 'denied'
+        }
+        return 'prompt'
+      }
+      // Permissions API not available, we'll need to request to find out
+      return 'prompt'
+    } catch {
+      return 'prompt'
+    }
+  }
+
+  // Request permissions and load devices
+  const requestPermissionsAndLoadDevices = async () => {
+    setPermissionStatus('checking')
+
+    try {
+      // First check if we already have permission
+      const status = await checkPermissionStatus()
+
+      if (status === 'denied') {
+        setPermissionStatus('denied')
+        return false
+      }
+
+      if (status === 'prompt' || status === 'granted') {
+        // Request permission by getting a stream, then immediately stop it
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true
+        })
+        // Stop the test stream - we just needed to trigger the permission prompt
+        stream.getTracks().forEach(track => track.stop())
+      }
+
+      // Now load devices (they'll have proper labels now that permission is granted)
+      const devices = await AgoraRTC.getDevices()
+      const audios = devices.filter(d => d.kind === 'audioinput')
+      const videos = devices.filter(d => d.kind === 'videoinput')
+      setAudioDevices(audios)
+      setVideoDevices(videos)
+      if (audios.length && !selectedAudioDevice) setSelectedAudioDevice(audios[0].deviceId)
+      if (videos.length && !selectedVideoDevice) setSelectedVideoDevice(videos[0].deviceId)
+
+      setPermissionStatus('granted')
+      return true
+    } catch (err: any) {
+      console.error('[Permissions] Request failed:', err)
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setPermissionStatus('denied')
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        // No devices but permission was probably granted
+        setPermissionStatus('granted')
+      } else {
+        setPermissionStatus('denied')
+      }
+      return false
+    }
+  }
+
   const handleIncomingMessage = (msg: LivestreamMessage) => {
     setMessages(prev => [...prev, msg])
     if (msg.message_type === 'gift' && msg.gift) {
       setGiftAnimation({
         name: msg.gift.name,
-        sender: msg.user?.first_name || msg.user?.username || 'Someone'
+        sender: msg.user?.first_name || msg.user?.username || t('livestream.common.someone')
       })
       setTimeout(() => setGiftAnimation(null), 3000)
     }
@@ -180,7 +271,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
     const remaining = await getRemainingStreamMinutes(user.telegram_id)
     setRemainingMinutes(remaining)
     if (remaining <= 0) {
-      setError('You have reached your daily streaming limit (60 minutes). Try again tomorrow!')
+      setError(t('livestream.errors.limitReached'))
       setLoading(false)
     } else {
       setLoading(false)
@@ -194,7 +285,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
       // Get livestream info
       const stream = await getLivestream(livestreamId)
       if (!stream || stream.status !== 'live') {
-        setError('This stream has ended or does not exist')
+        setError(t('livestream.errors.ended'))
         setLoading(false)
         return
       }
@@ -213,7 +304,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
           return
         }
 
-        setError(access.reason || 'You do not have access to this stream.')
+        setError(access.reason || t('livestream.errors.noAccess'))
         setLoading(false)
         return
       }
@@ -222,7 +313,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
       await enterLivestreamAsViewer(stream)
     } catch (err) {
       console.error('Init viewer error:', err)
-      setError('Failed to join stream')
+      setError(t('livestream.errors.joinFailed'))
       setLoading(false)
     }
   }
@@ -253,12 +344,14 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
         setRemoteAudioTrack(null)
       })
 
-      const token = await fetchAgoraToken(channel, user.telegram_id)
-      await agoraClient.join(AGORA_APP_ID, channel, token, user.telegram_id)
+      // Use string UID consistently (token uses account mode)
+      const agoraUid = String(user.telegram_id)
+      const token = await fetchAgoraToken(channel, agoraUid, 'subscriber')
+      await agoraClient.join(AGORA_APP_ID, channel, token, agoraUid)
       setClient(agoraClient)
     } catch (err) {
       console.error('Agora viewer init error:', err)
-      setError('Failed to connect to stream')
+      setError(t('livestream.errors.connectFailed'))
     }
   }
 
@@ -279,14 +372,14 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
       setLoading(false)
     } catch (err) {
       console.error('Enter viewer error:', err)
-      setError('Failed to load stream')
+      setError(t('livestream.errors.loadFailed'))
       setLoading(false)
     }
   }
 
   const startStream = async () => {
     if (!streamTitle.trim()) {
-      alert('Please enter a stream title')
+      alert(t('livestream.errors.titleRequired'))
       return
     }
 
@@ -300,7 +393,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
         const upload = await uploadLivestreamMedia(thumbnailFile, user.telegram_id)
         setThumbnailUploading(false)
         if (upload.error || !upload.url) {
-          alert('Failed to upload thumbnail')
+          alert(t('livestream.errors.thumbnailUpload'))
           setLoading(false)
           return
         }
@@ -315,7 +408,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
         thumbnail_url: thumbnailUrl
       })
       if (!stream) {
-        setError('Failed to create stream')
+        setError(t('livestream.errors.createFailed'))
         setLoading(false)
         return
       }
@@ -332,18 +425,44 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
       setLoading(false)
     } catch (err) {
       console.error('Start stream error:', err)
-      setError('Failed to start stream')
+      setError(t('livestream.errors.startFailed'))
       setLoading(false)
     }
   }
 
   const initAgoraBroadcaster = async (channel: string) => {
     try {
+      // Check if Agora App ID is configured
+      if (!AGORA_APP_ID) {
+        console.error('Agora App ID not configured')
+        setError('Livestream service not configured. Please contact support.')
+        return
+      }
+
+      console.log('[Agora] Creating client for channel:', channel)
       const agoraClient = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' })
       agoraClient.setClientRole('host')
 
-      // Get camera and microphone
-      const [audioTrack, videoTrack] = await AgoraRTC.createMicrophoneAndCameraTracks()
+      // Get camera and microphone (selected devices if set)
+      console.log('[Agora] Creating tracks with devices:', { audio: selectedAudioDevice, video: selectedVideoDevice })
+      const micConstraints = selectedAudioDevice ? { microphoneId: selectedAudioDevice } : undefined
+      const camConstraints = selectedVideoDevice ? { cameraId: selectedVideoDevice } : undefined
+
+      let audioTrack, videoTrack
+      try {
+        [audioTrack, videoTrack] = await AgoraRTC.createMicrophoneAndCameraTracks(micConstraints, camConstraints)
+        console.log('[Agora] Tracks created successfully')
+      } catch (trackErr: any) {
+        console.error('[Agora] Track creation failed:', trackErr)
+        if (trackErr.code === 'PERMISSION_DENIED' || trackErr.name === 'NotAllowedError') {
+          setError('Camera/microphone permission was revoked. Please allow access and try again.')
+        } else if (trackErr.code === 'DEVICE_NOT_FOUND' || trackErr.name === 'NotFoundError') {
+          setError('Camera or microphone not found. Please check your device connections.')
+        } else {
+          setError(`Failed to access camera/microphone: ${trackErr.message || trackErr.code || 'Unknown error'}`)
+        }
+        return
+      }
 
       setLocalAudioTrack(audioTrack)
       setLocalVideoTrack(videoTrack)
@@ -351,17 +470,43 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
       // Play local video
       if (videoRef.current) {
         videoTrack.play(videoRef.current)
+        console.log('[Agora] Local video playing')
       }
 
       // Join and publish
-      const token = await fetchAgoraToken(channel, user.telegram_id)
-      await agoraClient.join(AGORA_APP_ID, channel, token, user.telegram_id)
-      await agoraClient.publish([audioTrack, videoTrack])
+      // Use string UID consistently (token uses account mode)
+      const agoraUid = String(user.telegram_id)
+      console.log('[Agora] Joining channel with UID:', agoraUid)
+      const token = await fetchAgoraToken(channel, agoraUid, 'publisher')
+
+      try {
+        await agoraClient.join(AGORA_APP_ID, channel, token, agoraUid)
+        console.log('[Agora] Joined channel successfully')
+      } catch (joinErr: any) {
+        console.error('[Agora] Join failed:', joinErr)
+        setError(`Failed to connect to stream server: ${joinErr.message || joinErr.code || 'Connection error'}`)
+        audioTrack?.close()
+        videoTrack?.close()
+        return
+      }
+
+      try {
+        await agoraClient.publish([audioTrack, videoTrack])
+        console.log('[Agora] Published tracks successfully')
+      } catch (pubErr: any) {
+        console.error('[Agora] Publish failed:', pubErr)
+        setError(`Failed to start broadcasting: ${pubErr.message || pubErr.code || 'Publish error'}`)
+        audioTrack?.close()
+        videoTrack?.close()
+        await agoraClient.leave()
+        return
+      }
 
       setClient(agoraClient)
-    } catch (err) {
+      console.log('[Agora] Broadcaster initialized successfully!')
+    } catch (err: any) {
       console.error('Agora broadcaster init error:', err)
-      setError('Failed to access camera/microphone. Please grant permissions.')
+      setError(`Stream setup failed: ${err.message || 'Unknown error'}`)
     }
   }
 
@@ -431,6 +576,14 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
     setSending(false)
   }
 
+  const handlePinMessage = (messageId: string) => {
+    setPinMessageId(messageId)
+  }
+
+  const handleDeleteMessage = (messageId: string) => {
+    setMessages(prev => prev.filter(m => m.id !== messageId))
+  }
+
   const handleSendGift = async (gift: GiftType) => {
     if (!livestream || sending) return
 
@@ -447,7 +600,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
     if (unlocking) return
     const targetStream = livestream || (livestreamId ? await getLivestream(livestreamId) : null)
     if (!targetStream) {
-      setError('This stream is no longer available')
+      setError(t('livestream.errors.noLongerAvailable'))
       setShowTicketPrompt(false)
       return
     }
@@ -457,7 +610,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
     setUnlocking(false)
 
     if (!result.success) {
-      alert(result.error || 'Failed to unlock this stream')
+      alert(result.error || t('livestream.errors.unlockFailed'))
       return
     }
 
@@ -484,7 +637,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
         <div className="text-center text-white p-8">
           <p className="text-lg mb-4">{error}</p>
           <button onClick={onExit} className="btn-subscribe">
-            Go Back
+            {t('livestream.actions.goBack')}
           </button>
         </div>
       </div>
@@ -500,31 +653,31 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
             <ArrowLeft className="w-6 h-6" />
           </button>
           <div>
-            <p className="text-xs text-white/60">Livestream setup</p>
-            <h2 className="text-white text-xl font-bold">Go Live</h2>
+            <p className="text-xs text-white/60">{t('livestream.setup.subtitle')}</p>
+            <h2 className="text-white text-xl font-bold">{t('livestream.setup.title')}</h2>
           </div>
-          <div className="ml-auto text-sm text-white/70">{remainingMinutes} min left today</div>
+          <div className="ml-auto text-sm text-white/70">{t('livestream.setup.minutesLeft', { count: remainingMinutes })}</div>
         </div>
 
         <div className="max-w-2xl mx-auto px-4 pb-10 space-y-4">
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
             <div className="space-y-2">
-              <label className="text-xs text-white/60">Title</label>
+              <label className="text-xs text-white/60">{t('livestream.setup.titleLabel')}</label>
               <input
                 type="text"
                 value={streamTitle}
                 onChange={(e) => setStreamTitle(e.target.value)}
-                placeholder="Enter stream title..."
+                placeholder={t('livestream.setup.titlePlaceholder')}
                 className="w-full px-4 py-3 rounded-xl bg-gray-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500"
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs text-white/60">Description (optional)</label>
+              <label className="text-xs text-white/60">{t('livestream.setup.descriptionLabel')}</label>
               <textarea
                 value={streamDescription}
                 onChange={(e) => setStreamDescription(e.target.value)}
-                placeholder="What will you stream?"
+                placeholder={t('livestream.setup.descriptionPlaceholder')}
                 className="w-full px-4 py-3 rounded-xl bg-gray-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500"
                 rows={3}
               />
@@ -536,8 +689,8 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
                   <Shield className="w-5 h-5 text-white/70" />
                 </div>
                 <div>
-                  <p className="text-white font-semibold text-sm">Private stream</p>
-                  <p className="text-xs text-white/60">Only subscribers/ticket holders can watch</p>
+                  <p className="text-white font-semibold text-sm">{t('livestream.setup.privateTitle')}</p>
+                  <p className="text-xs text-white/60">{t('livestream.setup.privateSubtitle')}</p>
                 </div>
               </div>
               <button
@@ -550,7 +703,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
 
             <div className="flex flex-wrap gap-4">
               <div className="flex-1 min-w-[180px] space-y-2">
-                <label className="text-xs text-white/60">Ticket price (Stars)</label>
+                <label className="text-xs text-white/60">{t('livestream.setup.ticketLabel')}</label>
                 <input
                   type="number"
                   min={0}
@@ -560,14 +713,14 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs text-white/60">Thumbnail</label>
+                <label className="text-xs text-white/60">{t('livestream.setup.thumbnailLabel')}</label>
                 <button
                   onClick={() => thumbnailInputRef.current?.click()}
                   className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white/10 border border-white/10 text-sm"
                   disabled={thumbnailUploading}
                 >
                   <ImageIcon className="w-4 h-4" />
-                  {thumbnailFile ? 'Change' : 'Upload'}
+                  {thumbnailFile ? t('livestream.setup.thumbnailChange') : t('livestream.setup.thumbnailUpload')}
                 </button>
                 <input
                   ref={thumbnailInputRef}
@@ -579,17 +732,107 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
                     if (file) setThumbnailFile(file)
                   }}
                 />
-                {thumbnailUploading && <p className="text-[11px] text-yellow-400">Uploading...</p>}
+                {thumbnailUploading && <p className="text-[11px] text-yellow-400">{t('livestream.setup.thumbnailUploading')}</p>}
               </div>
             </div>
+
+            {/* Permission status and device selection */}
+            {permissionStatus === 'checking' && (
+              <div className="flex items-center gap-3 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
+                <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+                <p className="text-sm text-blue-300">{t('livestream.setup.checkingPermissions') || 'Checking camera & microphone permissions...'}</p>
+              </div>
+            )}
+
+            {permissionStatus === 'denied' && (
+              <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
+                    <VideoOff className="w-5 h-5 text-red-400" />
+                  </div>
+                  <div>
+                    <p className="text-white font-semibold text-sm">{t('livestream.setup.permissionDeniedTitle') || 'Camera & Microphone Access Denied'}</p>
+                  </div>
+                </div>
+
+                {/* Platform-specific instructions */}
+                <div className="bg-black/30 rounded-lg p-3 space-y-2 text-xs">
+                  <p className="text-white font-medium">How to enable:</p>
+
+                  <div className="text-gray-300 space-y-2">
+                    <div>
+                      <span className="text-blue-400 font-medium">iPhone/iPad:</span>
+                      <p className="ml-2">Settings → Telegram → Camera & Microphone → Enable</p>
+                    </div>
+
+                    <div>
+                      <span className="text-green-400 font-medium">Android:</span>
+                      <p className="ml-2">Settings → Apps → Telegram → Permissions → Camera & Microphone → Allow</p>
+                    </div>
+
+                    <div>
+                      <span className="text-purple-400 font-medium">Desktop:</span>
+                      <p className="ml-2">Click the lock/camera icon in browser address bar → Allow camera & microphone</p>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={requestPermissionsAndLoadDevices}
+                  className="w-full py-2.5 rounded-xl bg-red-500 text-white font-semibold text-sm"
+                >
+                  {t('livestream.setup.retryPermissions') || 'Retry Permission Request'}
+                </button>
+              </div>
+            )}
+
+            {permissionStatus === 'granted' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-white/60 flex items-center gap-1"><Mic className="w-4 h-4" /> {t('livestream.setup.micLabel')}</label>
+                  <select
+                    value={selectedAudioDevice || ''}
+                    onChange={(e) => setSelectedAudioDevice(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-gray-800 text-white text-sm"
+                  >
+                    {audioDevices.length === 0 && (
+                      <option value="">{t('livestream.setup.noMicFound') || 'No microphone found'}</option>
+                    )}
+                    {audioDevices.map((d) => (
+                      <option key={d.deviceId} value={d.deviceId}>{d.label || t('livestream.setup.micFallback')}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-white/60 flex items-center gap-1"><MonitorSmartphone className="w-4 h-4" /> {t('livestream.setup.cameraLabel')}</label>
+                  <select
+                    value={selectedVideoDevice || ''}
+                    onChange={(e) => setSelectedVideoDevice(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-gray-800 text-white text-sm"
+                  >
+                    {videoDevices.length === 0 && (
+                      <option value="">{t('livestream.setup.noCameraFound') || 'No camera found'}</option>
+                    )}
+                    {videoDevices.map((d) => (
+                      <option key={d.deviceId} value={d.deviceId}>{d.label || t('livestream.setup.cameraFallback')}</option>
+                    ))}
+                  </select>
+                </div>
+                {(audioDevices.length === 0 || videoDevices.length === 0) && (
+                  <p className="col-span-full text-xs text-yellow-400">
+                    {t('livestream.setup.devicesWarning') || 'Some devices not detected. Make sure your camera and microphone are connected.'}
+                  </p>
+                )}
+              </div>
+            )}
 
             <motion.button
               whileTap={{ scale: 0.95 }}
               onClick={startStream}
               className="w-full py-3 bg-red-500 text-white rounded-xl font-semibold disabled:opacity-60"
-              disabled={loading || thumbnailUploading}
+              disabled={loading || thumbnailUploading || permissionStatus === 'denied' || permissionStatus === 'checking'}
             >
-              {loading ? 'Starting...' : 'Start Streaming'}
+              {loading ? t('livestream.setup.starting') : permissionStatus === 'denied' ? (t('livestream.setup.permissionRequired') || 'Permission Required') : t('livestream.setup.start')}
             </motion.button>
             {error && <p className="text-xs text-red-400">{error}</p>}
           </div>
@@ -611,16 +854,16 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
     return (
       <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-center p-6 space-y-4">
         <div>
-          <h2 className="text-white text-2xl font-bold mb-2">Subscribers Only</h2>
+          <h2 className="text-white text-2xl font-bold mb-2">{t('livestream.subscriptionOnly.title')}</h2>
           <p className="text-gray-300 text-sm">
-            Subscribe to {livestream?.creator?.first_name || livestream?.creator?.username || 'this creator'} to watch this livestream.
+            {t('livestream.subscriptionOnly.subtitle', { name: livestream?.creator?.first_name || livestream?.creator?.username || t('livestream.common.creatorFallback') })}
           </p>
         </div>
         <button
           onClick={onExit}
           className="px-6 py-3 rounded-full bg-white text-black font-semibold"
         >
-          Go Back
+          {t('livestream.actions.goBack')}
         </button>
       </div>
     )
@@ -638,7 +881,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
           <div ref={remoteVideoRef} className="w-full h-full bg-gray-900">
             {!remoteVideoTrack && (
               <div className="w-full h-full flex items-center justify-center">
-                <p className="text-gray-500">Waiting for stream...</p>
+                <p className="text-gray-500">{t('livestream.status.waiting')}</p>
               </div>
             )}
           </div>
@@ -659,7 +902,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
               {isCreator && (
                 <div className="flex items-center gap-1 px-3 py-1.5 bg-red-500 rounded-full">
                   <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                  <span className="text-white text-sm font-medium">LIVE</span>
+                  <span className="text-white text-sm font-medium">{t('livestream.status.live')}</span>
                 </div>
               )}
               <div className="flex items-center gap-1 px-3 py-1.5 bg-black/50 rounded-full">
@@ -701,7 +944,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
               >
                 <div className="text-6xl mb-2">🎁</div>
                 <p className="text-white font-bold text-lg">
-                  {giftAnimation.sender} sent {giftAnimation.name}!
+                  {t('livestream.chat.giftBanner', { sender: giftAnimation.sender, gift: giftAnimation.name })}
                 </p>
               </motion.div>
             )}
@@ -735,7 +978,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
               onClick={handleEndStream}
               className="px-6 py-4 rounded-full bg-red-500"
             >
-              <span className="text-white font-semibold">End</span>
+              <span className="text-white font-semibold">{t('livestream.actions.end')}</span>
             </button>
           </div>
         )}
@@ -752,14 +995,35 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
                 alt=""
                 className="w-6 h-6 rounded-full"
               />
-              <div>
-                <span className="text-gray-400 text-xs">
-                  {msg.user?.first_name || msg.user?.username}
-                </span>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-400 text-xs">
+                    {msg.user?.first_name || msg.user?.username}
+                  </span>
+                  {pinMessageId === msg.id && (
+                    <span className="text-[10px] text-yellow-300 bg-yellow-500/10 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Pin className="w-3 h-3" /> {t('livestream.chat.pinned')}
+                    </span>
+                  )}
+                </div>
                 {msg.message_type === 'gift' ? (
                   <p className="text-yellow-400 text-sm">🎁 {msg.content}</p>
                 ) : (
                   <p className="text-white text-sm">{msg.content}</p>
+                )}
+                {isCreator && (
+                  <div className="flex items-center gap-2 text-[11px] text-white/60">
+                    <button onClick={() => handlePinMessage(msg.id)} className="flex items-center gap-1 hover:text-yellow-300">
+                      <Pin className="w-3 h-3" /> {t('livestream.chat.pin')}
+                    </button>
+                    <button onClick={() => handleDeleteMessage(msg.id)} className="flex items-center gap-1 hover:text-red-400">
+                      <Trash2 className="w-3 h-3" /> {t('livestream.chat.delete')}
+                    </button>
+                    {/* Placeholder ban control */}
+                    <button className="flex items-center gap-1 hover:text-red-400">
+                      <Ban className="w-3 h-3" /> {t('livestream.chat.ban')}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -783,7 +1047,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder="Send a message..."
+              placeholder={t('livestream.chat.placeholder')}
               className="flex-1 px-4 py-2 bg-gray-800 rounded-full text-white text-sm placeholder-gray-500 focus:outline-none"
             />
             <button
@@ -807,7 +1071,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
             className="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-3xl p-4"
           >
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-white font-bold">Send a Gift</h3>
+              <h3 className="text-white font-bold">{t('livestream.chat.giftTitle')}</h3>
               <button onClick={() => setShowGifts(false)}>
                 <X className="w-5 h-5 text-white" />
               </button>
@@ -844,10 +1108,10 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
               exit={{ scale: 0.9, opacity: 0 }}
             >
               <div>
-                <p className="text-xs font-semibold text-gray-500 mb-2">Exclusive Access</p>
-                <h3 className="text-2xl font-bold text-gray-900 mb-1">{livestream?.title || 'Livestream Access'}</h3>
+                <p className="text-xs font-semibold text-gray-500 mb-2">{t('livestream.unlock.exclusive')}</p>
+                <h3 className="text-2xl font-bold text-gray-900 mb-1">{livestream?.title || t('livestream.unlock.title')}</h3>
                 <p className="text-gray-600 text-sm">
-                  Unlock this livestream for {ticketPrice} Stars. Stars go directly to the creator minus platform fees.
+                  {t('livestream.unlock.description', { price: ticketPrice })}
                 </p>
               </div>
               <motion.button
@@ -856,7 +1120,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
                 disabled={unlocking}
                 className="w-full py-3 rounded-2xl bg-gradient-to-r from-red-500 to-pink-500 text-white font-semibold disabled:opacity-60"
               >
-                {unlocking ? 'Unlocking...' : `Unlock for ${ticketPrice} Stars`}
+                {unlocking ? t('livestream.unlock.unlocking') : t('livestream.unlock.cta', { price: ticketPrice })}
               </motion.button>
               <button
                 onClick={() => {
@@ -865,7 +1129,7 @@ export default function LivestreamPage({ user, livestreamId, isCreator, onExit }
                 }}
                 className="w-full py-3 rounded-2xl bg-gray-100 text-gray-800 font-semibold"
               >
-                Not now
+                {t('livestream.unlock.cancel')}
               </button>
             </motion.div>
           </motion.div>

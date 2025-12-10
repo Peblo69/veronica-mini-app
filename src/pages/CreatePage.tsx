@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Lock, Globe, Loader2, X, Play, Star,
-  Plus, Image as ImageIcon, Film, Users, AlertTriangle,
-  Sun, Contrast, Droplets, Palette
+  X, Loader2, Image as ImageIcon, Play, ChevronDown,
+  Globe, Users, Star, MoreHorizontal, Camera, AlertTriangle,
+  BarChart3, MessageCircleQuestion, Type, Plus, Minus, Sparkles, Palette
 } from 'lucide-react'
 import { createPost, type User, type CreatePostData } from '../lib/api'
 import { uploadPostMedia, getMediaType, compressImage, generateVideoThumbnailFile, uploadVideoThumbnail } from '../lib/storage'
@@ -13,10 +13,10 @@ import { moderateText, moderateImage } from '../lib/moderation'
 interface CreatePageProps {
   user: User
   onBecomeCreator?: () => void
+  mode?: 'text' | 'media' // text = quick thoughts only, media = full media posting
 }
 
 type Visibility = 'public' | 'followers' | 'subscribers'
-type Step = 'upload' | 'edit' | 'publish'
 
 interface MediaMetadata {
   width: number
@@ -31,19 +31,22 @@ interface MediaFile {
   type: 'image' | 'video' | 'other'
   metadata?: MediaMetadata
   thumbnail?: { file: File; preview: string }
-  filters?: typeof defaultFilters
 }
 
-const defaultFilters = {
-  brightness: 100,
-  contrast: 100,
-  saturation: 100,
-  blur: 0,
-  sepia: 0,
-  grayscale: 0,
-  warmth: 0,
-  vignette: 0
-}
+type PostType = 'thought' | 'poll' | 'question'
+
+// Premium gradient backgrounds for text posts
+const GRADIENTS = {
+  none: { name: 'None', value: '', preview: 'bg-transparent border border-white/10' },
+  midnight: { name: 'Midnight', value: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)', preview: 'bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460]' },
+  ember: { name: 'Ember', value: 'linear-gradient(135deg, #2d1f1f 0%, #4a2020 50%, #6b2020 100%)', preview: 'bg-gradient-to-br from-[#2d1f1f] via-[#4a2020] to-[#6b2020]' },
+  aurora: { name: 'Aurora', value: 'linear-gradient(135deg, #1a2f1a 0%, #1a3a2a 50%, #0f4a3a 100%)', preview: 'bg-gradient-to-br from-[#1a2f1a] via-[#1a3a2a] to-[#0f4a3a]' },
+  twilight: { name: 'Twilight', value: 'linear-gradient(135deg, #2d1f3d 0%, #3d2050 50%, #4a1f6a 100%)', preview: 'bg-gradient-to-br from-[#2d1f3d] via-[#3d2050] to-[#4a1f6a]' },
+  ocean: { name: 'Ocean', value: 'linear-gradient(135deg, #0d1b2a 0%, #1b263b 50%, #274060 100%)', preview: 'bg-gradient-to-br from-[#0d1b2a] via-[#1b263b] to-[#274060]' },
+  sunset: { name: 'Sunset', value: 'linear-gradient(135deg, #3d2c29 0%, #5c3d31 50%, #7a4a3a 100%)', preview: 'bg-gradient-to-br from-[#3d2c29] via-[#5c3d31] to-[#7a4a3a]' },
+} as const
+
+type GradientKey = keyof typeof GRADIENTS
 
 // Helper to extract image dimensions
 function getImageMetadata(file: File): Promise<MediaMetadata> {
@@ -85,23 +88,30 @@ function getVideoMetadata(file: File): Promise<MediaMetadata> {
   })
 }
 
-export default function CreatePage({ user }: CreatePageProps) {
-  const [step, setStep] = useState<Step>('upload')
+export default function CreatePage({ user, mode = 'media' }: CreatePageProps) {
+  const isTextOnly = mode === 'text'
   const [content, setContent] = useState('')
   const [visibility, setVisibility] = useState<Visibility>('public')
   const [defaultVisibility, setDefaultVisibility] = useState<Visibility>('public')
-  const [unlockPrice, setUnlockPrice] = useState('')
-  const [isLocked, setIsLocked] = useState(false)
   const [posting, setPosting] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<{ message: string; percentage: number } | null>(null)
-  const [mediaFile, setMediaFile] = useState<MediaFile | null>(null)
-  const [filters, setFilters] = useState(defaultFilters)
-  const [moderationStatus, setModerationStatus] = useState<'idle' | 'checking' | 'approved' | 'rejected'>('idle')
+  const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([])
+  const [_moderationStatus, setModerationStatus] = useState<'idle' | 'checking' | 'approved' | 'rejected'>('idle')
   const [moderationError, setModerationError] = useState<string | null>(null)
+  const [showVisibilityPicker, setShowVisibilityPicker] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Post type and interactive features (for text-only mode)
+  const [postType, setPostType] = useState<PostType>('thought')
+  const [pollOptions, setPollOptions] = useState<string[]>(['', ''])
+  const [pollDuration, setPollDuration] = useState<24 | 48 | 72>(24)
+  const [selectedGradient, setSelectedGradient] = useState<GradientKey>('none')
+  const [showGradientPicker, setShowGradientPicker] = useState(false)
 
   const isCreator = user.is_creator
 
+  // Load default visibility preference
   useEffect(() => {
     let mounted = true
     if (!isCreator) {
@@ -124,113 +134,128 @@ export default function CreatePage({ user }: CreatePageProps) {
     return () => { mounted = false }
   }, [user.telegram_id, isCreator])
 
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
+    }
+  }, [content])
+
   // Process file when selected
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
 
-    const mediaType = getMediaType(file)
-    if (mediaType === 'unknown') {
-      alert('Unsupported file type. Please select an image or video.')
-      return
-    }
+    // Limit to 4 media files
+    const remainingSlots = 4 - mediaFiles.length
+    const filesToProcess = files.slice(0, remainingSlots)
 
-    setModerationStatus('checking')
-    setModerationError(null)
+    for (const file of filesToProcess) {
+      const mediaType = getMediaType(file)
+      if (mediaType === 'unknown') continue
 
-    const preview = URL.createObjectURL(file)
-    let metadata: MediaMetadata | undefined
-    let thumbnail: MediaFile['thumbnail']
+      setModerationStatus('checking')
+      setModerationError(null)
 
-    if (mediaType === 'image') {
-      metadata = await getImageMetadata(file)
-    } else if (mediaType === 'video') {
-      metadata = await getVideoMetadata(file)
-      const thumbFile = await generateVideoThumbnailFile(file)
-      if (thumbFile) {
-        thumbnail = { file: thumbFile, preview: URL.createObjectURL(thumbFile) }
-      }
-    }
+      const preview = URL.createObjectURL(file)
+      let metadata: MediaMetadata | undefined
+      let thumbnail: MediaFile['thumbnail']
 
-    const newMediaFile: MediaFile = {
-      file,
-      preview,
-      type: mediaType as 'image' | 'video',
-      metadata,
-      thumbnail,
-      filters: { ...defaultFilters }
-    }
-
-    setMediaFile(newMediaFile)
-    setFilters({ ...defaultFilters })
-
-    // Run content moderation check
-    try {
-      if (import.meta.env.VITE_AI_GUARDRAIL_URL) {
-        const imageToCheck = mediaType === 'video' && thumbnail ? thumbnail.preview : preview
-        const result = await moderateImage(imageToCheck)
-
-        if (result?.flagged) {
-          setModerationStatus('rejected')
-          setModerationError('This content violates our community guidelines. Please choose a different image/video.')
-          return
+      if (mediaType === 'image') {
+        metadata = await getImageMetadata(file)
+      } else if (mediaType === 'video') {
+        metadata = await getVideoMetadata(file)
+        const thumbFile = await generateVideoThumbnailFile(file)
+        if (thumbFile) {
+          thumbnail = { file: thumbFile, preview: URL.createObjectURL(thumbFile) }
         }
       }
-      setModerationStatus('approved')
-    } catch (err) {
-      console.error('Moderation check failed:', err)
-      // Allow upload if moderation fails (graceful degradation)
-      setModerationStatus('approved')
-    }
-  }, [])
 
-  const processImageWithFilters = async (mf: MediaFile): Promise<File> => {
-    if (mf.type !== 'image' || !mf.filters) return mf.file
-    const { brightness, contrast, saturation, blur, sepia, grayscale, warmth } = mf.filters
+      const newMediaFile: MediaFile = {
+        file,
+        preview,
+        type: mediaType as 'image' | 'video',
+        metadata,
+        thumbnail
+      }
 
-    const hasChanges = brightness !== 100 || contrast !== 100 || saturation !== 100 ||
-                       blur !== 0 || sepia !== 0 || grayscale !== 0 || warmth !== 0
+      // Run content moderation check - pass actual File for base64 conversion
+      try {
+        if (import.meta.env.VITE_AI_GUARDRAIL_URL) {
+          // Pass the actual file (or thumbnail file for videos) - moderation will convert to base64
+          const fileToCheck = mediaType === 'video' && thumbnail ? thumbnail.file : file
+          const result = await moderateImage(fileToCheck)
 
-    if (!hasChanges) return mf.file
-
-    return new Promise((resolve) => {
-      const img = document.createElement('img')
-      img.onload = () => {
-        const canvas = document.createElement('canvas')
-        canvas.width = img.width
-        canvas.height = img.height
-        const ctx = canvas.getContext('2d')
-        if (!ctx) {
-          resolve(mf.file)
-          return
-        }
-
-        // Apply filters
-        let filterStr = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`
-        if (blur > 0) filterStr += ` blur(${blur}px)`
-        if (sepia > 0) filterStr += ` sepia(${sepia}%)`
-        if (grayscale > 0) filterStr += ` grayscale(${grayscale}%)`
-        if (warmth !== 0) filterStr += ` hue-rotate(${warmth}deg)`
-
-        ctx.filter = filterStr
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-
-        canvas.toBlob((blob) => {
-          if (blob) {
-            const processedFile = new File([blob], mf.file.name, { type: mf.file.type })
-            resolve(processedFile)
-          } else {
-            resolve(mf.file)
+          if (result?.flagged) {
+            setModerationStatus('rejected')
+            let errorMsg = 'This content violates our community guidelines.'
+            if (result.categories?.sexual_minors) {
+              errorMsg = 'This content has been flagged for safety concerns and cannot be posted.'
+            } else if (result.categories?.sexual) {
+              // Use the specific reason from the API if available
+              errorMsg = result.reasons?.[0] || 'Explicit nudity is not allowed. Bikini/lingerie is OK, but no exposed genitals or nipples.'
+            } else if (result.categories?.violence) {
+              errorMsg = 'Graphic violence is not allowed.'
+            } else if (result.categories?.self_harm) {
+              errorMsg = 'Self-harm content is not allowed.'
+            } else if (result.categories?.hate) {
+              errorMsg = 'Hate symbols or content is not allowed.'
+            } else if (result.reasons?.length > 0) {
+              errorMsg = result.reasons[0]
+            }
+            setModerationError(errorMsg)
+            URL.revokeObjectURL(preview)
+            continue
           }
-        }, mf.file.type, 0.95)
+        }
+        setModerationStatus('approved')
+        setMediaFiles(prev => [...prev, newMediaFile])
+      } catch (err) {
+        console.error('Moderation check failed:', err)
+        setModerationStatus('approved')
+        setMediaFiles(prev => [...prev, newMediaFile])
       }
-      img.onerror = () => resolve(mf.file)
-      img.src = mf.preview
+    }
+
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }, [mediaFiles.length])
+
+  const removeMedia = (index: number) => {
+    setMediaFiles(prev => {
+      const newFiles = [...prev]
+      const removed = newFiles.splice(index, 1)[0]
+      if (removed) {
+        URL.revokeObjectURL(removed.preview)
+        if (removed.thumbnail?.preview) URL.revokeObjectURL(removed.thumbnail.preview)
+      }
+      return newFiles
     })
+    if (mediaFiles.length === 1) {
+      setModerationStatus('idle')
+      setModerationError(null)
+    }
   }
 
   const handlePost = async () => {
-    if (!mediaFile || posting) return
+    // Validate based on post type
+    if (posting) return
+    if (postType === 'poll') {
+      const validOptions = pollOptions.filter(o => o.trim().length > 0)
+      if (validOptions.length < 2) {
+        alert('Please add at least 2 poll options')
+        return
+      }
+      if (!content.trim()) {
+        alert('Please add a question for your poll')
+        return
+      }
+    } else if (!content.trim() && mediaFiles.length === 0) {
+      return
+    }
 
     setPosting(true)
     setUploadProgress({ message: 'Preparing...', percentage: 0 })
@@ -247,52 +272,89 @@ export default function CreatePage({ user }: CreatePageProps) {
         }
       }
 
-      let fileToUpload = mediaFile.file
+      let mediaUrl: string | undefined
+      let mediaUrls: string[] = []
+      let mediaType: 'image' | 'video' | undefined
+      let thumbnailUrl: string | undefined
+      let mediaWidth: number | undefined
+      let mediaHeight: number | undefined
+      let mediaDuration: number | undefined
+      let mediaSizeBytes: number | undefined
 
-      if (mediaFile.type === 'image') {
-        setUploadProgress({ message: 'Processing image...', percentage: 20 })
-        fileToUpload = await processImageWithFilters({ ...mediaFile, filters })
-        fileToUpload = await compressImage(fileToUpload)
-      }
+      if (mediaFiles.length > 0) {
+        const totalFiles = mediaFiles.length
 
-      setUploadProgress({ message: 'Uploading...', percentage: 50 })
-      const result = await uploadPostMedia(fileToUpload, user.telegram_id)
+        for (let i = 0; i < mediaFiles.length; i++) {
+          const mf = mediaFiles[i]
+          const progressBase = (i / totalFiles) * 80
 
-      if (result.error) {
-        alert('Upload failed: ' + result.error)
-        setPosting(false)
-        setUploadProgress(null)
-        return
-      }
+          let fileToUpload = mf.file
 
-      let thumbnailUrl: string | undefined = undefined
-      if (mediaFile.type === 'video') {
-        let thumbnailFile: File | undefined = mediaFile.thumbnail?.file
-        if (!thumbnailFile) thumbnailFile = await generateVideoThumbnailFile(mediaFile.file) ?? undefined
+          if (mf.type === 'image') {
+            setUploadProgress({ message: `Compressing ${i + 1}/${totalFiles}...`, percentage: progressBase + 10 })
+            fileToUpload = await compressImage(fileToUpload)
+          }
 
-        if (thumbnailFile) {
-          const thumbUpload = await uploadVideoThumbnail(thumbnailFile, user.telegram_id)
-          if (!thumbUpload.error && thumbUpload.url) thumbnailUrl = thumbUpload.url
+          setUploadProgress({ message: `Uploading ${i + 1}/${totalFiles}...`, percentage: progressBase + 40 })
+          const result = await uploadPostMedia(fileToUpload, user.telegram_id)
+
+          if (result.error) {
+            alert('Upload failed: ' + result.error)
+            setPosting(false)
+            setUploadProgress(null)
+            return
+          }
+
+          if (result.url) {
+            mediaUrls.push(result.url)
+            if (i === 0) {
+              mediaUrl = result.url
+              mediaType = mf.type === 'other' ? 'image' : mf.type
+              mediaWidth = mf.metadata?.width
+              mediaHeight = mf.metadata?.height
+              mediaDuration = mf.metadata?.duration
+              mediaSizeBytes = mf.metadata?.sizeBytes
+            }
+          }
+
+          // Upload video thumbnail for first video
+          if (i === 0 && mf.type === 'video') {
+            let thumbnailFile: File | undefined = mf.thumbnail?.file
+            if (!thumbnailFile) thumbnailFile = await generateVideoThumbnailFile(mf.file) ?? undefined
+
+            if (thumbnailFile) {
+              const thumbUpload = await uploadVideoThumbnail(thumbnailFile, user.telegram_id)
+              if (!thumbUpload.error && thumbUpload.url) thumbnailUrl = thumbUpload.url
+            }
+          }
         }
       }
 
       setUploadProgress({ message: 'Publishing...', percentage: 90 })
 
       const finalVisibility = isCreator ? visibility : 'public'
-      const finalPrice = isCreator && isLocked ? parseFloat(unlockPrice) || 0 : 0
 
       const postPayload: CreatePostData = {
         content: content.trim(),
-        media_url: result.url ?? undefined,
-        media_urls: result.url ? [result.url] : undefined,
-        media_type: mediaFile.type === 'other' ? 'image' : mediaFile.type,
+        media_url: mediaUrl,
+        media_urls: mediaUrls.length > 0 ? mediaUrls : undefined,
+        media_type: mediaType,
         visibility: finalVisibility,
         is_nsfw: false,
-        unlock_price: finalPrice,
-        media_width: mediaFile.metadata?.width,
-        media_height: mediaFile.metadata?.height,
-        media_duration: mediaFile.metadata?.duration,
-        media_size_bytes: mediaFile.metadata?.sizeBytes,
+        unlock_price: 0,
+        media_width: mediaWidth,
+        media_height: mediaHeight,
+        media_duration: mediaDuration,
+        media_size_bytes: mediaSizeBytes,
+        // Interactive post type fields
+        post_type: postType,
+        background_gradient: selectedGradient !== 'none' ? selectedGradient : undefined,
+      }
+
+      // Add poll data if it's a poll
+      if (postType === 'poll') {
+        postPayload.poll_options = pollOptions.filter(o => o.trim().length > 0)
+        postPayload.poll_duration_hours = pollDuration
       }
 
       if (thumbnailUrl) {
@@ -310,15 +372,20 @@ export default function CreatePage({ user }: CreatePageProps) {
         setTimeout(() => {
           setContent('')
           setVisibility(defaultVisibility)
-          setUnlockPrice('')
-          setIsLocked(false)
-          setStep('upload')
-          if (mediaFile.preview) URL.revokeObjectURL(mediaFile.preview)
-          if (mediaFile.thumbnail?.preview) URL.revokeObjectURL(mediaFile.thumbnail.preview)
-          setMediaFile(null)
-          setFilters({ ...defaultFilters })
+          mediaFiles.forEach(mf => {
+            URL.revokeObjectURL(mf.preview)
+            if (mf.thumbnail?.preview) URL.revokeObjectURL(mf.thumbnail.preview)
+          })
+          setMediaFiles([])
           setModerationStatus('idle')
           setUploadProgress(null)
+          // Reset interactive post fields
+          setPostType('thought')
+          setPollOptions(['', ''])
+          setPollDuration(24)
+          setSelectedGradient('none')
+          // Navigate back
+          window.history.back()
         }, 1000)
       }
     } catch (err) {
@@ -329,38 +396,29 @@ export default function CreatePage({ user }: CreatePageProps) {
     }
   }
 
-  const removeMedia = () => {
-    if (mediaFile) {
-      URL.revokeObjectURL(mediaFile.preview)
-      if (mediaFile.thumbnail?.preview) URL.revokeObjectURL(mediaFile.thumbnail.preview)
+  const getVisibilityIcon = () => {
+    if (visibility === 'public') return <Globe className="w-4 h-4" />
+    if (visibility === 'followers') return <Users className="w-4 h-4" />
+    return <Star className="w-4 h-4" />
+  }
+
+  // Determine if we can post based on post type
+  const canPost = (() => {
+    if (postType === 'poll') {
+      const validOptions = pollOptions.filter(o => o.trim().length > 0)
+      return content.trim().length > 0 && validOptions.length >= 2
     }
-    setMediaFile(null)
-    setModerationStatus('idle')
-    setModerationError(null)
-    setStep('upload')
-  }
-
-  const getFilterStyle = () => {
-    let filterStr = `brightness(${filters.brightness}%) contrast(${filters.contrast}%) saturate(${filters.saturation}%)`
-    if (filters.blur > 0) filterStr += ` blur(${filters.blur}px)`
-    if (filters.sepia > 0) filterStr += ` sepia(${filters.sepia}%)`
-    if (filters.grayscale > 0) filterStr += ` grayscale(${filters.grayscale}%)`
-    if (filters.warmth !== 0) filterStr += ` hue-rotate(${filters.warmth}deg)`
-    return filterStr
-  }
-
-  // Hidden file input
-  const triggerFileSelect = () => {
-    fileInputRef.current?.click()
-  }
+    return content.trim().length > 0 || mediaFiles.length > 0
+  })()
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col">
+    <div className="h-full bg-black text-white flex flex-col overflow-hidden">
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
         accept="image/*,video/*"
+        multiple
         className="hidden"
         onChange={handleFileSelect}
       />
@@ -407,392 +465,545 @@ export default function CreatePage({ user }: CreatePageProps) {
         )}
       </AnimatePresence>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col">
-        <AnimatePresence mode="wait">
-          {/* STEP 1: UPLOAD */}
-          {step === 'upload' && (
+      {/* Moderation error toast */}
+      <AnimatePresence>
+        {moderationError && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-4 left-4 right-4 z-40 bg-red-500/90 backdrop-blur-sm rounded-xl p-4 flex items-start gap-3"
+          >
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">{moderationError}</p>
+            </div>
+            <button onClick={() => setModerationError(null)} className="p-1">
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Header - with Post button */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+        <button
+          onClick={() => {
+            // Reset and go back
+            setContent('')
+            mediaFiles.forEach(mf => {
+              URL.revokeObjectURL(mf.preview)
+              if (mf.thumbnail?.preview) URL.revokeObjectURL(mf.thumbnail.preview)
+            })
+            setMediaFiles([])
+            setModerationStatus('idle')
+            window.history.back()
+          }}
+          className="text-white/60 text-[15px] font-medium"
+        >
+          Cancel
+        </button>
+        <span className="text-white text-[16px] font-semibold">
+          {isTextOnly ? (
+            postType === 'poll' ? 'Create poll' : postType === 'question' ? 'Ask question' : 'Quick thought'
+          ) : 'New post'}
+        </span>
+        <button
+          onClick={handlePost}
+          disabled={!canPost || posting}
+          className={`px-5 py-1.5 rounded-full text-[14px] font-semibold transition-all ${
+            canPost && !posting
+              ? 'bg-white text-black'
+              : 'bg-white/10 text-white/30'
+          }`}
+        >
+          {posting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Post'}
+        </button>
+      </div>
+
+      {/* Main composer area - only scroll if content overflows */}
+      <div className="flex-1 overflow-y-auto overscroll-none" style={{ overflowY: 'auto', minHeight: 0 }}>
+        <div className="px-4 py-4">
+          {/* User row with avatar */}
+          <div className="flex gap-3">
+            {/* Avatar column with vertical line */}
+            <div className="flex flex-col items-center">
+              <div className="w-12 h-12 rounded-full overflow-hidden bg-white/10 flex-shrink-0">
+                {user.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    alt={user.first_name || user.username || 'User'}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-white/60 text-base font-semibold">
+                    {(user.first_name || user.username || 'U')[0].toUpperCase()}
+                  </div>
+                )}
+              </div>
+              {/* Vertical line connecting to Add to thread */}
+              {(content.length > 0 || mediaFiles.length > 0) && (
+                <div className="w-0.5 bg-white/10 flex-1 mt-2 min-h-[20px]" />
+              )}
+            </div>
+
+            {/* Content column */}
+            <div className="flex-1 min-w-0">
+              {/* Username */}
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-white text-[16px] font-semibold">
+                  {user.first_name || user.username || 'User'}
+                </span>
+              </div>
+
+              {/* Text input */}
+              <textarea
+                ref={textareaRef}
+                value={content}
+                onChange={(e) => setContent(e.target.value.slice(0, 500))}
+                placeholder={
+                  postType === 'poll' ? 'Ask your question...' :
+                  postType === 'question' ? 'What would you like to ask?' :
+                  "What's on your mind?"
+                }
+                className="w-full bg-transparent text-white text-[17px] placeholder-white/40 resize-none focus:outline-none min-h-[80px] leading-relaxed"
+                rows={1}
+              />
+
+              {/* Poll options - shown when post type is poll */}
+              {isTextOnly && postType === 'poll' && (
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-white/50 text-sm">Poll options</span>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={pollDuration}
+                        onChange={(e) => setPollDuration(Number(e.target.value) as 24 | 48 | 72)}
+                        className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-white/20"
+                      >
+                        <option value={24}>24 hours</option>
+                        <option value={48}>48 hours</option>
+                        <option value={72}>72 hours</option>
+                      </select>
+                    </div>
+                  </div>
+                  {pollOptions.map((option, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <div className="flex-1 relative">
+                        <input
+                          type="text"
+                          value={option}
+                          onChange={(e) => {
+                            const newOptions = [...pollOptions]
+                            newOptions[index] = e.target.value.slice(0, 50)
+                            setPollOptions(newOptions)
+                          }}
+                          placeholder={`Option ${index + 1}`}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-white/20 pr-10"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 text-xs">
+                          {option.length}/50
+                        </span>
+                      </div>
+                      {pollOptions.length > 2 && (
+                        <button
+                          onClick={() => {
+                            const newOptions = pollOptions.filter((_, i) => i !== index)
+                            setPollOptions(newOptions)
+                          }}
+                          className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/40 hover:text-red-400 hover:border-red-400/30 transition-colors"
+                        >
+                          <Minus className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {pollOptions.length < 4 && (
+                    <button
+                      onClick={() => setPollOptions([...pollOptions, ''])}
+                      className="w-full py-3 rounded-xl border border-dashed border-white/20 text-white/40 text-sm flex items-center justify-center gap-2 hover:border-white/30 hover:text-white/60 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add option
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Media previews - Premium grid layout */}
+              {mediaFiles.length > 0 && (
+                <div className="mt-4">
+                  <div className={`grid gap-2 ${
+                    mediaFiles.length === 1 ? 'grid-cols-1' :
+                    mediaFiles.length === 2 ? 'grid-cols-2' :
+                    mediaFiles.length === 3 ? 'grid-cols-2' :
+                    'grid-cols-2'
+                  }`}>
+                    {mediaFiles.map((mf, index) => (
+                      <div
+                        key={index}
+                        className={`relative overflow-hidden rounded-2xl ${
+                          mediaFiles.length === 1 ? 'aspect-[4/3]' :
+                          mediaFiles.length === 3 && index === 0 ? 'row-span-2 aspect-auto h-full' :
+                          'aspect-square'
+                        }`}
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                        }}
+                      >
+                        {mf.type === 'image' ? (
+                          <img
+                            src={mf.preview}
+                            alt="preview"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="relative w-full h-full">
+                            <img
+                              src={mf.thumbnail?.preview || mf.preview}
+                              alt="preview"
+                              className="w-full h-full object-cover"
+                            />
+                            {/* Video overlay */}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div
+                                className="w-14 h-14 rounded-full flex items-center justify-center"
+                                style={{
+                                  background: 'rgba(0, 0, 0, 0.6)',
+                                  backdropFilter: 'blur(10px)',
+                                  border: '2px solid rgba(255, 255, 255, 0.2)',
+                                }}
+                              >
+                                <Play className="w-6 h-6 text-white ml-1" fill="white" />
+                              </div>
+                            </div>
+                            {/* Duration badge */}
+                            {mf.metadata?.duration && (
+                              <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md text-[11px] font-medium text-white"
+                                style={{ background: 'rgba(0, 0, 0, 0.7)' }}
+                              >
+                                {Math.floor(mf.metadata.duration / 60)}:{String(mf.metadata.duration % 60).padStart(2, '0')}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {/* Remove button - premium style */}
+                        <button
+                          onClick={() => removeMedia(index)}
+                          className="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-transform"
+                          style={{
+                            background: 'rgba(0, 0, 0, 0.6)',
+                            backdropFilter: 'blur(10px)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                          }}
+                        >
+                          <X className="w-4 h-4 text-white" />
+                        </button>
+                        {/* Image count badge for multiple */}
+                        {mediaFiles.length > 1 && index === 0 && (
+                          <div className="absolute top-2 left-2 px-2 py-1 rounded-full text-[11px] font-semibold text-white"
+                            style={{ background: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(10px)' }}
+                          >
+                            1/{mediaFiles.length}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Media buttons row - only show in media mode */}
+              {!isTextOnly && (
+                <div className="flex items-center gap-5 mt-4">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={mediaFiles.length >= 4}
+                    className="w-11 h-11 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/50 hover:text-white/70 hover:bg-white/10 transition-all disabled:opacity-30 active:scale-95"
+                  >
+                    <ImageIcon className="w-6 h-6" />
+                  </button>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={mediaFiles.length >= 4}
+                    className="w-11 h-11 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/50 hover:text-white/70 hover:bg-white/10 transition-all disabled:opacity-30 active:scale-95"
+                  >
+                    <Camera className="w-6 h-6" />
+                  </button>
+                  <button className="w-11 h-11 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/50 hover:text-white/70 hover:bg-white/10 transition-all active:scale-95">
+                    <MoreHorizontal className="w-6 h-6" />
+                  </button>
+                </div>
+              )}
+
+              {/* Text-only mode: Post type selector and gradient picker - compact single row */}
+              {isTextOnly && (
+                <div className="mt-4 flex items-center gap-1.5">
+                  {/* Post type buttons - very compact */}
+                  <button
+                    onClick={() => setPostType('thought')}
+                    className={`px-2.5 py-1 rounded-full text-[12px] font-medium flex items-center gap-1 transition-all whitespace-nowrap ${
+                      postType === 'thought'
+                        ? 'bg-white text-black'
+                        : 'bg-white/5 border border-white/10 text-white/60'
+                    }`}
+                  >
+                    <Type className="w-3 h-3" />
+                    Text
+                  </button>
+                  <button
+                    onClick={() => setPostType('poll')}
+                    className={`px-2.5 py-1 rounded-full text-[12px] font-medium flex items-center gap-1 transition-all whitespace-nowrap ${
+                      postType === 'poll'
+                        ? 'bg-white text-black'
+                        : 'bg-white/5 border border-white/10 text-white/60'
+                    }`}
+                  >
+                    <BarChart3 className="w-3 h-3" />
+                    Poll
+                  </button>
+                  <button
+                    onClick={() => setPostType('question')}
+                    className={`px-2.5 py-1 rounded-full text-[12px] font-medium flex items-center gap-1 transition-all whitespace-nowrap ${
+                      postType === 'question'
+                        ? 'bg-white text-black'
+                        : 'bg-white/5 border border-white/10 text-white/60'
+                    }`}
+                  >
+                    <MessageCircleQuestion className="w-3 h-3" />
+                    Q&A
+                  </button>
+
+                  {/* Gradient/style button - only show when not poll */}
+                  {postType !== 'poll' && (
+                    <button
+                      onClick={() => setShowGradientPicker(true)}
+                      className={`px-2.5 py-1 rounded-full text-[12px] font-medium flex items-center gap-1 transition-all whitespace-nowrap ${
+                        selectedGradient !== 'none'
+                          ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 text-white'
+                          : 'bg-white/5 border border-white/10 text-white/60'
+                      }`}
+                    >
+                      <Palette className="w-3 h-3" />
+                      Style
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Character count */}
+              {content.length > 400 && (
+                <div className="mt-3">
+                  <span className={`text-xs ${content.length > 480 ? 'text-orange-400' : 'text-white/30'}`}>
+                    {content.length}/500
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Post Options - shown when there's content/media */}
+          {(content.length > 0 || mediaFiles.length > 0 || postType === 'poll') && (
+            <div className="mt-6 pt-4 border-t border-white/10">
+              {/* Visibility selector */}
+              <button
+                onClick={() => setShowVisibilityPicker(!showVisibilityPicker)}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/8 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center">
+                    {getVisibilityIcon()}
+                  </div>
+                  <div className="text-left">
+                    <p className="text-white text-[14px] font-medium">
+                      {visibility === 'public' ? 'Everyone' : visibility === 'followers' ? 'Followers only' : 'Subscribers only'}
+                    </p>
+                    <p className="text-white/40 text-[12px]">Who can see this post</p>
+                  </div>
+                </div>
+                <ChevronDown className="w-5 h-5 text-white/40" />
+              </button>
+
+              {/* Future: Creator options will go here */}
+              {/* Example placeholder for tips option (will implement later):
+              {isCreator && (
+                <button className="w-full flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 mt-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center">
+                      <DollarSign className="w-4 h-4 text-white/60" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-white text-[14px] font-medium">Enable tips</p>
+                      <p className="text-white/40 text-[12px]">Let viewers send tips on this post</p>
+                    </div>
+                  </div>
+                  <Switch checked={false} />
+                </button>
+              )}
+              */}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Spacer at bottom for safe area */}
+      <div className="h-4" />
+
+      {/* Visibility picker modal */}
+      <AnimatePresence>
+        {showVisibilityPicker && (
+          <>
             <motion.div
-              key="upload"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              exit={{ opacity: 0, x: -50 }}
-              className="flex-1 flex flex-col px-4 pt-2"
-            >
-              {/* Compact Header */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-16" />
-                <span className="text-xs font-semibold text-white/50 uppercase tracking-widest">New Post</span>
-                {mediaFile && moderationStatus === 'approved' && (
-                  <button
-                    onClick={() => setStep('edit')}
-                    className="text-blue-400 text-sm font-semibold"
-                  >
-                    Next
-                  </button>
-                )}
-                {(!mediaFile || moderationStatus !== 'approved') && <div className="w-16" />}
-              </div>
-
-              {/* Single Square Container - Shows upload UI OR media */}
-              <div className="w-full aspect-square rounded-2xl overflow-hidden bg-[#111] border border-white/10 relative">
-                {!mediaFile ? (
-                  /* Empty state - Upload UI */
-                  <motion.div
-                    onClick={triggerFileSelect}
-                    whileTap={{ scale: 0.98 }}
-                    className="absolute inset-0 cursor-pointer flex flex-col items-center justify-center group"
-                  >
-                    {/* Subtle gradient background */}
-                    <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] via-transparent to-white/[0.02]" />
-
-                    {/* Overlapping icons - premium look */}
-                    <div className="relative mb-4">
-                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-white/10 to-white/5 flex items-center justify-center backdrop-blur-sm border border-white/10 rotate-[-8deg] absolute -left-4 -top-1">
-                        <ImageIcon className="w-6 h-6 text-white/60" />
-                      </div>
-                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-white/10 to-white/5 flex items-center justify-center backdrop-blur-sm border border-white/10 rotate-[8deg] relative z-10 ml-4">
-                        <Film className="w-6 h-6 text-white/60" />
-                      </div>
-                    </div>
-
-                    {/* Small + button */}
-                    <motion.div
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="w-10 h-10 rounded-full bg-white flex items-center justify-center mb-3 shadow-lg shadow-white/10"
-                    >
-                      <Plus className="w-5 h-5 text-black" />
-                    </motion.div>
-
-                    {/* Minimal text */}
-                    <p className="text-white/40 text-xs font-medium">Tap to upload</p>
-                  </motion.div>
-                ) : (
-                  /* Media preview state */
-                  <>
-                    {mediaFile.type === 'image' ? (
-                      <img src={mediaFile.preview} alt="preview" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="relative w-full h-full">
-                        <img
-                          src={mediaFile.thumbnail?.preview || mediaFile.preview}
-                          alt="preview"
-                          className="w-full h-full object-cover"
-                        />
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center">
-                            <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Moderation overlay - only when checking or rejected */}
-                    {moderationStatus !== 'approved' && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-                        {moderationStatus === 'checking' && (
-                          <div className="text-center">
-                            <Loader2 className="w-6 h-6 text-white animate-spin mx-auto mb-2" />
-                            <p className="text-white/60 text-xs">Checking...</p>
-                          </div>
-                        )}
-                        {moderationStatus === 'rejected' && (
-                          <div className="text-center px-8">
-                            <AlertTriangle className="w-8 h-8 text-red-400 mx-auto mb-2" />
-                            <p className="text-red-400 text-sm font-medium mb-1">Not Allowed</p>
-                            <p className="text-white/40 text-xs mb-3 line-clamp-2">{moderationError}</p>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); removeMedia(); }}
-                              className="px-3 py-1.5 bg-white/10 rounded-lg text-xs font-medium"
-                            >
-                              Try Again
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Remove button - top right */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); removeMedia(); }}
-                      className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center z-10"
-                    >
-                      <X className="w-3.5 h-3.5 text-white" />
-                    </button>
-
-                    {/* Change media - tap anywhere when approved */}
-                    {moderationStatus === 'approved' && (
-                      <div
-                        onClick={triggerFileSelect}
-                        className="absolute bottom-2 left-2 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-sm flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <ImageIcon className="w-3 h-3 text-white/70" />
-                        <span className="text-[10px] text-white/70 font-medium">Change</span>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* Quick actions below - only if approved */}
-              {mediaFile && moderationStatus === 'approved' && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mt-3 flex items-center justify-center gap-2"
-                >
-                  <button
-                    onClick={() => setStep('edit')}
-                    className="flex-1 py-2.5 bg-white text-black rounded-xl text-sm font-semibold"
-                  >
-                    Continue
-                  </button>
-                </motion.div>
-              )}
-            </motion.div>
-          )}
-
-          {/* STEP 2: EDIT */}
-          {step === 'edit' && mediaFile && (
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 z-40"
+              onClick={() => setShowVisibilityPicker(false)}
+            />
             <motion.div
-              key="edit"
-              initial={{ opacity: 0, x: 50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -50 }}
-              className="flex-1 flex flex-col px-4 pt-2 overflow-y-auto"
+              initial={{ opacity: 0, y: 100 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 100 }}
+              className="fixed bottom-0 left-0 right-0 bg-[#1c1c1e] rounded-t-2xl z-50 overflow-hidden"
             >
-              {/* Compact Header */}
-              <div className="flex items-center justify-between mb-3">
-                <button
-                  onClick={() => setStep('upload')}
-                  className="text-white/50 text-sm font-medium"
-                >
-                  Back
-                </button>
-                <span className="text-xs font-semibold text-white/50 uppercase tracking-widest">Edit</span>
-                <button
-                  onClick={() => setStep('publish')}
-                  className="text-blue-400 text-sm font-semibold"
-                >
-                  Next
-                </button>
-              </div>
+              <div className="p-4">
+                <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4" />
+                <h3 className="text-white text-lg font-semibold text-center mb-4">Who can reply?</h3>
 
-              {/* Image preview - smaller */}
-              <div className="w-full aspect-[4/3] rounded-xl overflow-hidden bg-[#111] border border-white/10 mb-4">
-                {mediaFile.type === 'image' ? (
-                  <img
-                    src={mediaFile.preview}
-                    alt="preview"
-                    className="w-full h-full object-cover transition-all duration-200"
-                    style={{ filter: getFilterStyle() }}
-                  />
-                ) : (
-                  <div className="relative w-full h-full">
-                    <img
-                      src={mediaFile.thumbnail?.preview || mediaFile.preview}
-                      alt="preview"
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center">
-                        <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Compact sliders */}
-              {mediaFile.type === 'image' ? (
-                <div className="space-y-3 pb-4">
-                  <FilterSlider icon={<Sun className="w-3.5 h-3.5" />} label="Brightness" value={filters.brightness} onChange={(v) => setFilters(p => ({ ...p, brightness: v }))} min={50} max={150} defaultValue={100} />
-                  <FilterSlider icon={<Contrast className="w-3.5 h-3.5" />} label="Contrast" value={filters.contrast} onChange={(v) => setFilters(p => ({ ...p, contrast: v }))} min={50} max={150} defaultValue={100} />
-                  <FilterSlider icon={<Droplets className="w-3.5 h-3.5" />} label="Saturation" value={filters.saturation} onChange={(v) => setFilters(p => ({ ...p, saturation: v }))} min={0} max={200} defaultValue={100} />
-                  <FilterSlider icon={<Palette className="w-3.5 h-3.5" />} label="Warmth" value={filters.warmth} onChange={(v) => setFilters(p => ({ ...p, warmth: v }))} min={-30} max={30} defaultValue={0} />
-                  <button onClick={() => setFilters({ ...defaultFilters })} className="w-full py-1.5 text-white/30 text-xs font-medium">Reset</button>
-                </div>
-              ) : (
-                <div className="py-4 text-center text-white/30 text-xs">No edits for video</div>
-              )}
-            </motion.div>
-          )}
-
-          {/* STEP 3: PUBLISH */}
-          {step === 'publish' && mediaFile && (
-            <motion.div
-              key="publish"
-              initial={{ opacity: 0, x: 50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -50 }}
-              className="flex-1 flex flex-col px-4 pt-2 overflow-y-auto"
-            >
-              {/* Compact Header */}
-              <div className="flex items-center justify-between mb-3">
-                <button onClick={() => setStep('edit')} className="text-white/50 text-sm font-medium">Back</button>
-                <span className="text-xs font-semibold text-white/50 uppercase tracking-widest">Share</span>
-                <button
-                  onClick={handlePost}
-                  disabled={posting}
-                  className="text-blue-400 text-sm font-semibold disabled:opacity-50"
-                >
-                  {posting ? '...' : 'Post'}
-                </button>
-              </div>
-
-              {/* Horizontal layout: small preview + caption */}
-              <div className="flex gap-3 mb-4">
-                {/* Small preview thumbnail */}
-                <div className="w-20 h-20 rounded-lg overflow-hidden bg-[#111] border border-white/10 flex-shrink-0">
-                  {mediaFile.type === 'image' ? (
-                    <img src={mediaFile.preview} alt="preview" className="w-full h-full object-cover" style={{ filter: getFilterStyle() }} />
-                  ) : (
-                    <div className="relative w-full h-full">
-                      <img src={mediaFile.thumbnail?.preview || mediaFile.preview} alt="preview" className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <Play className="w-4 h-4 text-white" fill="white" />
-                      </div>
-                    </div>
-                  )}
-                </div>
-                {/* Caption input */}
-                <div className="flex-1">
-                  <textarea
-                    value={content}
-                    onChange={(e) => setContent(e.target.value.slice(0, 200))}
-                    placeholder="Write a caption..."
-                    className="w-full h-20 bg-white/5 border border-white/10 rounded-lg p-2 text-sm text-white placeholder-white/30 resize-none focus:outline-none focus:border-white/20"
-                  />
-                  <span className={`text-[10px] ${content.length > 180 ? 'text-orange-400' : 'text-white/30'}`}>{content.length}/200</span>
-                </div>
-              </div>
-
-              {/* Compact visibility options */}
-              <div className="mb-4">
-                <span className="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Visibility</span>
-                <div className="flex gap-2">
+                <div className="space-y-2">
                   <button
-                    onClick={() => setVisibility('public')}
-                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 border transition-all ${visibility === 'public' ? 'bg-white text-black border-white' : 'bg-white/5 text-white/50 border-white/10'}`}
+                    onClick={() => { setVisibility('public'); setShowVisibilityPicker(false); }}
+                    className={`w-full flex items-center gap-3 p-4 rounded-xl transition-colors ${
+                      visibility === 'public' ? 'bg-white/10' : 'bg-transparent'
+                    }`}
                   >
-                    <Globe className="w-3.5 h-3.5" />
-                    Public
+                    <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+                      <Globe className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="flex-1 text-left">
+                      <p className="text-white font-medium">Anyone</p>
+                      <p className="text-white/50 text-sm">Anyone can reply to your post</p>
+                    </div>
+                    {visibility === 'public' && (
+                      <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center">
+                        <div className="w-2 h-2 rounded-full bg-black" />
+                      </div>
+                    )}
                   </button>
+
                   <button
-                    onClick={() => setVisibility('followers')}
-                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 border transition-all ${visibility === 'followers' ? 'bg-white text-black border-white' : 'bg-white/5 text-white/50 border-white/10'}`}
+                    onClick={() => { setVisibility('followers'); setShowVisibilityPicker(false); }}
+                    className={`w-full flex items-center gap-3 p-4 rounded-xl transition-colors ${
+                      visibility === 'followers' ? 'bg-white/10' : 'bg-transparent'
+                    }`}
                   >
-                    <Users className="w-3.5 h-3.5" />
-                    Followers
+                    <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+                      <Users className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="flex-1 text-left">
+                      <p className="text-white font-medium">Followers</p>
+                      <p className="text-white/50 text-sm">Only people who follow you</p>
+                    </div>
+                    {visibility === 'followers' && (
+                      <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center">
+                        <div className="w-2 h-2 rounded-full bg-black" />
+                      </div>
+                    )}
                   </button>
+
                   {isCreator && (
                     <button
-                      onClick={() => setVisibility('subscribers')}
-                      className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 border transition-all ${visibility === 'subscribers' ? 'bg-white text-black border-white' : 'bg-white/5 text-white/50 border-white/10'}`}
+                      onClick={() => { setVisibility('subscribers'); setShowVisibilityPicker(false); }}
+                      className={`w-full flex items-center gap-3 p-4 rounded-xl transition-colors ${
+                        visibility === 'subscribers' ? 'bg-white/10' : 'bg-transparent'
+                      }`}
                     >
-                      <Star className="w-3.5 h-3.5" />
-                      Subs
+                      <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+                        <Star className="w-5 h-5 text-white" />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <p className="text-white font-medium">Subscribers</p>
+                        <p className="text-white/50 text-sm">Only your paid subscribers</p>
+                      </div>
+                      {visibility === 'subscribers' && (
+                        <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center">
+                          <div className="w-2 h-2 rounded-full bg-black" />
+                        </div>
+                      )}
                     </button>
                   )}
                 </div>
               </div>
-
-              {/* Locked content toggle (creators only) */}
-              {isCreator && (
-                <div className="mb-4 p-3 bg-white/5 rounded-lg border border-white/10">
-                  <div className="flex items-center justify-between" onClick={() => setIsLocked(!isLocked)}>
-                    <div className="flex items-center gap-2">
-                      <Lock className={`w-4 h-4 ${isLocked ? 'text-white' : 'text-white/40'}`} />
-                      <span className={`text-sm ${isLocked ? 'text-white' : 'text-white/50'}`}>Paid unlock</span>
-                    </div>
-                    <div className={`w-9 h-5 rounded-full p-0.5 transition-colors ${isLocked ? 'bg-blue-500' : 'bg-white/20'}`}>
-                      <div className={`w-4 h-4 rounded-full bg-white transition-transform ${isLocked ? 'translate-x-4' : 'translate-x-0'}`} />
-                    </div>
-                  </div>
-                  {isLocked && (
-                    <div className="mt-2 relative">
-                      <Star className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-yellow-400" />
-                      <input
-                        type="number"
-                        value={unlockPrice}
-                        onChange={(e) => setUnlockPrice(e.target.value)}
-                        placeholder="Price"
-                        className="w-full bg-black/30 border border-white/10 rounded-lg py-2 pl-8 pr-3 text-sm text-white placeholder-white/30"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Share button */}
-              <button
-                onClick={handlePost}
-                disabled={posting}
-                className="w-full py-3 bg-white text-black rounded-xl font-semibold flex items-center justify-center gap-2 disabled:opacity-50 mt-auto"
-              >
-                {posting ? <><Loader2 className="w-4 h-4 animate-spin" /> Posting...</> : 'Share Post'}
-              </button>
+              <div className="h-8" /> {/* Safe area spacer */}
             </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Gradient picker modal */}
+      <AnimatePresence>
+        {showGradientPicker && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 z-40"
+              onClick={() => setShowGradientPicker(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 100 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 100 }}
+              className="fixed bottom-0 left-0 right-0 z-50 overflow-hidden rounded-t-3xl"
+              style={{
+                background: 'rgba(20, 20, 20, 0.95)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+              }}
+            >
+              <div className="p-4">
+                <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4" />
+                <h3 className="text-white text-lg font-semibold text-center mb-1">Post Style</h3>
+                <p className="text-white/50 text-sm text-center mb-6">Choose a background for your post</p>
+
+                <div className="grid grid-cols-3 gap-3">
+                  {(Object.entries(GRADIENTS) as [GradientKey, typeof GRADIENTS[GradientKey]][]).map(([key, gradient]) => (
+                    <button
+                      key={key}
+                      onClick={() => {
+                        setSelectedGradient(key)
+                        setShowGradientPicker(false)
+                      }}
+                      className={`relative aspect-[4/3] rounded-xl overflow-hidden transition-all ${
+                        selectedGradient === key
+                          ? 'ring-2 ring-white ring-offset-2 ring-offset-black scale-95'
+                          : 'hover:scale-95'
+                      }`}
+                    >
+                      <div
+                        className={`absolute inset-0 ${gradient.preview}`}
+                        style={gradient.value ? { background: gradient.value } : {}}
+                      />
+                      <div className="absolute inset-0 flex items-end p-2">
+                        <span className="text-[11px] font-medium text-white/80">{gradient.name}</span>
+                      </div>
+                      {selectedGradient === key && (
+                        <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-white flex items-center justify-center">
+                          <Sparkles className="w-3 h-3 text-black" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="h-8" />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
-
-// Filter slider component
-function FilterSlider({
-  icon,
-  label,
-  value,
-  onChange,
-  min,
-  max,
-  defaultValue
-}: {
-  icon: React.ReactNode
-  label: string
-  value: number
-  onChange: (v: number) => void
-  min: number
-  max: number
-  defaultValue: number
-}) {
-  const percentage = ((value - min) / (max - min)) * 100
-  const isDefault = value === defaultValue
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-white/60">
-          {icon}
-          <span className="text-xs font-medium">{label}</span>
-        </div>
-        <span className={`text-xs font-mono ${isDefault ? 'text-white/30' : 'text-white'}`}>
-          {value > 0 && defaultValue === 0 ? '+' : ''}{value}{label === 'Warmth' ? '°' : '%'}
-        </span>
-      </div>
-      <div className="relative h-6 flex items-center">
-        <div className="absolute w-full h-1 bg-white/10 rounded-full" />
-        <div
-          className="absolute h-1 bg-white/40 rounded-full"
-          style={{ width: `${percentage}%` }}
-        />
-        <input
-          type="range"
-          min={min}
-          max={max}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="absolute w-full h-6 opacity-0 cursor-pointer"
-        />
-        <div
-          className="absolute w-4 h-4 bg-white rounded-full shadow-lg pointer-events-none transition-transform hover:scale-110"
-          style={{ left: `calc(${percentage}% - 8px)` }}
-        />
-      </div>
-    </div>
-  )
-}
-

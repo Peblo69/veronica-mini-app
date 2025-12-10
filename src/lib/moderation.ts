@@ -1,11 +1,20 @@
 export type TextModerationResult = {
   flagged: boolean
   categories: Record<string, boolean>
+  category_scores?: Record<string, number>
 }
 
 export type ImageModerationResult = {
   flagged: boolean
   reasons: string[]
+  categories: {
+    sexual: boolean
+    sexual_minors: boolean
+    violence: boolean
+    self_harm: boolean
+    hate: boolean
+  }
+  scores: Record<string, number>
 }
 
 const GUARDRAIL_URL = import.meta.env.VITE_AI_GUARDRAIL_URL
@@ -46,11 +55,46 @@ export async function moderateText(content: string): Promise<TextModerationResul
   }
 }
 
-export async function moderateImage(imageUrl: string): Promise<ImageModerationResult | null> {
+// Convert File/Blob to base64 data URL
+async function fileToBase64(file: File | Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+// Convert blob URL to base64 data URL
+async function blobUrlToBase64(blobUrl: string): Promise<string> {
+  const response = await fetch(blobUrl)
+  const blob = await response.blob()
+  return fileToBase64(blob)
+}
+
+/**
+ * Moderate an image for NSFW content
+ * @param imageSource - Can be a File, Blob, blob URL (blob:...), or public URL
+ */
+export async function moderateImage(imageSource: string | File | Blob): Promise<ImageModerationResult | null> {
   try {
-    const data = await callGuardrail({ type: 'image', imageUrl })
+    let imageData: string
+
+    if (imageSource instanceof File || imageSource instanceof Blob) {
+      // Convert File/Blob directly to base64
+      imageData = await fileToBase64(imageSource)
+    } else if (imageSource.startsWith('blob:')) {
+      // Convert blob URL to base64
+      imageData = await blobUrlToBase64(imageSource)
+    } else {
+      // Assume it's a public URL - pass as-is
+      imageData = imageSource
+    }
+
+    const data = await callGuardrail({ type: 'image', imageUrl: imageData })
     return data?.result || null
-  } catch {
+  } catch (err) {
+    console.error('[moderateImage] Error:', err)
     return null
   }
 }

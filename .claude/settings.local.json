@@ -24,7 +24,11 @@
       "WebFetch(domain:core.telegram.org)",
       "Bash(python -m json.tool:*)",
       "Bash(ls:*)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(git restore:*)",
+      "WebFetch(domain:peblo69.github.io)"
     ],
     "deny": [],
     "ask": []

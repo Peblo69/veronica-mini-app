@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Heart, MoreHorizontal, CheckCircle, Lock, Eye, X, Users, Trash2, EyeOff, Edit3, Flag, Copy, UserX, Volume2, VolumeX, Play, Star, Image } from 'lucide-react'
+import { Heart, MoreHorizontal, CheckCircle, Lock, Eye, X, Users, Trash2, EyeOff, Edit3, Flag, Copy, UserX, Volume2, VolumeX, Play, Star, Image, BarChart3, MessageCircleQuestion, Check } from 'lucide-react'
 import { PixelHeart, PixelComment, PixelShare, PixelBookmark, PixelStar } from '../components/PixelIcons'
-import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, deletePost, getPostLikes, subscribeToFeedUpdates, type User, type Post } from '../lib/api'
+import { getFeed, getSuggestedCreators, likePost, unlikePost, savePost, unsavePost, deletePost, getPostLikes, subscribeToFeedUpdates, votePoll, type User, type Post } from '../lib/api'
 import { unlockPostWithPayment } from '../lib/paymentsApi'
-import { getLivestreams, subscribeToLivestreams, type Livestream } from '../lib/livestreamApi'
+// Livestream imports removed - feature disabled
+// import { getLivestreams, subscribeToLivestreams, type Livestream } from '../lib/livestreamApi'
 import PostDetail from '../components/PostDetail'
 import BottomSheet from '../components/BottomSheet'
 import CommentsSheet from '../components/CommentsSheet'
@@ -12,20 +13,31 @@ import { reportPost } from '../lib/reportApi'
 import { blockUser } from '../lib/settingsApi'
 import { useInViewport } from '../hooks/useInViewport'
 import { useTranslation } from 'react-i18next'
+import StoryViewer, { type StoryItem } from '../components/StoryViewer'
+import { getActiveStories } from '../lib/storyApi'
 
 interface HomePageProps {
   user: User
   onCreatorClick: (creator: any) => void
-  onLivestreamClick?: (livestreamId: string) => void
-  onGoLive?: () => void
   onSheetStateChange?: (isOpen: boolean) => void
 }
 
-const filterLiveStreams = (streams: Livestream[]) =>
-  streams.filter(stream => stream.status === 'live' && !!stream.started_at && !!stream.agora_channel && (stream.viewer_count || 0) > 0)
+// Livestream filter removed - feature disabled
+// const filterLiveStreams = (streams: Livestream[]) =>
+//   streams.filter(stream => stream.status === 'live' && !!stream.started_at && !!stream.agora_channel && (stream.viewer_count || 0) > 0)
 
 const INITIAL_POST_BATCH = 5
 const LOAD_MORE_BATCH = 3
+
+// Gradient backgrounds for styled posts (matching CreatePage)
+const POST_GRADIENTS: Record<string, string> = {
+  midnight: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+  ember: 'linear-gradient(135deg, #2d1f1f 0%, #4a2020 50%, #6b2020 100%)',
+  aurora: 'linear-gradient(135deg, #1a2f1a 0%, #1a3a2a 50%, #0f4a3a 100%)',
+  twilight: 'linear-gradient(135deg, #2d1f3d 0%, #3d2050 50%, #4a1f6a 100%)',
+  ocean: 'linear-gradient(135deg, #0d1b2a 0%, #1b263b 50%, #274060 100%)',
+  sunset: 'linear-gradient(135deg, #3d2c29 0%, #5c3d31 50%, #7a4a3a 100%)',
+}
 
 // Simple Video Player - FIXED size, tap to pause, bottom-right mute button
 interface FeedVideoPlayerProps {
@@ -358,11 +370,10 @@ function MediaCarousel({ urls, canView, muted, onMuteChange, shouldPlay, onDoubl
   )
 }
 
-export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGoLive, onSheetStateChange }: HomePageProps) {
+export default function HomePage({ user, onCreatorClick, onSheetStateChange }: HomePageProps) {
   const { t } = useTranslation()
   const [posts, setPosts] = useState<Post[]>([])
   const [suggestions, setSuggestions] = useState<User[]>([])
-  const [livestreams, setLivestreams] = useState<Livestream[]>([])
   const [loading, setLoading] = useState(true)
   const [feedMuted, setFeedMuted] = useState(true) // Start muted for better autoplay
   const [activePostId, setActivePostId] = useState<number | null>(null)
@@ -380,9 +391,15 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   const [likesSheetUsers, setLikesSheetUsers] = useState<User[]>([])
   const [likesSheetLoading, setLikesSheetLoading] = useState(false)
 
+  // Poll voting state
+  const [votingPollId, setVotingPollId] = useState<number | null>(null)
+
   // Comments sheet state
   const [commentsSheetOpen, setCommentsSheetOpen] = useState(false)
   const [commentsSheetPost, setCommentsSheetPost] = useState<number | null>(null)
+  const [stories, setStories] = useState<StoryItem[]>([])
+  const [showStoryViewer, setShowStoryViewer] = useState(false)
+  const [activeStoryIndex, setActiveStoryIndex] = useState(0)
 
   // Notify parent when any bottom sheet is open OR post detail is open
   useEffect(() => {
@@ -392,6 +409,7 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
 
   useEffect(() => {
     loadData()
+    loadStories()
   }, [])
 
   // Subscribe to realtime feed updates
@@ -433,24 +451,67 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
     return () => unsubscribe()
   }, [user.telegram_id])
 
-  useEffect(() => {
-    const unsubscribe = subscribeToLivestreams((streams) => setLivestreams(filterLiveStreams(streams)))
-    return () => {
-      unsubscribe()
-    }
-  }, [])
+  // Livestream subscription removed - feature disabled
+  // useEffect(() => {
+  //   const unsubscribe = subscribeToLivestreams((streams) => setLivestreams(filterLiveStreams(streams)))
+  //   return () => {
+  //     unsubscribe()
+  //   }
+  // }, [])
 
   const loadData = async () => {
-    const [feedPosts, suggestedCreators, liveStreams] = await Promise.all([
-      getFeed(user.telegram_id),
-      getSuggestedCreators(6, user.telegram_id),
-      getLivestreams()
-    ])
-    setPosts(feedPosts)
-    setVisibleCount(Math.min(feedPosts.length, INITIAL_POST_BATCH))
-    setSuggestions(suggestedCreators)
-    setLivestreams(filterLiveStreams(liveStreams))
-    setLoading(false)
+    try {
+      const [feedPosts, suggestedCreators] = await Promise.all([
+        getFeed(user.telegram_id),
+        getSuggestedCreators(6, user.telegram_id),
+      ])
+      setPosts(feedPosts)
+      setVisibleCount(Math.min(feedPosts.length, INITIAL_POST_BATCH))
+      setSuggestions(suggestedCreators)
+    } catch (err) {
+      console.error('[Home] loadData failed', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadStories = async () => {
+    try {
+      const { stories: activeStories } = await getActiveStories()
+      setStories(activeStories || [])
+    } catch (err) {
+      console.error('[Home] loadStories failed', err)
+    }
+  }
+
+  // Handle poll voting
+  const handlePollVote = async (post: Post, optionIndex: number) => {
+    if (votingPollId === post.id) return // Already voting
+    if (post.poll_user_vote !== undefined) return // Already voted
+
+    setVotingPollId(post.id)
+    try {
+      const result = await votePoll(post.id, optionIndex, user.telegram_id)
+      if (result.data && !result.error) {
+        // Update post with new vote data
+        setPosts(prev =>
+          prev.map(p =>
+            p.id === post.id
+              ? {
+                  ...p,
+                  poll_votes: result.data.poll_votes,
+                  poll_total_votes: result.data.poll_total_votes,
+                  poll_user_vote: result.data.poll_user_vote
+                }
+              : p
+          )
+        )
+      }
+    } catch (err) {
+      console.error('Poll vote failed:', err)
+    } finally {
+      setVotingPollId(null)
+    }
   }
 
   const handleLike = async (post: Post) => {
@@ -730,9 +791,9 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   }
 
   const renderPostCard = (post: Post) => (
-    <div key={post.id} className="bg-black pb-4 mb-2 border-b-4 border-gray-800/80">
-      {/* Header - Instagram style */}
-      <div className="flex items-center justify-between px-3 py-2">
+    <div key={post.id} className="bg-black pb-2 border-b border-gray-800/50">
+      {/* Header - Compact */}
+      <div className="flex items-center justify-between px-3 py-1.5">
         <button className="flex items-center gap-3" onClick={() => post.creator && onCreatorClick(post.creator)}>
           <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-700">
             <img
@@ -897,23 +958,23 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
         </div>
       ) : null}
 
-      {/* Action Bar - 8-bit Pixel Style */}
-      <div className="px-3 py-2">
+      {/* Action Bar - Compact */}
+      <div className="px-3 py-1.5">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-4">
             <button className="active:scale-90 transition-transform" onClick={() => handleLike(post)}>
-              <PixelHeart className={`w-7 h-7 ${post.liked ? 'text-red-500' : 'text-white'}`} filled={post.liked} />
+              <PixelHeart className={`w-6 h-6 ${post.liked ? 'text-red-500' : 'text-white'}`} filled={post.liked} />
             </button>
             <button className="active:scale-90 transition-transform" onClick={() => handleViewCommenters(post)}>
-              <PixelComment className="w-7 h-7 text-white" />
+              <PixelComment className="w-6 h-6 text-white" />
             </button>
             <button className="active:scale-90 transition-transform">
-              <PixelShare className="w-7 h-7 text-white" />
+              <PixelShare className="w-6 h-6 text-white" />
             </button>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <button onClick={() => handleSave(post)} className="active:scale-90 transition-transform">
-              <PixelBookmark className={`w-7 h-7 text-white`} filled={post.saved} />
+              <PixelBookmark className={`w-6 h-6 text-white`} filled={post.saved} />
             </button>
             {/* Gift Star Button */}
             <button
@@ -921,11 +982,11 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
               onClick={() => {/* TODO: Open gift modal */}}
             >
               <PixelStar
-                className={`w-7 h-7 ${(post.gifts_count || 0) > 0 ? 'text-sky-400' : 'text-yellow-400'}`}
+                className={`w-6 h-6 ${(post.gifts_count || 0) > 0 ? 'text-sky-400' : 'text-yellow-400'}`}
                 filled={(post.gifts_count || 0) > 0}
               />
               {(post.gifts_count || 0) > 0 && (
-                <span className="text-[10px] font-bold text-sky-400 -mt-0.5">{post.gifts_count}</span>
+                <span className="text-[9px] font-bold text-sky-400 -mt-0.5">{post.gifts_count}</span>
               )}
             </button>
           </div>
@@ -940,8 +1001,102 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
           </button>
         )}
 
-        {/* Caption */}
-        {post.content && (
+        {/* Caption / Poll / Styled Post */}
+        {post.post_type === 'poll' && post.poll_options ? (
+          // Poll Post
+          <div className="mt-3">
+            {/* Poll question */}
+            {post.content && (
+              <div className="mb-3">
+                <span className="text-sm text-white">
+                  <span className="font-semibold mr-1">{post.creator?.username || t('feed.userFallback')}</span>
+                  {post.content}
+                </span>
+              </div>
+            )}
+            {/* Poll options */}
+            <div className="space-y-2">
+              {post.poll_options.map((option, idx) => {
+                const votes = post.poll_votes?.[idx] || 0
+                const total = post.poll_total_votes || 0
+                const percentage = total > 0 ? Math.round((votes / total) * 100) : 0
+                const hasVoted = post.poll_user_vote !== undefined
+                const isUserVote = post.poll_user_vote === idx
+                const isExpired = post.poll_ends_at && new Date(post.poll_ends_at) < new Date()
+
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => !hasVoted && !isExpired && handlePollVote(post, idx)}
+                    disabled={hasVoted || isExpired || votingPollId === post.id}
+                    className={`w-full relative overflow-hidden rounded-xl transition-all ${
+                      hasVoted || isExpired
+                        ? 'cursor-default'
+                        : 'hover:bg-white/10 active:scale-[0.98]'
+                    }`}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: isUserVote ? '2px solid rgba(255, 255, 255, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
+                    }}
+                  >
+                    {/* Progress bar */}
+                    {hasVoted && (
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${percentage}%` }}
+                        transition={{ duration: 0.5, ease: 'easeOut' }}
+                        className="absolute inset-y-0 left-0 bg-white/10"
+                      />
+                    )}
+                    <div className="relative px-4 py-3 flex items-center justify-between">
+                      <span className="text-sm text-white flex items-center gap-2">
+                        {isUserVote && <Check className="w-4 h-4 text-green-400" />}
+                        {option}
+                      </span>
+                      {hasVoted && (
+                        <span className="text-sm font-semibold text-white/70">{percentage}%</span>
+                      )}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+            {/* Poll stats */}
+            <div className="mt-2 flex items-center gap-3 text-xs text-white/40">
+              <span className="flex items-center gap-1">
+                <BarChart3 className="w-3 h-3" />
+                {post.poll_total_votes || 0} votes
+              </span>
+              {post.poll_ends_at && (
+                <span>
+                  {new Date(post.poll_ends_at) < new Date()
+                    ? 'Poll ended'
+                    : `Ends ${new Date(post.poll_ends_at).toLocaleDateString()}`
+                  }
+                </span>
+              )}
+            </div>
+          </div>
+        ) : post.background_gradient && POST_GRADIENTS[post.background_gradient] ? (
+          // Styled Post with gradient background
+          <div
+            className="mt-3 rounded-2xl p-6 min-h-[120px] flex items-center justify-center"
+            style={{ background: POST_GRADIENTS[post.background_gradient] }}
+          >
+            <div className="text-center">
+              {post.post_type === 'question' && (
+                <MessageCircleQuestion className="w-6 h-6 text-white/60 mx-auto mb-2" />
+              )}
+              <p className="text-white text-lg font-medium leading-relaxed">
+                {post.content}
+              </p>
+              <p className="text-white/50 text-xs mt-3">
+                — {post.creator?.username || t('feed.userFallback')}
+              </p>
+            </div>
+          </div>
+        ) : post.content && (
+          // Regular caption
           <div className="mt-2">
             <span className="text-sm text-white">
               <span className="font-semibold mr-1">{post.creator?.username || t('feed.userFallback')}</span>
@@ -966,8 +1121,8 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
         </button>
 
         {/* Timestamp */}
-        <div className="mt-1 mb-2">
-          <span className="text-[11px] text-gray-500 uppercase">{formatTime(post.created_at)}</span>
+        <div className="mt-0.5">
+          <span className="text-[10px] text-gray-500 uppercase">{formatTime(post.created_at)}</span>
         </div>
       </div>
     </div>
@@ -1012,58 +1167,40 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
   }
 
   return (
-    <div className="bg-black max-w-lg mx-auto relative pb-20">
-      {/* Live Now Section - Stories style */}
-      {(livestreams.length > 0 || user.is_creator) && (
-        <div className="border-b border-gray-800 py-3 px-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-              <span className="text-[13px] font-semibold text-white">{t('feed.live.title')}</span>
-            </div>
-            {user.is_creator && onGoLive && (
-              <button
-                onClick={onGoLive}
-                className="text-[13px] font-semibold text-blue-500"
-              >
-                {t('feed.live.goLive')}
-              </button>
-            )}
-          </div>
+    <div className="bg-black max-w-lg mx-auto relative pb-16">
+      {/* Livestream section removed - feature disabled */}
 
-          {livestreams.length > 0 ? (
-            <div className="flex gap-4 overflow-x-auto no-scrollbar">
-              {livestreams.map((stream) => (
-                <button
-                  key={stream.id}
-                  className="flex flex-col items-center min-w-[66px]"
-                  onClick={() => onLivestreamClick?.(stream.id)}
-                >
-                  <div className="relative">
-                    <div className="w-[62px] h-[62px] rounded-full p-[3px] bg-gradient-to-tr from-red-500 via-pink-500 to-orange-500">
-                      <div className="w-full h-full rounded-full p-[2px] bg-white">
-                        <img
-                          src={stream.creator?.avatar_url || `https://i.pravatar.cc/150?u=${stream.creator_id}`}
-                          alt=""
-                          className="w-full h-full rounded-full object-cover"
-                        />
-                      </div>
-                    </div>
-                    <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded border-2 border-white">
-                      {t('feed.live.badge')}
-                    </div>
+      {stories.length > 0 && (
+        <div className="border-b border-gray-800 py-3 px-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[13px] font-semibold text-white">{t('feed.stories.title')}</span>
+            <span className="text-[12px] text-white/60">{stories.length}</span>
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {stories.map((story, idx) => (
+              <button
+                key={story.id}
+                onClick={() => {
+                  setActiveStoryIndex(idx)
+                  setShowStoryViewer(true)
+                }}
+                className="flex flex-col items-center min-w-[64px] gap-1 focus:outline-none"
+              >
+                <div className="w-[62px] h-[62px] rounded-full p-[2px] bg-gradient-to-tr from-blue-500 via-purple-500 to-pink-500">
+                  <div className="w-full h-full rounded-full p-[2px] bg-black">
+                    <img
+                      src={story.user?.avatar_url || `https://i.pravatar.cc/150?u=${story.user_id}`}
+                      alt=""
+                      className="w-full h-full rounded-full object-cover"
+                    />
                   </div>
-                  <span className="text-[11px] text-white mt-1.5 truncate w-full text-center">
-                    {stream.creator?.first_name}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="text-[13px] text-gray-400 text-center py-4">
-              {t('feed.live.none')}
-            </p>
-          )}
+                </div>
+                <span className="text-[11px] text-white/80 truncate max-w-[68px]">
+                  {story.user?.first_name || story.user?.username || `@user${story.user_id}`}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1226,6 +1363,14 @@ export default function HomePage({ user, onCreatorClick, onLivestreamClick, onGo
           />
         )}
       </AnimatePresence>
+
+      {showStoryViewer && (
+        <StoryViewer
+          stories={stories}
+          startIndex={activeStoryIndex}
+          onClose={() => setShowStoryViewer(false)}
+        />
+      )}
 
       {/* Likes Bottom Sheet */}
       <BottomSheet

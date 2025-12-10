@@ -22,6 +22,12 @@ export interface User {
   following_count: number
   posts_count: number
   likes_received: number
+  // Admin fields
+  is_banned?: boolean
+  banned_reason?: string
+  banned_at?: string
+  created_at?: string
+  last_active?: string
 }
 
 export interface Post {
@@ -38,6 +44,7 @@ export interface Post {
   unlock_price: number
   likes_count: number
   comments_count: number
+  view_count?: number  // Video view count
   gifts_count?: number  // Total stars gifted on this post
   created_at: string
   creator?: User
@@ -47,6 +54,19 @@ export interface Post {
   is_purchased?: boolean
   is_following?: boolean
   is_subscribed?: boolean
+  // Interactive post types
+  post_type?: 'thought' | 'poll' | 'question'
+  poll_options?: string[]
+  poll_votes?: number[]  // Vote counts per option
+  poll_total_votes?: number
+  poll_ends_at?: string
+  poll_user_vote?: number  // Which option current user voted for (0-indexed)
+  background_gradient?: string
+  // Admin fields
+  is_hidden?: boolean
+  hidden_reason?: string
+  hidden_by?: number
+  hidden_at?: string
 }
 
 export interface CreatorPostsResult {
@@ -103,6 +123,19 @@ export async function getUser(telegramId: number): Promise<User | null> {
     .eq('telegram_id', telegramId)
     .single()
   return data as User | null
+}
+
+// Get accurate follower/following counts from the follows table
+export async function getFollowCounts(userId: number): Promise<{ followers: number; following: number }> {
+  const [followersRes, followingRes] = await Promise.all([
+    supabase.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', userId),
+    supabase.from('follows').select('id', { count: 'exact', head: true }).eq('follower_id', userId)
+  ])
+
+  return {
+    followers: followersRes.count || 0,
+    following: followingRes.count || 0
+  }
 }
 
 // Update user profile
@@ -332,6 +365,11 @@ export interface CreatePostData {
   media_height?: number
   media_duration?: number  // for videos, in seconds
   media_size_bytes?: number
+  // Interactive post types
+  post_type?: 'thought' | 'poll' | 'question'  // Default: thought
+  poll_options?: string[]  // For polls: 2-4 options
+  poll_duration_hours?: number  // Poll expiry (24, 48, 72 hours)
+  background_gradient?: string  // Gradient key for styled posts
 }
 
 export async function createPost(creatorId: number, postData: CreatePostData) {
@@ -381,6 +419,22 @@ export async function createPost(creatorId: number, postData: CreatePostData) {
   if (postData.media_duration) insertData.media_duration = postData.media_duration
   if (postData.media_size_bytes) insertData.media_size_bytes = postData.media_size_bytes
 
+  // Add interactive post type fields
+  if (postData.post_type) insertData.post_type = postData.post_type
+  if (postData.background_gradient) insertData.background_gradient = postData.background_gradient
+
+  // Handle poll-specific data
+  if (postData.post_type === 'poll' && postData.poll_options && postData.poll_options.length >= 2) {
+    insertData.poll_options = postData.poll_options
+    insertData.poll_votes = postData.poll_options.map(() => 0) // Initialize all votes to 0
+    insertData.poll_total_votes = 0
+    // Set poll end time
+    const durationHours = postData.poll_duration_hours || 24
+    const endsAt = new Date()
+    endsAt.setHours(endsAt.getHours() + durationHours)
+    insertData.poll_ends_at = endsAt.toISOString()
+  }
+
   const { data, error } = await supabase
     .from('posts')
     .insert(insertData)
@@ -397,6 +451,70 @@ export async function createPost(creatorId: number, postData: CreatePostData) {
   }
 
   return { data, error }
+}
+
+// Vote on a poll
+export async function votePoll(postId: number, optionIndex: number, userId: number) {
+  // First check if user already voted
+  const { data: existingVote } = await supabase
+    .from('poll_votes')
+    .select('id, option_index')
+    .eq('post_id', postId)
+    .eq('user_id', userId)
+    .single()
+
+  if (existingVote) {
+    return { error: { message: 'Already voted' }, alreadyVoted: true, previousVote: existingVote.option_index }
+  }
+
+  // Get the post to update vote counts
+  const { data: post, error: fetchError } = await supabase
+    .from('posts')
+    .select('poll_votes, poll_total_votes, poll_ends_at')
+    .eq('id', postId)
+    .single()
+
+  if (fetchError || !post) {
+    return { error: fetchError || { message: 'Post not found' } }
+  }
+
+  // Check if poll has ended
+  if (post.poll_ends_at && new Date(post.poll_ends_at) < new Date()) {
+    return { error: { message: 'Poll has ended' } }
+  }
+
+  // Update vote counts
+  const newVotes = [...(post.poll_votes || [])]
+  if (newVotes[optionIndex] !== undefined) {
+    newVotes[optionIndex]++
+  }
+  const newTotal = (post.poll_total_votes || 0) + 1
+
+  // Record the vote and update post atomically
+  const [voteResult, updateResult] = await Promise.all([
+    supabase.from('poll_votes').insert({
+      post_id: postId,
+      user_id: userId,
+      option_index: optionIndex
+    }),
+    supabase.from('posts').update({
+      poll_votes: newVotes,
+      poll_total_votes: newTotal
+    }).eq('id', postId)
+  ])
+
+  if (voteResult.error) {
+    return { error: voteResult.error }
+  }
+
+  return {
+    data: {
+      poll_votes: newVotes,
+      poll_total_votes: newTotal,
+      poll_user_vote: optionIndex
+    },
+    error: updateResult.error
+  }
 }
 
 // Edit post
@@ -528,6 +646,39 @@ export async function getPost(postId: number): Promise<Post | null> {
   return data as Post | null
 }
 
+// Record video view (1 view per user per video)
+export async function recordVideoView(userId: number, postId: number): Promise<boolean> {
+  try {
+    // Try the RPC function first
+    const { data, error } = await supabase.rpc('record_video_view', {
+      p_post_id: postId,
+      p_user_id: userId
+    })
+
+    if (!error) return data === true
+
+    // Fallback: direct insert with conflict handling
+    console.warn('[recordVideoView] RPC failed, falling back to direct insert', error)
+    const { error: insertError } = await supabase
+      .from('post_views')
+      .insert({ post_id: postId, user_id: userId })
+
+    if (insertError) {
+      // If conflict (already viewed), that's fine
+      if (insertError.code === '23505') return false
+      console.error('Record view error:', insertError)
+      return false
+    }
+
+    // Increment the view count on the post
+    await supabase.rpc('increment', { row_id: postId, table_name: 'posts', column_name: 'view_count' })
+    return true
+  } catch (err) {
+    console.error('Record view exception:', err)
+    return false
+  }
+}
+
 // Like post (atomic)
 export async function likePost(userId: number, postId: number) {
   // Primary: atomic RPC
@@ -594,30 +745,35 @@ export async function unlikePost(userId: number, postId: number) {
 
 // Get users who liked a post
 export async function getPostLikes(postId: number): Promise<User[]> {
-  const { data, error } = await supabase
+  // First get the user IDs who liked the post
+  const { data: likesData, error: likesError } = await supabase
     .from('likes')
-    .select(`
-      user_id,
-      users:user_id (
-        telegram_id,
-        username,
-        first_name,
-        last_name,
-        avatar_url,
-        is_verified,
-        is_creator
-      )
-    `)
+    .select('user_id')
     .eq('post_id', postId)
     .order('created_at', { ascending: false })
     .limit(100)
 
-  if (error) {
-    console.error('Error fetching post likes:', error)
+  if (likesError || !likesData || likesData.length === 0) {
+    if (likesError) console.error('Error fetching post likes:', likesError)
     return []
   }
 
-  return (data || []).map((item: any) => item.users).filter(Boolean) as User[]
+  const userIds = likesData.map(l => l.user_id)
+
+  // Then fetch the user details
+  const { data: usersData, error: usersError } = await supabase
+    .from('users')
+    .select('telegram_id, username, first_name, last_name, avatar_url, is_verified, is_creator')
+    .in('telegram_id', userIds)
+
+  if (usersError) {
+    console.error('Error fetching users for likes:', usersError)
+    return []
+  }
+
+  // Preserve the order from likes
+  const userMap = new Map((usersData || []).map(u => [u.telegram_id, u]))
+  return userIds.map(id => userMap.get(id)).filter(Boolean) as User[]
 }
 
 // Get users who commented on a post (unique)
@@ -816,6 +972,72 @@ export async function isFollowing(followerId: number, followingId: number): Prom
   return !!data
 }
 
+// Get followers list (people who follow a user)
+export async function getFollowers(userId: number, limit = 200): Promise<User[]> {
+  // First get the follower IDs
+  const { data: followsData, error: followsError } = await supabase
+    .from('follows')
+    .select('follower_id')
+    .eq('following_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (followsError || !followsData || followsData.length === 0) {
+    if (followsError) console.error('Error fetching followers:', followsError)
+    return []
+  }
+
+  const followerIds = followsData.map(f => f.follower_id)
+
+  // Then fetch the user details
+  const { data: usersData, error: usersError } = await supabase
+    .from('users')
+    .select('telegram_id, username, first_name, last_name, avatar_url, is_verified, is_creator, bio')
+    .in('telegram_id', followerIds)
+
+  if (usersError) {
+    console.error('Error fetching users for followers:', usersError)
+    return []
+  }
+
+  // Preserve the order from follows
+  const userMap = new Map((usersData || []).map(u => [u.telegram_id, u]))
+  return followerIds.map(id => userMap.get(id)).filter(Boolean) as User[]
+}
+
+// Get following list (people a user follows)
+export async function getFollowing(userId: number, limit = 200): Promise<User[]> {
+  // First get the following IDs
+  const { data: followsData, error: followsError } = await supabase
+    .from('follows')
+    .select('following_id')
+    .eq('follower_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (followsError || !followsData || followsData.length === 0) {
+    if (followsError) console.error('Error fetching following:', followsError)
+    return []
+  }
+
+  const followingIds = followsData.map(f => f.following_id)
+
+  // Then fetch the user details
+  const { data: usersData, error: usersError } = await supabase
+    .from('users')
+    .select('telegram_id, username, first_name, last_name, avatar_url, is_verified, is_creator, bio')
+    .in('telegram_id', followingIds)
+
+  if (usersError) {
+    console.error('Error fetching users for following:', usersError)
+    return []
+  }
+
+  // Preserve the order from follows
+  const userMap = new Map((usersData || []).map(u => [u.telegram_id, u]))
+  return followingIds.map(id => userMap.get(id)).filter(Boolean) as User[]
+}
+
 /**
  * Subscribe to follow changes for a specific user (as the one being followed)
  * This allows real-time follower count updates
@@ -964,18 +1186,22 @@ export function canViewPost(
   // Own post
   if (post.creator_id === userId) return true
 
+  // Normalize values (handle null from database)
+  const isNsfw = post.is_nsfw ?? false
+  const unlockPrice = post.unlock_price ?? 0
+
   // Public non-NSFW posts
-  if (post.visibility === 'public' && !post.is_nsfw && post.unlock_price === 0) {
+  if (post.visibility === 'public' && !isNsfw && unlockPrice === 0) {
     return true
   }
 
   // Pay-to-unlock requires purchase
-  if (post.unlock_price > 0 && !isPurchased) {
+  if (unlockPrice > 0 && !isPurchased) {
     return false
   }
 
   // NSFW requires subscription
-  if (post.is_nsfw && !isSubscribed) {
+  if (isNsfw && !isSubscribed) {
     return false
   }
 
@@ -1363,6 +1589,7 @@ export function subscribeToPost(
 
 /**
  * Subscribe to user profile updates
+ * CRITICAL: Validates telegram_id before calling onUpdate to prevent profile corruption
  */
 export function subscribeToUserUpdates(
   telegramId: number,
@@ -1379,7 +1606,17 @@ export function subscribeToUserUpdates(
         filter: `telegram_id=eq.${telegramId}`,
       },
       (payload) => {
-        onUpdate(payload.new as User)
+        const updatedUser = payload.new as User
+        // CRITICAL VALIDATION: Only accept updates for the correct user
+        // This prevents profile corruption from realtime filter race conditions
+        if (updatedUser.telegram_id !== telegramId) {
+          console.error('[USER SECURITY] Rejected realtime update for wrong user!', {
+            expected: telegramId,
+            received: updatedUser.telegram_id,
+          })
+          return
+        }
+        onUpdate(updatedUser)
       }
     )
     .subscribe()

@@ -16,11 +16,21 @@ export async function createStory(userId: number, mediaUrl: string, mediaType: '
 }
 
 export async function getActiveStories() {
-  const { data, error } = await supabase
-    .from('stories')
-    .select('*, user:users!user_id(*)')
-    .gt('expires_at', new Date().toISOString())
-    .order('created_at', { ascending: false })
+  try {
+    const { data, error } = await supabase
+      .from('stories')
+      .select('*, user:users!user_id(*)')
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
 
-  return { stories: data || [], error }
+    if (error) {
+      console.warn('Stories table may not exist:', error.message)
+      return { stories: [], error }
+    }
+
+    return { stories: data || [], error: null }
+  } catch (err) {
+    console.warn('Failed to load stories:', err)
+    return { stories: [], error: err }
+  }
 }

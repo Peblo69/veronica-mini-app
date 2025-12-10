@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { VideoHTMLAttributes } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle, Search, ArrowLeft, Send, Image, Gift, DollarSign, Lock, X, Loader2, Plus, Video, CheckCheck, AlertCircle, CornerUpLeft, Forward, Trash2, Volume2, MessageCircle, Languages, Globe, Sparkles, MoreVertical, BellOff, UserX, EyeOff, Flag } from 'lucide-react'
+import { CheckCircle, ArrowLeft, Send, Image, Gift, DollarSign, Lock, X, Loader2, Plus, Video, CheckCheck, AlertCircle, CornerUpLeft, Forward, Trash2, Volume2, MessageCircle, Languages, Globe, Sparkles, ChevronDown, Edit3, MoreVertical, Ban, Eraser, Flag, Bell, Megaphone } from 'lucide-react'
 import { type User } from '../lib/api'
 import { useTranslation } from 'react-i18next'
 import {
@@ -19,8 +19,6 @@ import {
   addReaction,
   deleteMessage,
   getMessageReactions,
-  approveChatRequest,
-  deleteConversation,
   type Conversation,
   type Message,
   type Gift as GiftType,
@@ -34,6 +32,7 @@ import { TranslationLRUCache } from '../lib/lruCache'
 
 // Global translation cache with LRU eviction (max 500 messages)
 const translationCache = new TranslationLRUCache(500)
+const TRANSLATION_PREF_KEY = 'chat-translation-prefs'
 
 // Simplified dark background - no animated stars for performance
 const ChatBackground = () => (
@@ -86,7 +85,7 @@ function MessageVideo({ containerClassName, ...videoProps }: MessageVideoProps) 
   )
 }
 
-type MessageCategory = 'primary' | 'general' | 'requests'
+type MessageCategory = 'messages' | 'requests' | 'notifications' | 'updates'
 
 interface MessagesPageProps {
   user: User
@@ -112,9 +111,8 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const [showTip, setShowTip] = useState(false)
   const [tipAmount, setTipAmount] = useState('')
   const [gifts, setGifts] = useState<GiftType[]>([])
-  const [searchQuery, setSearchQuery] = useState('')
   const [uploadingCount, setUploadingCount] = useState(0)
-  const [activeCategory, setActiveCategory] = useState<MessageCategory>('primary')
+  const [activeCategory, setActiveCategory] = useState<MessageCategory>('messages')
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null)
   const [showMessageMenu, setShowMessageMenu] = useState(false)
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
@@ -149,6 +147,37 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     if (previewUrlsRef.current.has(url)) {
       URL.revokeObjectURL(url)
       previewUrlsRef.current.delete(url)
+    }
+  }
+
+  const loadTranslationPrefs = (conversationId: string | null) => {
+    if (typeof window === 'undefined' || !conversationId) return
+    try {
+      const raw = localStorage.getItem(TRANSLATION_PREF_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as Record<string, { enabled: boolean; target: string }>
+      const pref = parsed[conversationId]
+      if (pref) {
+        setTranslateEnabled(pref.enabled)
+        setTranslateTarget(pref.target || 'en')
+      } else {
+        setTranslateEnabled(false)
+        setTranslateTarget('en')
+      }
+    } catch (err) {
+      console.warn('[Translation] load prefs failed', err)
+    }
+  }
+
+  const saveTranslationPrefs = (conversationId: string | null, enabled: boolean, target: string) => {
+    if (typeof window === 'undefined' || !conversationId) return
+    try {
+      const raw = localStorage.getItem(TRANSLATION_PREF_KEY)
+      const parsed = raw ? (JSON.parse(raw) as Record<string, { enabled: boolean; target: string }>) : {}
+      parsed[conversationId] = { enabled, target }
+      localStorage.setItem(TRANSLATION_PREF_KEY, JSON.stringify(parsed))
+    } catch (err) {
+      console.warn('[Translation] save prefs failed', err)
     }
   }
 
@@ -244,32 +273,68 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     })
   }, [translateEnabled, translateTarget, messages, user.telegram_id, translateIncomingMessage])
 
-  // iOS keyboard fix: when keyboard closes (viewport grows), scroll to bottom instantly
+  // Persist translation prefs per conversation when user toggles or changes target
+  useEffect(() => {
+    if (activeConversation?.id) {
+      saveTranslationPrefs(activeConversation.id, translateEnabled, translateTarget)
+    }
+  }, [activeConversation?.id, translateEnabled, translateTarget])
+
+  // iOS keyboard fix: scroll to bottom when keyboard opens/closes
   useEffect(() => {
     if (!activeConversation) return
 
     let lastHeight = window.visualViewport?.height ?? window.innerHeight
+    let scrollInterval: ReturnType<typeof setInterval> | null = null
+
+    const scrollToBottom = () => {
+      if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+      }
+    }
 
     const handleViewportResize = () => {
       const currentHeight = window.visualViewport?.height ?? window.innerHeight
       const heightDiff = currentHeight - lastHeight
 
-      // Keyboard closing = viewport getting BIGGER (heightDiff > 50px threshold)
-      if (heightDiff > 50 && messagesContainerRef.current) {
-        // Force scroll to bottom INSTANTLY when keyboard closes
-        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+      // Keyboard opening = viewport getting SMALLER (heightDiff < -50px)
+      // Keyboard closing = viewport getting BIGGER (heightDiff > 50px)
+      if (Math.abs(heightDiff) > 50 && messagesContainerRef.current) {
+        // Clear any existing interval
+        if (scrollInterval) clearInterval(scrollInterval)
+
+        // Scroll immediately
+        scrollToBottom()
+
+        // For keyboard OPENING, keep scrolling during the animation (iOS ~300ms)
+        if (heightDiff < -50) {
+          let scrollCount = 0
+          scrollInterval = setInterval(() => {
+            scrollToBottom()
+            scrollCount++
+            // Stop after 300ms (15 iterations at 20ms)
+            if (scrollCount >= 15) {
+              if (scrollInterval) clearInterval(scrollInterval)
+              scrollInterval = null
+            }
+          }, 20)
+        }
       }
 
       lastHeight = currentHeight
     }
 
     window.visualViewport?.addEventListener('resize', handleViewportResize)
-    return () => window.visualViewport?.removeEventListener('resize', handleViewportResize)
+    return () => {
+      window.visualViewport?.removeEventListener('resize', handleViewportResize)
+      if (scrollInterval) clearInterval(scrollInterval)
+    }
   }, [activeConversation])
 
   useEffect(() => {
     loadConversations()
     loadGifts()
+    loadTranslationPrefs(activeConversation?.id ?? null)
 
     // Subscribe to conversation updates (new messages, unread counts, new conversations)
     const unsubscribe = subscribeToConversations(user.telegram_id, (updatedConv) => {
@@ -313,6 +378,9 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     onChatStateChange?.(!!activeConversation)
 
     if (activeConversation) {
+      // Load per-conversation translation prefs
+      loadTranslationPrefs(activeConversation.id)
+
       loadMessages(activeConversation.id)
       markMessagesRead(activeConversation.id, user.telegram_id)
 
@@ -446,18 +514,6 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
     isSendingRef.current = true
 
     let text = newMessage.trim()
-    // Optional inline translation before send
-    if (translateEnabled && translateTarget && import.meta.env.VITE_AI_GUARDRAIL_URL) {
-      try {
-        const translated = await translateMessage(text, translateTarget)
-        if (translated) {
-          text = translated
-        }
-      } catch {
-        // Translation failed, send original message
-        console.warn('[MessagesPage] Translation failed, sending original')
-      }
-    }
     const tempId = `temp-text-${Date.now()}`
     const replyToId = replyTo?.id?.startsWith('temp-') ? undefined : replyTo?.id
     const savedReplyTo = replyTo
@@ -834,21 +890,19 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   }
 
   const getFilteredConversations = () => {
-    let filtered = conversations.filter(c =>
-      c.other_user?.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.other_user?.first_name?.toLowerCase().includes(searchQuery.toLowerCase())
-    )
+    const filtered = conversations
 
     switch (activeCategory) {
-      case 'primary':
-        // Primary: accepted conversations only (not requests)
-        return filtered.filter(c => !c.is_request)
-      case 'general':
-        // General: all accepted conversations (same as primary for now)
+      case 'messages':
+        // Messages: accepted conversations only (not requests)
         return filtered.filter(c => !c.is_request)
       case 'requests':
         // Requests: only pending requests
         return filtered.filter(c => c.is_request)
+      case 'notifications':
+      case 'updates':
+        // These tabs don't show conversations
+        return []
       default:
         return filtered
     }
@@ -857,49 +911,28 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
   const filteredConversations = getFilteredConversations()
 
   const categories: { id: MessageCategory; label: string }[] = [
-    { id: 'primary', label: t('messages.categories.primary') },
-    { id: 'general', label: t('messages.categories.general') },
-    { id: 'requests', label: t('messages.categories.requests') },
+    { id: 'messages', label: 'Messages' },
+    { id: 'requests', label: 'Requests' },
+    { id: 'notifications', label: 'Notifications' },
+    { id: 'updates', label: 'Updates' },
   ]
-
-  const handleApproveRequest = async (e: React.MouseEvent, conv: Conversation) => {
-    e.stopPropagation()
-    const result = await approveChatRequest(conv.id, user.telegram_id)
-    if (result.success) {
-      // Update local state
-      setConversations(prev => prev.map(c =>
-        c.id === conv.id ? { ...c, is_request: false, pending_approval_from: null } : c
-      ))
-    }
-  }
-
-  const handleDeleteConversation = async (e: React.MouseEvent, conv: Conversation) => {
-    e.stopPropagation()
-    const result = await deleteConversation(conv.id, user.telegram_id)
-    if (result.success) {
-      // Remove from local state
-      setConversations(prev => prev.filter(c => c.id !== conv.id))
-      if (activeConversation?.id === conv.id) {
-        setActiveConversation(null)
-      }
-    }
-  }
 
   const renderConversationCard = (conv: Conversation) => (
     <div
       key={conv.id}
-      className="group w-full flex items-center gap-3 p-3 rounded-2xl transition-all duration-200"
-      style={{
-        background: conv.is_request ? 'rgba(255, 200, 50, 0.05)' : 'rgba(255, 255, 255, 0.03)',
-        border: conv.is_request ? '1px solid rgba(255, 200, 50, 0.15)' : '1px solid rgba(255, 255, 255, 0.06)'
-      }}
+      className="w-full flex items-center gap-3 py-2 px-4 active:bg-white/5 transition-colors"
     >
       <button
-        className="flex items-center gap-3 flex-1 min-w-0 active:scale-[0.98] transition-transform"
+        className="flex items-center gap-3 flex-1 min-w-0"
         onClick={() => setActiveConversation(conv)}
       >
+        {/* Avatar with gradient ring for stories/active */}
         <div className="relative shrink-0">
-          <div className="w-14 h-14 rounded-full overflow-hidden ring-2 ring-white/10">
+          <div className={`w-14 h-14 rounded-full overflow-hidden ${
+            conv.is_request
+              ? 'ring-2 ring-amber-500/50'
+              : 'ring-2 ring-transparent'
+          }`}>
             <img
               src={conv.other_user?.avatar_url || `https://i.pravatar.cc/150?u=${conv.other_user?.telegram_id}`}
               alt=""
@@ -907,142 +940,108 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
               className="w-full h-full object-cover"
             />
           </div>
+          {/* Online indicator or unread dot */}
           {(conv.unread_count || 0) > 0 && (
-            <div
-              className="absolute -top-1 -right-1 min-w-[20px] h-[20px] px-1.5 rounded-full flex items-center justify-center"
-              style={{
-                background: 'linear-gradient(135deg, #FF3B30 0%, #FF2D55 100%)',
-                boxShadow: '0 2px 8px rgba(255, 59, 48, 0.4)'
-              }}
-            >
-              <span className="text-[11px] font-bold text-white leading-none">{conv.unread_count}</span>
-            </div>
+            <div className="absolute bottom-0 right-0 w-4 h-4 bg-blue-500 rounded-full border-2 border-black" />
           )}
         </div>
 
-        <div className="flex-1 min-w-0 flex flex-col gap-1 text-left">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span className="font-semibold text-[15px] text-white truncate">
-                {conv.other_user?.first_name || conv.other_user?.username || t('messages.userFallback')}
-              </span>
-              {conv.other_user?.is_verified && (
-                <CheckCircle className="w-4 h-4 text-blue-400 fill-blue-400/20" />
-              )}
-              {conv.is_request && (
-                <span className="text-[10px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded-full font-medium">
-                  {t('messages.request')}
-                </span>
-              )}
-            </div>
-            <span className="text-[12px] text-white/40 font-medium whitespace-nowrap">
-              {formatTime(conv.last_message_at)}
-            </span>
-          </div>
-
-          <div className="flex items-center justify-between gap-2">
-            <p className={`text-[14px] truncate leading-snug ${
-              (conv.unread_count || 0) > 0 ? 'text-white/80 font-medium' : 'text-white/40'
+        {/* Content */}
+        <div className="flex-1 min-w-0 text-left">
+          <div className="flex items-center gap-1.5">
+            <span className={`text-[15px] truncate ${
+              (conv.unread_count || 0) > 0 ? 'font-semibold text-white' : 'font-normal text-white'
             }`}>
-              {conv.last_message_preview || t('messages.lastMessageFallback')}
-            </p>
+              {conv.other_user?.first_name || conv.other_user?.username || t('messages.userFallback')}
+            </span>
+            {conv.other_user?.is_verified && (
+              <CheckCircle className="w-4 h-4 text-blue-400 fill-blue-400" />
+            )}
           </div>
+          <p className={`text-[14px] truncate ${
+            (conv.unread_count || 0) > 0 ? 'text-white/70' : 'text-white/50'
+          }`}>
+            {conv.last_message_preview || t('messages.lastMessageFallback')}
+            {conv.last_message_at && (
+              <span className="text-white/40"> · {formatTime(conv.last_message_at)}</span>
+            )}
+          </p>
         </div>
       </button>
 
-      {/* 3-dot menu button */}
+      {/* 3-dots menu button */}
       <div className="relative shrink-0">
         <button
           onClick={(e) => {
             e.stopPropagation()
             setConversationMenuId(conversationMenuId === conv.id ? null : conv.id)
           }}
-          className="w-8 h-8 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors"
+          className="w-10 h-10 flex items-center justify-center"
         >
-          <MoreVertical className="w-5 h-5 text-white/60" />
+          <MoreVertical className="w-5 h-5 text-white/40" strokeWidth={1.5} />
         </button>
 
-        {/* Dropdown menu */}
+        {/* Glassmorphic menu dropdown */}
         <AnimatePresence>
           {conversationMenuId === conv.id && (
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: -10 }}
+              initial={{ opacity: 0, scale: 0.9, y: -10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: -10 }}
+              exit={{ opacity: 0, scale: 0.9, y: -10 }}
               transition={{ duration: 0.15 }}
-              className="absolute right-0 top-full mt-1 z-50 min-w-[180px] py-1.5 rounded-xl overflow-hidden"
+              className="absolute right-0 top-12 z-50 min-w-[200px] rounded-2xl overflow-hidden"
               style={{
-                background: 'rgba(30, 30, 30, 0.98)',
+                background: 'rgba(40, 40, 40, 0.85)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)'
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)'
               }}
+              onClick={(e) => e.stopPropagation()}
             >
-              {conv.is_request && (
-                <button
-                  onClick={(e) => {
-                    handleApproveRequest(e, conv)
-                    setConversationMenuId(null)
-                  }}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-left"
-                >
-                  <CheckCircle className="w-4 h-4 text-green-400" />
-                  <span className="text-[14px] text-white">{t('messages.approve')}</span>
-                </button>
-              )}
               <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  // TODO: Implement mute
+                onClick={() => {
                   setConversationMenuId(null)
+                  // Clear conversation action - would need API implementation
                 }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-left"
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/10 transition-colors"
               >
-                <BellOff className="w-4 h-4 text-white/70" />
-                <span className="text-[14px] text-white">{t('messages.mute')}</span>
+                <Eraser className="w-5 h-5 text-white/70" />
+                <span className="text-[15px] text-white">Clear conversation</span>
               </button>
+              <div className="h-px bg-white/10" />
               <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  // TODO: Implement hide/archive
+                onClick={() => {
                   setConversationMenuId(null)
+                  // Mute action
                 }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-left"
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/10 transition-colors"
               >
-                <EyeOff className="w-4 h-4 text-white/70" />
-                <span className="text-[14px] text-white">{t('messages.hide')}</span>
+                <Ban className="w-5 h-5 text-white/70" />
+                <span className="text-[15px] text-white">Mute notifications</span>
               </button>
+              <div className="h-px bg-white/10" />
               <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  // TODO: Implement block
+                onClick={() => {
                   setConversationMenuId(null)
+                  // Report action
                 }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-left"
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/10 transition-colors"
               >
-                <UserX className="w-4 h-4 text-white/70" />
-                <span className="text-[14px] text-white">{t('messages.block')}</span>
+                <Flag className="w-5 h-5 text-amber-500/80" />
+                <span className="text-[15px] text-amber-500">Report user</span>
               </button>
+              <div className="h-px bg-white/10" />
               <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  // TODO: Implement report
+                onClick={async () => {
                   setConversationMenuId(null)
+                  // Delete conversation
+                  setConversations(prev => prev.filter(c => c.id !== conv.id))
                 }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-left"
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/10 transition-colors"
               >
-                <Flag className="w-4 h-4 text-white/70" />
-                <span className="text-[14px] text-white">{t('messages.report')}</span>
-              </button>
-              <div className="h-px bg-white/10 my-1" />
-              <button
-                onClick={(e) => {
-                  handleDeleteConversation(e, conv)
-                  setConversationMenuId(null)
-                }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-red-500/20 transition-colors text-left"
-              >
-                <Trash2 className="w-4 h-4 text-red-400" />
-                <span className="text-[14px] text-red-400">{t('messages.delete')}</span>
+                <Trash2 className="w-5 h-5 text-red-500/80" />
+                <span className="text-[15px] text-red-500">Delete chat</span>
               </button>
             </motion.div>
           )}
@@ -1577,78 +1576,119 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
           )}
         </AnimatePresence>
 
-        {/* Translation Settings Modal */}
+        {/* Translation Settings Modal - Premium Glassmorphic Design */}
         <AnimatePresence>
           {showTranslateSettings && (
             <>
+              {/* Backdrop with heavy blur */}
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 className="fixed inset-0 z-[200]"
-                style={{ background: 'rgba(0, 0, 0, 0.7)', backdropFilter: 'blur(8px)' }}
+                style={{
+                  background: 'rgba(0, 0, 0, 0.85)',
+                  backdropFilter: 'blur(20px)',
+                  WebkitBackdropFilter: 'blur(20px)'
+                }}
                 onClick={() => setShowTranslateSettings(false)}
               />
+
+              {/* Modal Container */}
               <motion.div
-                initial={{ opacity: 0, y: 100 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 100 }}
-                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                initial={{ opacity: 0, y: 100, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 100, scale: 0.95 }}
+                transition={{ type: 'spring', damping: 30, stiffness: 400 }}
                 className="fixed bottom-0 left-0 right-0 z-[201] safe-area-bottom overflow-hidden"
                 style={{
-                  background: 'linear-gradient(to bottom, rgba(28, 28, 30, 0.98) 0%, rgba(18, 18, 20, 0.98) 100%)',
-                  borderTopLeftRadius: '24px',
-                  borderTopRightRadius: '24px',
-                  boxShadow: '0 -4px 30px rgba(0, 0, 0, 0.5)',
+                  background: 'rgba(20, 20, 22, 0.95)',
+                  backdropFilter: 'blur(40px)',
+                  WebkitBackdropFilter: 'blur(40px)',
+                  borderTopLeftRadius: '28px',
+                  borderTopRightRadius: '28px',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderBottom: 'none',
+                  boxShadow: '0 -8px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
                 }}
               >
                 {/* Handle bar */}
-                <div className="flex justify-center py-3">
-                  <div className="w-10 h-1 rounded-full bg-white/20" />
+                <div className="flex justify-center py-4">
+                  <div className="w-12 h-1.5 rounded-full bg-white/15" />
                 </div>
 
                 {/* Header */}
-                <div className="px-5 pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center">
-                      <Languages className="w-6 h-6 text-blue-400" />
+                <div className="px-6 pb-5">
+                  <div className="flex items-center gap-4">
+                    <div
+                      className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.05)'
+                      }}
+                    >
+                      <Languages className="w-7 h-7 text-white/70" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-white">{t('messages.translation.title')}</h3>
-                      <p className="text-xs text-white/50">{t('messages.translation.subtitle')}</p>
+                      <h3 className="text-xl font-semibold text-white tracking-tight">{t('messages.translation.title')}</h3>
+                      <p className="text-sm text-white/40 mt-0.5">{t('messages.translation.subtitle')}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Divider */}
-                <div className="mx-5 h-px bg-white/10" />
+                <div className="mx-6 h-px bg-white/8" />
 
                 {/* Settings */}
-                <div className="p-5 space-y-4">
+                <div className="p-6 space-y-5">
                   {/* Enable/Disable Toggle */}
-                  <div className="flex items-center justify-between p-4 rounded-2xl" style={{ background: 'rgba(255, 255, 255, 0.05)' }}>
+                  <div
+                    className="flex items-center justify-between p-4 rounded-2xl"
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid rgba(255, 255, 255, 0.06)',
+                    }}
+                  >
                     <div className="flex items-center gap-3">
-                      <Sparkles className={`w-5 h-5 ${translateEnabled ? 'text-blue-400' : 'text-white/40'}`} />
+                      <Sparkles className={`w-5 h-5 transition-colors ${translateEnabled ? 'text-white' : 'text-white/30'}`} />
                       <div>
                         <p className="font-medium text-white text-[15px]">{t('messages.translation.autoTitle')}</p>
-                        <p className="text-xs text-white/40">{t('messages.translation.autoSubtitle')}</p>
+                        <p className="text-xs text-white/35 mt-0.5">{t('messages.translation.autoSubtitle')}</p>
                       </div>
                     </div>
                     <button
                       onClick={() => setTranslateEnabled(!translateEnabled)}
-                      className={`w-12 h-7 rounded-full transition-all duration-200 relative ${translateEnabled ? 'bg-blue-500' : 'bg-white/20'}`}
+                      className="w-14 h-8 rounded-full transition-all duration-300 relative"
+                      style={{
+                        background: translateEnabled
+                          ? 'linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(200, 200, 200, 0.9) 100%)'
+                          : 'rgba(255, 255, 255, 0.08)',
+                        border: translateEnabled ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
+                      }}
                     >
-                      <div className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-all duration-200 ${translateEnabled ? 'left-6' : 'left-1'}`} />
+                      <div
+                        className={`absolute top-1 w-6 h-6 rounded-full shadow-lg transition-all duration-300 ${translateEnabled ? 'left-7' : 'left-1'}`}
+                        style={{
+                          background: translateEnabled ? '#000' : 'rgba(255, 255, 255, 0.5)',
+                        }}
+                      />
                     </button>
                   </div>
 
                   {/* Language Selection */}
-                  <div className="p-4 rounded-2xl" style={{ background: 'rgba(255, 255, 255, 0.05)' }}>
-                    <div className="flex items-center gap-3 mb-3">
+                  <div
+                    className="p-4 rounded-2xl"
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid rgba(255, 255, 255, 0.06)',
+                    }}
+                  >
+                    <div className="flex items-center gap-3 mb-4">
                       <Globe className="w-5 h-5 text-white/40" />
                       <p className="font-medium text-white text-[15px]">{t('messages.translation.translateTo')}</p>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+                    <div className="grid grid-cols-4 gap-2 max-h-52 overflow-y-auto pr-1 custom-scrollbar">
                       {[
                         { code: 'en', name: 'English', flag: '🇬🇧' },
                         { code: 'es', name: 'Spanish', flag: '🇪🇸' },
@@ -1682,21 +1722,28 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                         { code: 'hu', name: 'Hungarian', flag: '🇭🇺' },
                         { code: 'sk', name: 'Slovak', flag: '🇸🇰' },
                         { code: 'hr', name: 'Croatian', flag: '🇭🇷' },
-                        { code: 'sr', name: 'Serbian', flag: '🇷🇸' },
-                        { code: 'sl', name: 'Slovenian', flag: '🇸🇮' },
                       ].map(lang => (
                         <button
                           key={lang.code}
                           onClick={() => setTranslateTarget(lang.code)}
-                          className={`flex items-center gap-2 p-3 rounded-xl transition-all ${
-                            translateTarget === lang.code
-                              ? 'bg-blue-500/20 border border-blue-500/50'
-                              : 'bg-white/5 border border-transparent'
-                          }`}
+                          className="flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all active:scale-95"
+                          style={{
+                            background: translateTarget === lang.code
+                              ? 'rgba(255, 255, 255, 0.1)'
+                              : 'rgba(255, 255, 255, 0.02)',
+                            border: translateTarget === lang.code
+                              ? '1px solid rgba(255, 255, 255, 0.2)'
+                              : '1px solid rgba(255, 255, 255, 0.04)',
+                            boxShadow: translateTarget === lang.code
+                              ? 'inset 0 1px 0 rgba(255, 255, 255, 0.1)'
+                              : 'none',
+                          }}
                         >
-                          <span className="text-lg">{lang.flag}</span>
-                          <span className={`text-sm font-medium ${translateTarget === lang.code ? 'text-blue-400' : 'text-white/70'}`}>
-                            {lang.code.toUpperCase()}
+                          <span className="text-xl">{lang.flag}</span>
+                          <span className={`text-[11px] font-medium uppercase tracking-wide ${
+                            translateTarget === lang.code ? 'text-white' : 'text-white/50'
+                          }`}>
+                            {lang.code}
                           </span>
                         </button>
                       ))}
@@ -1705,24 +1752,35 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
                   {/* Info */}
                   {translateEnabled && (
-                    <div className="flex items-start gap-2 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
-                      <Sparkles className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-                      <p className="text-xs text-blue-300/80">
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex items-start gap-3 p-4 rounded-xl"
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: '1px solid rgba(255, 255, 255, 0.06)',
+                      }}
+                    >
+                      <Sparkles className="w-4 h-4 text-white/50 shrink-0 mt-0.5" />
+                      <p className="text-[13px] text-white/50 leading-relaxed">
                         {t('messages.translation.info', {
                           name: activeConversation?.other_user?.first_name || t('messages.thisUserFallback'),
                           lang: translateTarget.toUpperCase()
                         })}
                       </p>
-                    </div>
+                    </motion.div>
                   )}
                 </div>
 
                 {/* Done button */}
-                <div className="p-5 pt-0">
+                <div className="p-6 pt-2">
                   <button
                     onClick={() => setShowTranslateSettings(false)}
-                    className="w-full py-4 rounded-2xl font-semibold text-white text-[16px] active:scale-[0.98] transition-transform"
-                    style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)' }}
+                    className="w-full py-4 rounded-2xl font-semibold text-black text-[16px] active:scale-[0.98] transition-all"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(200, 200, 200, 0.95) 100%)',
+                      boxShadow: '0 4px 20px rgba(255, 255, 255, 0.1)',
+                    }}
                   >
                     {t('messages.translation.done')}
                   </button>
@@ -2059,6 +2117,24 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
                     handleSendMessage()
                   }
                 }}
+                onFocus={() => {
+                  // Immediately scroll to bottom when input is focused (keyboard opening)
+                  if (messagesContainerRef.current) {
+                    // Instant scroll
+                    messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+                    // Also schedule a delayed scroll to catch iOS keyboard animation
+                    setTimeout(() => {
+                      if (messagesContainerRef.current) {
+                        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+                      }
+                    }, 100)
+                    setTimeout(() => {
+                      if (messagesContainerRef.current) {
+                        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+                      }
+                    }, 300)
+                  }
+                }}
                 ref={inputRef}
                 placeholder={t('messages.placeholder')}
                 rows={1}
@@ -2117,96 +2193,132 @@ export default function MessagesPage({ user, selectedConversationId, onConversat
 
   return (
     <div
-      className="min-h-screen text-white relative pb-20"
+      className="min-h-screen bg-black text-white relative pb-20"
       onClick={() => conversationMenuId && setConversationMenuId(null)}
     >
-      {/* Stars with black background - THE ONLY background for the entire page */}
-      <ChatBackground />
+      {/* Header - Instagram DM style */}
+      <div className="sticky top-0 z-40 bg-black border-b border-white/10">
+        {/* Top bar with username and icons */}
+        <div className="flex items-center justify-between px-4 py-3">
+          <button className="flex items-center gap-1">
+            <span className="text-[20px] font-semibold text-white">
+              {user.username || user.first_name || 'Messages'}
+            </span>
+            <ChevronDown className="w-5 h-5 text-white" />
+          </button>
+          <button className="w-10 h-10 flex items-center justify-center">
+            <Edit3 className="w-6 h-6 text-white" />
+          </button>
+        </div>
 
-      {/* All content sits above the stars with transparent backgrounds */}
-      <div className="relative" style={{ zIndex: 1 }}>
-        {/* Header */}
-        <div
-          className="sticky top-0 z-40 px-4 pt-4 pb-4"
-          style={{
-            background: 'linear-gradient(to bottom, rgba(10, 10, 10, 0.98) 0%, rgba(10, 10, 10, 0.95) 100%)',
-            backdropFilter: 'blur(20px)'
-          }}
-        >
-          <div className="flex items-start justify-between gap-3 mb-4">
-            <div>
-              <h2 className="text-2xl font-bold text-white">{t('messages.title')}</h2>
-              <p className="text-xs text-white/50">{t('messages.subtitle')}</p>
+        {/* Stories/Notes row - only shows users with active stories */}
+        <div className="overflow-x-auto pb-3">
+          <div className="flex gap-4 px-4">
+            {/* Your note/story - always visible */}
+            <div className="flex flex-col items-center gap-1 flex-shrink-0">
+              <div className="w-16 h-16 rounded-full bg-white/5 border border-white/20 flex items-center justify-center relative">
+                {user.avatar_url ? (
+                  <img src={user.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
+                ) : (
+                  <div className="text-white/40 text-lg font-semibold">
+                    {(user.first_name || user.username || 'U')[0].toUpperCase()}
+                  </div>
+                )}
+                <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-blue-500 border-2 border-black flex items-center justify-center">
+                  <Plus className="w-3 h-3 text-white" strokeWidth={3} />
+                </div>
+              </div>
+              <span className="text-[11px] text-white/50 font-medium">Your note</span>
             </div>
-          </div>
-
-          <div className="flex gap-2 mb-4">
-            {categories.map(cat => (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id)}
-                className="px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95"
-                style={{
-                  background: activeCategory === cat.id
-                    ? 'linear-gradient(135deg, #fff 0%, #f0f0f0 100%)'
-                    : 'rgba(255, 255, 255, 0.08)',
-                  color: activeCategory === cat.id ? '#000' : 'rgba(255, 255, 255, 0.7)',
-                  boxShadow: activeCategory === cat.id ? '0 2px 8px rgba(255, 255, 255, 0.1)' : 'none'
-                }}
-              >
-                {cat.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t('messages.search')}
-              className="w-full pl-12 pr-4 py-3.5 rounded-2xl text-[15px] text-white focus:outline-none transition-all placeholder:text-white/40"
-              style={{
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid rgba(255, 255, 255, 0.08)'
-              }}
-            />
+            {/* Other users' stories will appear here when implemented */}
           </div>
         </div>
 
-        {/* Content area */}
-        <div className="px-4 py-2 pb-24">
-          {loading ? (
-            <div className="text-center py-20">
-              <div
-                className="w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4"
-                style={{ background: 'rgba(59, 130, 246, 0.15)' }}
-              >
-                <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
-              </div>
-              <p className="text-white/40 text-sm font-medium">{t('messages.loading')}</p>
-            </div>
-          ) : filteredConversations.length === 0 ? (
-            <div className="text-center py-20">
-              <div
-                className="w-20 h-20 mx-auto rounded-full flex items-center justify-center mb-5"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.04) 100%)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)'
-                }}
-              >
-                <MessageCircle className="w-10 h-10 text-white/30" />
-              </div>
-              <p className="font-semibold text-white text-lg mb-2">{t('messages.emptyTitle')}</p>
-              <p className="text-sm text-white/40">{t('messages.emptySubtitle')}</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {filteredConversations.map((conv) => renderConversationCard(conv))}
-            </div>
-          )}
+        {/* Filter tabs - scrollable */}
+        <div className="flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar">
+          {categories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setActiveCategory(cat.id)}
+              className={`px-3 py-1.5 rounded-lg text-[13px] font-semibold transition-all whitespace-nowrap ${
+                activeCategory === cat.id
+                  ? 'bg-white text-black'
+                  : 'bg-white/10 text-white/70'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
         </div>
+      </div>
+
+      {/* Content based on active tab */}
+      <div className="py-2 pb-24">
+        {activeCategory === 'messages' && (
+          <>
+            {loading ? (
+              <div className="text-center py-20">
+                <Loader2 className="w-8 h-8 animate-spin text-white/40 mx-auto mb-4" />
+                <p className="text-white/40 text-sm">{t('messages.loading')}</p>
+              </div>
+            ) : filteredConversations.length === 0 ? (
+              <div className="text-center py-20 px-8">
+                <div className="w-20 h-20 mx-auto rounded-full border-2 border-white/20 flex items-center justify-center mb-4">
+                  <MessageCircle className="w-10 h-10 text-white/30" />
+                </div>
+                <p className="font-semibold text-white text-lg mb-2">{t('messages.emptyTitle')}</p>
+                <p className="text-sm text-white/40">{t('messages.emptySubtitle')}</p>
+              </div>
+            ) : (
+              <div>
+                {filteredConversations.map((conv) => renderConversationCard(conv))}
+              </div>
+            )}
+          </>
+        )}
+
+        {activeCategory === 'requests' && (
+          <>
+            {loading ? (
+              <div className="text-center py-20">
+                <Loader2 className="w-8 h-8 animate-spin text-white/40 mx-auto mb-4" />
+                <p className="text-white/40 text-sm">{t('messages.loading')}</p>
+              </div>
+            ) : filteredConversations.length === 0 ? (
+              <div className="text-center py-20 px-8">
+                <div className="w-20 h-20 mx-auto rounded-full border-2 border-white/20 flex items-center justify-center mb-4">
+                  <MessageCircle className="w-10 h-10 text-white/30" />
+                </div>
+                <p className="font-semibold text-white text-lg mb-2">No message requests</p>
+                <p className="text-sm text-white/40">New messages from people you don't follow will appear here</p>
+              </div>
+            ) : (
+              <div>
+                {filteredConversations.map((conv) => renderConversationCard(conv))}
+              </div>
+            )}
+          </>
+        )}
+
+        {activeCategory === 'notifications' && (
+          <div className="text-center py-20 px-8">
+            <div className="w-20 h-20 mx-auto rounded-full border-2 border-white/20 flex items-center justify-center mb-4">
+              <Bell className="w-10 h-10 text-white/30" />
+            </div>
+            <p className="font-semibold text-white text-lg mb-2">No notifications yet</p>
+            <p className="text-sm text-white/40">New followers, likes, comments and mentions will appear here</p>
+          </div>
+        )}
+
+        {activeCategory === 'updates' && (
+          <div className="text-center py-20 px-8">
+            <div className="w-20 h-20 mx-auto rounded-full border-2 border-white/20 flex items-center justify-center mb-4">
+              <Megaphone className="w-10 h-10 text-white/30" />
+            </div>
+            <p className="font-semibold text-white text-lg mb-2">No updates yet</p>
+            <p className="text-sm text-white/40">Platform updates and announcements will appear here</p>
+          </div>
+        )}
       </div>
     </div>
   )

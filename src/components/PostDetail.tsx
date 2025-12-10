@@ -160,20 +160,36 @@ export default function PostDetail({ post, user, onBack, onDeleted, onUpdated }:
   const handleLike = async () => {
     if (currentPost.liked) {
       await unlikePost(user.telegram_id, currentPost.id)
-      setCurrentPost(p => ({ ...p, liked: false, likes_count: Math.max(0, (p.likes_count || 0) - 1) }))
+      setCurrentPost(p => {
+        const updated = { ...p, liked: false, likes_count: Math.max(0, (p.likes_count || 0) - 1) }
+        onUpdated?.(updated)
+        return updated
+      })
     } else {
       await likePost(user.telegram_id, currentPost.id)
-      setCurrentPost(p => ({ ...p, liked: true, likes_count: (p.likes_count || 0) + 1 }))
+      setCurrentPost(p => {
+        const updated = { ...p, liked: true, likes_count: (p.likes_count || 0) + 1 }
+        onUpdated?.(updated)
+        return updated
+      })
     }
   }
 
   const handleSave = async () => {
     if (currentPost.saved) {
       await unsavePost(user.telegram_id, currentPost.id)
-      setCurrentPost(p => ({ ...p, saved: false }))
+      setCurrentPost(p => {
+        const updated = { ...p, saved: false }
+        onUpdated?.(updated)
+        return updated
+      })
     } else {
       await savePost(user.telegram_id, currentPost.id)
-      setCurrentPost(p => ({ ...p, saved: true }))
+      setCurrentPost(p => {
+        const updated = { ...p, saved: true }
+        onUpdated?.(updated)
+        return updated
+      })
     }
   }
 

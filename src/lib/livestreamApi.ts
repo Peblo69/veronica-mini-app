@@ -56,8 +56,11 @@ export interface LivestreamAccessState {
   reason?: string
 }
 
-// Agora App ID
-export const AGORA_APP_ID = '81e67142488042efa6a00af94095db5e'
+// Agora App ID - gracefully handle missing env var
+export const AGORA_APP_ID = import.meta.env.VITE_AGORA_APP_ID || ''
+if (!AGORA_APP_ID) {
+  console.warn('[Livestream] VITE_AGORA_APP_ID not configured - livestream features will be disabled')
+}
 
 // ============================================
 // STREAMING LIMITS
