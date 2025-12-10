@@ -13,6 +13,7 @@ import ToastContainer from './components/Toast'
 const HomePage = lazy(() => import('./pages/HomePage'))
 const ExplorePage = lazy(() => import('./pages/ExplorePage'))
 const CreatePage = lazy(() => import('./pages/CreatePage'))
+const ThoughtsPage = lazy(() => import('./pages/ThoughtsPage'))
 const MessagesPage = lazy(() => import('./pages/MessagesPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 const CreatorProfilePage = lazy(() => import('./pages/CreatorProfilePage'))
@@ -470,6 +471,7 @@ function App() {
         />
         <Route path="/explore" element={<ExplorePage user={user} onCreatorClick={openCreatorProfile} />} />
         <Route path="/create" element={<CreatePageWrapper user={user} onBecomeCreator={openApplication} />} />
+        <Route path="/thoughts" element={<ThoughtsPage user={user} onBack={() => navigate(-1)} onViewProfile={openCreatorProfile} />} />
         <Route
           path="/messages/*"
           element={(
@@ -610,9 +612,9 @@ function App() {
         )}
       </AnimatePresence>
 
-      {/* Floating Action Button - Quick thoughts (text only) - hides on scroll, shows when idle */}
+      {/* Floating Action Button - Thoughts - hides on scroll, shows when idle */}
       <AnimatePresence>
-        {showBottomNav && location.pathname !== '/create' && scrollIdle && (
+        {showBottomNav && location.pathname !== '/create' && location.pathname !== '/thoughts' && scrollIdle && (
           <motion.button
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -621,14 +623,14 @@ function App() {
               duration: 0.25,
               ease: [0.4, 0, 0.2, 1], // smooth easing
             }}
-            onClick={() => navigate('/create?mode=text')}
+            onClick={() => navigate('/thoughts')}
             className="fixed right-4 z-50 w-14 h-14 rounded-full flex items-center justify-center shadow-lg active:scale-95"
             style={{
               bottom: 'calc(80px + max(12px, env(safe-area-inset-bottom, 0px)))',
-              background: 'rgba(255, 255, 255, 0.1)',
+              background: 'linear-gradient(135deg, rgba(147, 51, 234, 0.3) 0%, rgba(219, 39, 119, 0.3) 100%)',
               backdropFilter: 'blur(20px)',
               WebkitBackdropFilter: 'blur(20px)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
+              border: '1px solid rgba(147, 51, 234, 0.3)',
             }}
           >
             <Plus className="w-7 h-7 text-white" strokeWidth={2} />
