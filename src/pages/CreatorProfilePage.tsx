@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, CheckCircle, Lock, Grid, Star, X, Gift, Heart, Repeat2, MoreHorizontal, UserPlus, Play, Video, Image as ImageIcon } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Lock, Grid, Star, X, Gift, Heart, Repeat2, MoreHorizontal, Crown, Play, Video, Image as ImageIcon } from 'lucide-react'
 import { getCreatorPosts, followUser, unfollowUser, subscribeToFollowerChanges, subscribeToUserUpdates, getFollowCounts, type User, type Post } from '../lib/api'
 import { getOrCreateConversation } from '../lib/chatApi'
 import { unlockPostWithPayment, sendTipWithPayment } from '../lib/paymentsApi'
@@ -52,9 +52,7 @@ export default function CreatorProfilePage({ creator, currentUser, onBack, onMes
   const [followersSheetType, setFollowersSheetType] = useState<'followers' | 'following'>('followers')
   const [showSubscribeModal, setShowSubscribeModal] = useState(false)
   const [subscribing] = useState(false)
-
-  // Calculate total likes
-  const totalLikes = creator.likes_received || posts.reduce((sum, p) => sum + (p.likes_count || 0), 0)
+  const [subscribersCount, setSubscribersCount] = useState(creator.subscribers_count || 0)
 
   useEffect(() => {
     loadData()
@@ -76,6 +74,7 @@ export default function CreatorProfilePage({ creator, currentUser, onBack, onMes
 
     const unsubscribeUser = subscribeToUserUpdates(creator.telegram_id, (updatedUser) => {
       setFollowersCount(updatedUser.followers_count || 0)
+      setSubscribersCount(updatedUser.subscribers_count || 0)
     })
 
     return () => {
@@ -308,8 +307,8 @@ export default function CreatorProfilePage({ creator, currentUser, onBack, onMes
           <div className="w-[1px] h-6 bg-white/10" />
 
           <div className="flex flex-col items-center px-4">
-            <span className="text-base font-bold">{formatCount(totalLikes)}</span>
-            <span className="text-[11px] text-white/50">Likes</span>
+            <span className="text-base font-bold">{formatCount(subscribersCount)}</span>
+            <span className="text-[11px] text-white/50">Subscribers</span>
           </div>
         </div>
 
@@ -364,7 +363,7 @@ export default function CreatorProfilePage({ creator, currentUser, onBack, onMes
               {isSubscribed ? (
                 <CheckCircle className="w-5 h-5 text-[#00D4FF]" />
               ) : (
-                <UserPlus className="w-5 h-5 text-white" />
+                <Crown className="w-5 h-5 text-yellow-400" />
               )}
             </motion.button>
           )}

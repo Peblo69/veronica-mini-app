@@ -22,6 +22,7 @@ export interface User {
   following_count: number
   posts_count: number
   likes_received: number
+  subscribers_count: number
   // Admin fields
   is_banned?: boolean
   banned_reason?: string

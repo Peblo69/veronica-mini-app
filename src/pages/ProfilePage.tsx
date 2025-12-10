@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Grid, Bookmark, Lock, Heart, Image, Video, Star, UserPlus, Share2, Menu, ChevronDown, Play, Repeat2, Settings } from 'lucide-react'
-import { type User, type Post, getCreatorPosts, getSavedPosts, subscribeToFollowerChanges, getFollowCounts } from '../lib/api'
+import { type User, type Post, getCreatorPosts, getSavedPosts, subscribeToFollowerChanges, subscribeToUserUpdates, getFollowCounts } from '../lib/api'
 import { getWallet, type Wallet as WalletType } from '../lib/paymentsApi'
 import PostDetail from '../components/PostDetail'
 import FollowersSheet from '../components/FollowersSheet'
@@ -50,6 +50,7 @@ export default function ProfilePage({ user, setUser, onSettingsClick, onViewProf
   const [followersSheetType, setFollowersSheetType] = useState<'followers' | 'following'>('followers')
   const [followersCount, setFollowersCount] = useState(user.followers_count || 0)
   const [followingCount, setFollowingCount] = useState(user.following_count || 0)
+  const [subscribersCount, setSubscribersCount] = useState(user.subscribers_count || 0)
   const [stories, setStories] = useState<any[]>([])
   const [showStoryViewer, setShowStoryViewer] = useState(false)
 
@@ -66,11 +67,20 @@ export default function ProfilePage({ user, setUser, onSettingsClick, onViewProf
   }
 
   useEffect(() => {
-    const unsubscribe = subscribeToFollowerChanges(user.telegram_id, {
+    const unsubscribeFollowers = subscribeToFollowerChanges(user.telegram_id, {
       onNewFollower: () => setFollowersCount(prev => prev + 1),
       onUnfollow: () => setFollowersCount(prev => Math.max(0, prev - 1))
     })
-    return () => unsubscribe()
+
+    const unsubscribeUser = subscribeToUserUpdates(user.telegram_id, (updatedUser) => {
+      setFollowersCount(updatedUser.followers_count || 0)
+      setSubscribersCount(updatedUser.subscribers_count || 0)
+    })
+
+    return () => {
+      unsubscribeFollowers()
+      unsubscribeUser()
+    }
   }, [user.telegram_id])
 
   useEffect(() => {
@@ -196,9 +206,6 @@ export default function ProfilePage({ user, setUser, onSettingsClick, onViewProf
     }
   }
 
-  // Calculate total likes received
-  const totalLikes = user.likes_received || posts.reduce((sum, p) => sum + (p.likes_count || 0), 0)
-
   // Filter posts by type
   const publicPosts = posts.filter(p => p.visibility === 'public')
   const lockedPosts = posts.filter(p => p.visibility !== 'public')
@@ -304,8 +311,8 @@ export default function ProfilePage({ user, setUser, onSettingsClick, onViewProf
           <div className="w-[1px] h-6 bg-white/10" />
 
           <div className="flex flex-col items-center px-4">
-            <span className="text-base font-bold">{formatCount(totalLikes)}</span>
-            <span className="text-[11px] text-white/50">Likes</span>
+            <span className="text-base font-bold">{formatCount(subscribersCount)}</span>
+            <span className="text-[11px] text-white/50">Subscribers</span>
           </div>
         </div>
 

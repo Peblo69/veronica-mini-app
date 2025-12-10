@@ -386,6 +386,7 @@ function App() {
             following_count: 0,
             posts_count: 0,
             likes_received: 0,
+            subscribers_count: 0,
           })
         }
       } else {
