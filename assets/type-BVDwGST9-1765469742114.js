@@ -1,0 +1,1 @@
+import{c as e}from"./index-xQfDI7DD-1765469742114.js";const o=[["path",{d:"M5 12h14",key:"1ays0h"}]],s=e("minus",o);const t=[["path",{d:"M12 4v16",key:"1654pz"}],["path",{d:"M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2",key:"e0r10z"}],["path",{d:"M9 20h6",key:"s66wpe"}]],c=e("type",t);export{s as M,c as T};
