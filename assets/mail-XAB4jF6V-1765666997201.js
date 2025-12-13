@@ -1,1 +1,0 @@
-import{c as e}from"./index-BHS0ki3y-1765666997201.js";const o=[["path",{d:"m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7",key:"132q7q"}],["rect",{x:"2",y:"4",width:"20",height:"16",rx:"2",key:"izxlao"}]],a=e("mail",o);export{a as M};
