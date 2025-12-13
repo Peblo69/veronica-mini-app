@@ -1,1 +1,0 @@
-const i=typeof window<"u"?window.Telegram?.WebApp:void 0;function r(o){return new Promise(n=>{i?.showConfirm?i.showConfirm(o,w=>{n(w)}):n(window.confirm(o))})}function e(o){return new Promise(n=>{i?.showAlert?i.showAlert(o,()=>{n()}):(window.alert(o),n())})}export{e as a,r as s};
